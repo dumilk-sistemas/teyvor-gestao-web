@@ -1,0 +1,9 @@
+DUMILK Admin - Ícone de instalação
+
+1. Copie a pasta assets para a raiz do projeto, ou copie os dois arquivos para a pasta assets existente:
+   assets\icon.png
+   assets\adaptive-icon.png
+
+2. Substitua o app.json atual pelo app.json desta pasta.
+
+3. O ícone só muda após gerar e instalar um NOVO build do aplicativo.

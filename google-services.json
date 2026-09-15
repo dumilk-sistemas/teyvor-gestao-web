@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "375751088028",
+    "project_id": "dumilk-admin",
+    "storage_bucket": "dumilk-admin.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:375751088028:android:dfdd5d611c4c8185e01a59",
+        "android_client_info": {
+          "package_name": "br.com.dumilk.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDnuVT74B06t8-YsUU_7UaAQEYl0ZfpnE0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

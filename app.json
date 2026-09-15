@@ -1,0 +1,42 @@
+﻿{
+    "expo":  {
+                 "name":  "TEYVOR Gestão 360",
+                 "slug":  "teyvor-gestao-360",
+                 "version":  "1.0.1",
+                 "orientation":  "portrait",
+                 "scheme":  "teyvorgestao",
+                 "userInterfaceStyle":  "light",
+                 "newArchEnabled":  false,
+                 "icon":  "./assets/icon.png",
+                 "ios":  {
+                             "supportsTablet":  true,
+                             "bundleIdentifier":  "br.com.dumilk.admin",
+                             "icon":  "./assets/icon.png"
+                         },
+                 "android":  {
+                                 "package":  "br.com.dumilk.admin",
+                                 "googleServicesFile":  "./google-services.json",
+                                 "adaptiveIcon":  {
+                                                      "foregroundImage":  "./assets/adaptive-icon.png",
+                                                      "backgroundColor":  "#0B0B0B"
+                                                  }
+                             },
+                 "web":  {
+                             "bundler":  "metro"
+                         },
+                 "plugins":  [
+                                 "expo-router",
+                                 "expo-notifications",
+                                 "expo-asset"
+                             ],
+                 "extra":  {
+                               "router":  {
+
+                                          },
+                               "eas":  {
+                                           "projectId":  "318c2fbf-6773-4f6f-bffd-9ace280b29d0"
+                                       }
+                           },
+                 "owner":  "dumilk-apps"
+             }
+}
