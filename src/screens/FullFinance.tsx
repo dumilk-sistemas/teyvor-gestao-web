@@ -432,6 +432,12 @@ export default function FullFinance() {
           />
 
           <ActionButton
+            label="Fiscal"
+            tone="plain"
+            onPress={() => router.push('/fiscal')}
+          />
+
+          <ActionButton
             label="Relatório mensal"
             tone="plain"
             onPress={openMonthlyReport}

@@ -126,3 +126,68 @@ export async function createTransfer(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+// Fiscal (NFC-e) -- fase 1, so cadastro. O certificado digital e' um
+// arquivo, por isso usa multipart em vez de JSON (nao pode passar pelo
+// fullRequest, que sempre manda Content-Type: application/json).
+export async function getFiscalCertificate() {
+  return fullRequest<any>('/admin/fiscal/certificate');
+}
+
+export async function uploadFiscalCertificate(payload: {
+  file: { uri: string; name: string; type: string } | File;
+  password: string;
+  cnpj: string;
+  razao_social: string;
+  inscricao_estadual: string;
+  uf: string;
+}) {
+  const token = await AsyncStorage.getItem(TOKEN_KEY);
+  const form = new FormData();
+  form.append('file', payload.file as any);
+  form.append('password', payload.password);
+  form.append('cnpj', payload.cnpj);
+  form.append('razao_social', payload.razao_social);
+  form.append('inscricao_estadual', payload.inscricao_estadual);
+  form.append('uf', payload.uf);
+
+  const response = await fetch(`${BASE_URL}/admin/fiscal/certificate`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || 'Não foi possível enviar o certificado.');
+  }
+  return response.json();
+}
+
+export async function setFiscalAmbiente(ambiente: 'homologacao' | 'producao') {
+  return fullRequest<any>('/admin/fiscal/certificate/ambiente', {
+    method: 'PUT',
+    body: JSON.stringify({ ambiente }),
+  });
+}
+
+export async function deleteFiscalCertificate() {
+  return fullRequest<any>('/admin/fiscal/certificate', { method: 'DELETE' });
+}
+
+export async function getProductFiscal(code: string) {
+  return fullRequest<any>(`/admin/fiscal/products/${encodeURIComponent(code)}`);
+}
+
+export async function setProductFiscal(
+  code: string,
+  payload: { ncm: string; cfop: string; csosn_cst: string; origem_mercadoria: string; unidade_tributavel: string }
+) {
+  return fullRequest<any>(`/admin/fiscal/products/${encodeURIComponent(code)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProductFiscalSummary() {
+  return fullRequest<any>('/admin/fiscal/products/summary/count');
+}

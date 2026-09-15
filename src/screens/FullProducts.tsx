@@ -23,6 +23,7 @@ import {
   commandMessage,
   enqueue,
   getFull,
+  setProductFiscal,
   setProductImage,
   setProductStockMax,
 } from '@/services/fullApi';
@@ -52,6 +53,11 @@ const blank = {
   initial_stock: '0',
   image_url: '',
   max_stock: '',
+  ncm: '',
+  cfop: '',
+  csosn_cst: '',
+  origem_mercadoria: '0',
+  unidade_tributavel: 'UN',
 };
 
 export default function FullProducts() {
@@ -119,6 +125,11 @@ export default function FullProducts() {
           row.max_stock === null || row.max_stock === undefined
             ? ''
             : String(row.max_stock).replace('.', ','),
+        ncm: row.fiscal?.ncm || '',
+        cfop: row.fiscal?.cfop || '',
+        csosn_cst: row.fiscal?.csosn_cst || '',
+        origem_mercadoria: row.fiscal?.origem_mercadoria || '0',
+        unidade_tributavel: row.fiscal?.unidade_tributavel || 'UN',
       });
     } else {
       setForm({ ...blank });
@@ -213,6 +224,14 @@ export default function FullProducts() {
           form.code,
           maxStock
         ).catch(() => {});
+
+        await setProductFiscal(form.code, {
+          ncm: form.ncm.trim(),
+          cfop: form.cfop.trim(),
+          csosn_cst: form.csosn_cst.trim(),
+          origem_mercadoria: form.origem_mercadoria.trim() || '0',
+          unidade_tributavel: (form.unidade_tributavel.trim() || 'UN').toUpperCase(),
+        }).catch(() => {});
       }
 
       setOpen(false);
@@ -290,6 +309,12 @@ export default function FullProducts() {
               value={String(
                 data.summary?.scale || 0
               )}
+            />
+
+            <MetricCard
+              label="Classificados p/ nota fiscal"
+              value={`${data.summary?.fiscal_classified || 0}/${data.summary?.products || 0}`}
+              note="NCM + CFOP preenchidos"
             />
           </View>
 
@@ -504,6 +529,51 @@ export default function FullProducts() {
           />
         )}
 
+        <Text style={thumbStyles.fiscalSectionTitle}>
+          Classificação fiscal (necessária para emitir nota fiscal)
+        </Text>
+
+        <Field
+          label="NCM"
+          value={form.ncm}
+          onChangeText={(value) => set('ncm', value)}
+          placeholder="Ex.: 04012000"
+          keyboardType="number-pad"
+        />
+
+        <Field
+          label="CFOP"
+          value={form.cfop}
+          onChangeText={(value) => set('cfop', value)}
+          placeholder="Ex.: 5102"
+          keyboardType="number-pad"
+        />
+
+        <Field
+          label="Situação tributária (CSOSN ou CST, conforme o regime da empresa)"
+          value={form.csosn_cst}
+          onChangeText={(value) => set('csosn_cst', value)}
+          placeholder="Ex.: 102 (Simples Nacional) ou 060"
+        />
+
+        <Choice
+          label="Origem da mercadoria"
+          value={form.origem_mercadoria}
+          onChange={(value) => set('origem_mercadoria', value)}
+          options={[
+            { label: 'Nacional', value: '0' },
+            { label: 'Importada (direta)', value: '1' },
+            { label: 'Importada (mercado interno)', value: '2' },
+          ]}
+        />
+
+        <Field
+          label="Unidade tributável"
+          value={form.unidade_tributavel}
+          onChangeText={(value) => set('unidade_tributavel', value)}
+          placeholder="Ex.: UN, KG, CX"
+        />
+
         <Choice
           label="Favorito"
           value={form.favorite}
@@ -614,5 +684,11 @@ const thumbStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     color: theme.colors.muted,
+  },
+  fiscalSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.muted,
+    marginTop: 6,
   },
 });
