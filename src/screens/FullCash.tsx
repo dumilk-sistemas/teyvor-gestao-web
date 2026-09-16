@@ -25,6 +25,7 @@ import {
   getFull,
 } from '@/services/fullApi';
 import { useToast } from '@/components/Toast';
+import { formatDateBR } from '@/utils/date';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -302,7 +303,7 @@ export default function FullCash() {
                   <Text style={s.meta}>
                     Aberto por{' '}
                     {data.current.operator} •{' '}
-                    {data.current.date}
+                    {formatDateBR(data.current.date)}
                   </Text>
                 </View>
 
@@ -503,7 +504,7 @@ export default function FullCash() {
                       </Text>
 
                       <Text style={s.meta}>
-                        {closing.date} •{' '}
+                        {formatDateBR(closing.date)} •{' '}
                         {closing.sales}{' '}
                         venda(s) •{' '}
                         {closing.operator}
@@ -754,7 +755,7 @@ export default function FullCash() {
                     <DetailRow
                       label="Data"
                       value={
-                        selectedClosing.date ||
+                        formatDateBR(selectedClosing.date) ||
                         '-'
                       }
                     />
@@ -865,7 +866,7 @@ export default function FullCash() {
                               </View>
 
                               <Text style={cashStyles.movementMeta}>
-                                {movement.date || '-'} • {movement.time || '-'}
+                                {formatDateBR(movement.date) || '-'} • {movement.time || '-'}
                               </Text>
 
                               <Text style={cashStyles.movementReason}>

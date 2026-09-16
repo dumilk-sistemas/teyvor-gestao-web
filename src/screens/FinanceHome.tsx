@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
+import { AccountsModal } from '@/components/AccountsModal';
 import { AdminShell } from '@/components/AdminShell';
 import { MetricCard } from '@/components/MetricCard';
 import { Notice, formStyles as s } from '@/components/FormKit';
@@ -49,6 +50,7 @@ export default function FinanceHome() {
   const [data, setData] = useState<FinanceData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [accountsOpen, setAccountsOpen] = useState(false);
   const month = currentMonth();
 
   async function load() {
@@ -133,6 +135,22 @@ export default function FinanceHome() {
       color: colors.primary,
       background: `${colors.primary}1A`,
     },
+    {
+      title: 'Contas financeiras',
+      description: 'Caixa, bancos, saldos, formas de pagamento e transferências.',
+      icon: 'credit-card',
+      action: 'accounts',
+      color: colors.primary,
+      background: '#F8F1DF',
+    },
+    {
+      title: 'Fiscal',
+      description: 'Configurações fiscais, certificado e dados para emissão.',
+      icon: 'file-text',
+      route: '/fiscal',
+      color: theme.colors.text,
+      background: '#F1F0EC',
+    },
   ];
 
   return (
@@ -193,7 +211,9 @@ export default function FinanceHome() {
               <Pressable
                 key={module.title}
                 style={styles.moduleCard}
-                onPress={() => router.push(module.route as never)}
+                onPress={() => module.action === 'accounts'
+                  ? setAccountsOpen(true)
+                  : router.push(module.route as never)}
               >
                 <View style={[styles.moduleIcon, { backgroundColor: module.background }]}>
                   <Feather name={module.icon as any} size={20} color={module.color} />
@@ -236,6 +256,12 @@ export default function FinanceHome() {
           </View>
         </>
       )}
+
+      <AccountsModal
+        visible={accountsOpen}
+        onClose={() => setAccountsOpen(false)}
+        onChanged={load}
+      />
     </AdminShell>
   );
 }

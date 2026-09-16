@@ -24,6 +24,7 @@ import {
 import type { DashboardSummary } from '@/types/api';
 import { theme, useThemeColors } from '@/constants/theme';
 import { getFull } from '@/services/fullApi';
+import { formatDateBR } from '@/utils/date';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -1202,7 +1203,7 @@ export default function Dashboard() {
                       <View style={styles.saleInfoRow}>
                         <Text style={styles.saleInfoLabel}>Data</Text>
                         <Text style={styles.saleInfoValue}>
-                          {selectedSale.date}
+                          {formatDateBR(selectedSale.date)}
                           {selectedSale.time
                             ? ` • ${selectedSale.time}`
                             : ''}

@@ -18,6 +18,7 @@ import {
   getFull,
 } from '@/services/fullApi';
 import { useToast } from '@/components/Toast';
+import { formatDateBR } from '@/utils/date';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -363,7 +364,7 @@ export default function FullStock() {
                     </Text>
 
                     <Text style={s.meta}>
-                      {movement.date}{' '}
+                      {formatDateBR(movement.date)}{' '}
                       {movement.time} •{' '}
                       {movement.type} •{' '}
                       {movement.reason}

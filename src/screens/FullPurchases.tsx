@@ -7,6 +7,7 @@ import { SearchBar } from '@/components/SearchBar';
 import {
   ActionButton,
   Choice,
+  DateField,
   Field,
   FormModal,
   Notice,
@@ -18,6 +19,7 @@ import {
   getFull,
 } from '@/services/fullApi';
 import { useToast } from '@/components/Toast';
+import { formatDateBR } from '@/utils/date';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -354,12 +356,12 @@ export default function FullPurchases() {
                       </Text>
 
                       <Text style={s.meta}>
-                        {row.date} •{' '}
+                        {formatDateBR(row.date)} •{' '}
                         {row.document ||
                           'Sem documento'}{' '}
                         • {row.items}{' '}
                         item(ns) • vence{' '}
-                        {row.due_date}
+                        {formatDateBR(row.due_date)}
                       </Text>
                     </View>
 
@@ -422,22 +424,20 @@ export default function FullPurchases() {
           }
         />
 
-        <Field
+        <DateField
           label="Data do recebimento *"
           value={form.date}
           onChangeText={(value) =>
             set('date', value)
           }
-          placeholder="AAAA-MM-DD"
         />
 
-        <Field
+        <DateField
           label="Vencimento"
           value={form.dueDate}
           onChangeText={(value) =>
             set('dueDate', value)
           }
-          placeholder="AAAA-MM-DD"
         />
 
         <Choice

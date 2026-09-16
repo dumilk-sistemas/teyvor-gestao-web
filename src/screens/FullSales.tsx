@@ -18,6 +18,7 @@ import {
 } from '@/services/fullApi';
 import { useToast } from '@/components/Toast';
 import { theme } from '@/constants/theme';
+import { formatDateBR } from '@/utils/date';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -437,7 +438,7 @@ export default function FullSales() {
               >
                 <View style={s.main}>
                   <Text style={s.name}>
-                    Venda #{row.number} • {row.date}{' '}
+                    Venda #{row.number} • {formatDateBR(row.date)}{' '}
                     {row.time}
                   </Text>
 

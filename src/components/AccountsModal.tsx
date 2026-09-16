@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AccountPicker } from '@/components/AccountPicker';
-import { ActionButton, Choice, Field, Notice, formStyles as s } from '@/components/FormKit';
+import { ActionButton, Choice, DateField, Field, Notice, formStyles as s } from '@/components/FormKit';
 import {
   createAccount,
   createTransfer,
@@ -382,11 +382,10 @@ export function AccountsModal({
                     keyboardType="decimal-pad"
                   />
 
-                  <Field
-                    label="Data do saldo inicial (AAAA-MM-DD)"
+                  <DateField
+                    label="Data do saldo inicial"
                     value={form.opening_date}
                     onChangeText={(v) => setForm({ ...form, opening_date: v })}
-                    placeholder={isoToday()}
                   />
 
                   <Choice
@@ -468,11 +467,10 @@ export function AccountsModal({
                             keyboardType="decimal-pad"
                           />
 
-                          <Field
-                            label="Data do saldo inicial (AAAA-MM-DD)"
+                          <DateField
+                            label="Data do saldo inicial"
                             value={editForm.opening_date}
                             onChangeText={(v) => setEditForm({ ...editForm, opening_date: v })}
-                            placeholder={isoToday()}
                           />
 
                           <ActionButton label="Salvar alterações" onPress={saveEdit} disabled={editBusy} />
@@ -539,11 +537,10 @@ export function AccountsModal({
                 keyboardType="decimal-pad"
               />
 
-              <Field
-                label="Data (AAAA-MM-DD)"
+              <DateField
+                label="Data"
                 value={transferForm.transfer_date}
                 onChangeText={(v) => setTransferForm({ ...transferForm, transfer_date: v })}
-                placeholder={isoToday()}
               />
 
               <Field

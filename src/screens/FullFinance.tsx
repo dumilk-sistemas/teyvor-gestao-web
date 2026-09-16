@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { router } from 'expo-router';
-
 import { AccountPicker } from '@/components/AccountPicker';
-import { AccountsModal } from '@/components/AccountsModal';
 import { AdminShell } from '@/components/AdminShell';
 import { MetricCard } from '@/components/MetricCard';
 import { SearchBar } from '@/components/SearchBar';
 import {
   ActionButton,
   Choice,
+  DateField,
   Field,
   FormModal,
   Notice,
@@ -28,6 +26,7 @@ import {
 } from '@/services/fullApi';
 import { useToast } from '@/components/Toast';
 import { theme } from '@/constants/theme';
+import { formatDateBR } from '@/utils/date';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -125,8 +124,6 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [monthlyData, setMonthlyData] = useState<any>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [monthlyError, setMonthlyError] = useState('');
-
-  const [accountsOpen, setAccountsOpen] = useState(false);
 
   async function loadMonthlyReport(month: string) {
     try {
@@ -402,11 +399,11 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           return;
         }
         if (!validIsoDate(form.dueDate)) {
-          setModalError('Informe o vencimento no formato AAAA-MM-DD.');
+          setModalError('Informe o vencimento no formato DD/MM/AAAA.');
           return;
         }
         if (form.competenceDate && !validIsoDate(form.competenceDate)) {
-          setModalError('Informe a competência no formato AAAA-MM-DD.');
+          setModalError('Informe a competência no formato DD/MM/AAAA.');
           return;
         }
       }
@@ -639,40 +636,12 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       headerActions={
         <>
           {view !== 'receivable' && (
-            <ActionButton label="+ Conta a pagar" tone="gold" onPress={() => startEntry('payable')} />
+            <ActionButton label="+ Nova conta a pagar" tone="gold" onPress={() => startEntry('payable')} />
           )}
 
           {view !== 'payable' && (
-            <ActionButton label="+ Conta a receber" tone="dark" onPress={() => startEntry('receivable')} />
+            <ActionButton label="+ Nova conta a receber" tone="dark" onPress={() => startEntry('receivable')} />
           )}
-
-          {view !== 'all' && (
-            <ActionButton label="Visão geral" tone="plain" onPress={() => router.push('/finance')} />
-          )}
-
-          <ActionButton
-            label="Contas"
-            tone="plain"
-            onPress={() => setAccountsOpen(true)}
-          />
-
-          <ActionButton
-            label="Fluxo de Caixa"
-            tone="plain"
-            onPress={() => router.push('/cashflow')}
-          />
-
-          <ActionButton
-            label="Fiscal"
-            tone="plain"
-            onPress={() => router.push('/fiscal')}
-          />
-
-          <ActionButton
-            label="Relatório mensal"
-            tone="plain"
-            onPress={openMonthlyReport}
-          />
         </>
       }
     >
@@ -816,7 +785,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
 
                       <Text style={s.meta}>
                         {row.category} • vence{' '}
-                        {row.due_date} •{' '}
+                        {formatDateBR(row.due_date)} •{' '}
                         {row.type ===
                         'payable'
                           ? 'A pagar'
@@ -939,7 +908,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                       Parcela{' '}
                       {row.installment}/
                       {row.installments} •
-                      previsão {row.date}
+                      previsão {formatDateBR(row.date)}
                     </Text>
                   </View>
 
@@ -1093,7 +1062,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               keyboardType="decimal-pad"
             />
 
-            <Field
+            <DateField
               label="Competência"
               value={
                 form.competenceDate ||
@@ -1105,10 +1074,9 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                   value
                 )
               }
-              placeholder="AAAA-MM-DD"
             />
 
-            <Field
+            <DateField
               label="Vencimento *"
               value={
                 form.dueDate || today()
@@ -1119,7 +1087,6 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                   value
                 )
               }
-              placeholder="AAAA-MM-DD"
             />
 
             <Field
@@ -1193,7 +1160,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               {form.description}
             </Text>
 
-            <Field
+            <DateField
               label="Data da baixa *"
               value={form.date || today()}
               onChangeText={(value) =>
@@ -1236,7 +1203,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               {form.description}
             </Text>
 
-            <Field
+            <DateField
               label="Data da antecipação"
               value={form.date || today()}
               onChangeText={(value) =>
@@ -1466,7 +1433,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                           <View style={s.main}>
                             <Text style={s.name}>{row.description}</Text>
                             <Text style={s.meta}>
-                              Vence {row.due_date} • {row.category} •{' '}
+                              Vence {formatDateBR(row.due_date)} • {row.category} •{' '}
                               {statusLabel(row.status)}
                             </Text>
                           </View>
@@ -1487,11 +1454,6 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
         </View>
       </Modal>
 
-      <AccountsModal
-        visible={accountsOpen}
-        onClose={() => setAccountsOpen(false)}
-        onChanged={load}
-      />
     </AdminShell>
   );
 }

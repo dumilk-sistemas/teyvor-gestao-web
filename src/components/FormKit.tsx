@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { theme, useThemeColors } from '@/constants/theme';
+import { brDateToISO, formatDateBR, maskDateBR } from '@/utils/date';
 
 export function ActionButton({label,onPress,tone='dark',disabled=false}:{label:string;onPress:()=>void;tone?:'dark'|'gold'|'danger'|'plain';disabled?:boolean}){
   const c = useThemeColors();
@@ -10,6 +12,17 @@ export function ActionButton({label,onPress,tone='dark',disabled=false}:{label:s
 
 export function Field({label,value,onChangeText,placeholder='',keyboardType='default',multiline=false}:{label:string;value:string;onChangeText:(v:string)=>void;placeholder?:string;keyboardType?:any;multiline?:boolean}){
   return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} keyboardType={keyboardType} multiline={multiline} style={[styles.input,multiline&&styles.multiline]}/></View>;
+}
+
+export function DateField({label,value,onChangeText}:{label:string;value:string;onChangeText:(v:string)=>void}){
+  const [displayValue, setDisplayValue] = useState(formatDateBR(value));
+  useEffect(() => setDisplayValue(formatDateBR(value)), [value]);
+  function change(rawValue: string) {
+    const masked = maskDateBR(rawValue);
+    setDisplayValue(masked);
+    onChangeText(brDateToISO(masked) || masked);
+  }
+  return <Field label={label} value={displayValue} onChangeText={change} placeholder="DD/MM/AAAA" keyboardType="number-pad" />;
 }
 
 export function Choice({label,options,value,onChange}:{label:string;options:Array<{label:string;value:string}>;value:string;onChange:(v:string)=>void}){
