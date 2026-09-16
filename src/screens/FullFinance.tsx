@@ -56,6 +56,14 @@ const shiftMonth = (month: string, delta: number) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 };
 
+const shiftDate = (iso: string, deltaDays: number) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d + deltaDays);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`;
+};
+
 const statusLabel = (status: string) => {
   if (status === 'paid') return 'Pago';
   if (status === 'received') return 'Recebido';
@@ -80,30 +88,6 @@ export default function FullFinance() {
   const [monthlyData, setMonthlyData] = useState<any>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [monthlyError, setMonthlyError] = useState('');
-  const [reportView, setReportView] = useState('dre');
-
-  const reportRows = useMemo(() => {
-    if (reportView === 'dre' || !data) return [];
-    const entries = data.entries || [];
-    const inMonth = (value: string) => (value || '').startsWith(monthlyMonth);
-    if (reportView === 'payable_open')
-      return entries.filter(
-        (e: any) => e.type === 'payable' && ['open', 'overdue'].includes(e.status) && inMonth(e.due_date)
-      );
-    if (reportView === 'receivable_open')
-      return entries.filter(
-        (e: any) => e.type === 'receivable' && ['open', 'overdue'].includes(e.status) && inMonth(e.due_date)
-      );
-    if (reportView === 'payable_paid')
-      return entries.filter(
-        (e: any) => e.type === 'payable' && e.status === 'paid' && inMonth(e.settlement_date)
-      );
-    if (reportView === 'receivable_paid')
-      return entries.filter(
-        (e: any) => e.type === 'receivable' && e.status === 'received' && inMonth(e.settlement_date)
-      );
-    return [];
-  }, [reportView, data, monthlyMonth]);
 
   const [accountsOpen, setAccountsOpen] = useState(false);
 
@@ -173,6 +157,20 @@ export default function FullFinance() {
         )
     );
   }, [data, search]);
+
+  const nearTerm = useMemo(() => {
+    const entries = data?.entries || [];
+    const todayIso = today();
+    const in7 = shiftDate(todayIso, 7);
+    let dueToday = 0;
+    let due7Days = 0;
+    for (const e of entries) {
+      if (e.type !== 'payable' || !['open', 'overdue'].includes(e.status)) continue;
+      if (e.due_date === todayIso) dueToday += Number(e.amount || 0);
+      if (e.due_date >= todayIso && e.due_date <= in7) due7Days += Number(e.amount || 0);
+    }
+    return { dueToday, due7Days };
+  }, [data]);
 
   async function load() {
     try {
@@ -563,6 +561,22 @@ export default function FullFinance() {
                 data.summary
                   ?.overdue_payables || 0
               )}
+              tone={
+                (data.summary?.overdue_payables || 0) > 0
+                  ? 'warning'
+                  : 'default'
+              }
+            />
+
+            <MetricCard
+              label="Vence hoje"
+              value={money(nearTerm.dueToday)}
+              tone={nearTerm.dueToday > 0 ? 'warning' : 'default'}
+            />
+
+            <MetricCard
+              label="Próximos 7 dias"
+              value={money(nearTerm.due7Days)}
             />
 
             <MetricCard
@@ -1070,21 +1084,6 @@ export default function FullFinance() {
               </Pressable>
             </View>
 
-            <View style={monthlyStyles.reportPicker}>
-              <Choice
-                label="Relatório"
-                value={reportView}
-                onChange={setReportView}
-                options={[
-                  { label: 'Resumo do mês', value: 'dre' },
-                  { label: 'Contas a pagar', value: 'payable_open' },
-                  { label: 'Contas a receber', value: 'receivable_open' },
-                  { label: 'Contas pagas', value: 'payable_paid' },
-                  { label: 'Contas recebidas', value: 'receivable_paid' },
-                ]}
-              />
-            </View>
-
             <View style={monthlyStyles.monthNav}>
               <Pressable
                 style={monthlyStyles.monthArrow}
@@ -1128,38 +1127,11 @@ export default function FullFinance() {
                 <Notice text={monthlyError} tone="error" />
               )}
 
-              {reportView !== 'dre' && (
-                <View style={s.card}>
-                  <Text style={s.cardTitle}>
-                    {monthLabel(monthlyMonth)} • {reportRows.length} lançamento(s)
-                  </Text>
-
-                  {reportRows.length === 0 ? (
-                    <Text style={s.empty}>Nada nesse período.</Text>
-                  ) : (
-                    reportRows.map((row: any) => (
-                      <View key={row.id} style={s.row}>
-                        <View style={s.main}>
-                          <Text style={s.name}>{row.description}</Text>
-                          <Text style={s.meta}>
-                            {row.category} •{' '}
-                            {row.status === 'paid' || row.status === 'received'
-                              ? `baixado em ${row.settlement_date}`
-                              : `vence ${row.due_date}`}
-                          </Text>
-                        </View>
-                        <Text style={s.amount}>{money(row.amount)}</Text>
-                      </View>
-                    ))
-                  )}
-                </View>
-              )}
-
-              {monthlyLoading && !monthlyData && reportView === 'dre' && (
+              {monthlyLoading && !monthlyData && (
                 <Text style={s.empty}>Carregando...</Text>
               )}
 
-              {reportView === 'dre' && !!monthlyData && (
+              {!!monthlyData && (
                 <>
                   <View style={s.grid}>
                     <MetricCard
@@ -1353,9 +1325,6 @@ function SummaryLine({
 }
 
 const monthlyStyles = StyleSheet.create({
-  reportPicker: {
-    marginTop: 12,
-  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

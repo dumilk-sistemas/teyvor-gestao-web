@@ -27,6 +27,21 @@ const dateBR = (value: string) =>
     ? new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR')
     : '—';
 
+const financeModeLabel = (mode: string) => {
+  if (mode === 'payable_open') return 'Contas a pagar';
+  if (mode === 'receivable_open') return 'Contas a receber';
+  if (mode === 'payable_paid') return 'Contas pagas';
+  if (mode === 'receivable_paid') return 'Contas recebidas';
+  return 'Financeiro';
+};
+
+const statusLabelPt = (status: string) => {
+  if (status === 'paid') return 'Pago';
+  if (status === 'received') return 'Recebido';
+  if (status === 'overdue') return 'Vencido';
+  return 'Em aberto';
+};
+
 const isoFromDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -252,6 +267,9 @@ export default function Reports() {
   const [stock, setStock] = useState<StockData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [financeReportMode, setFinanceReportMode] = useState<
+    'category' | 'payable_open' | 'receivable_open' | 'payable_paid' | 'receivable_paid'
+  >('category');
 
   const today = isoFromDate(new Date());
 
@@ -502,6 +520,46 @@ export default function Reports() {
 
     return { payables: build('payable'), receivables: build('receivable') };
   }, [finance, appliedStart, appliedEnd]);
+
+  // Visao "lancamento por lancamento" (nao agrupada por categoria) das
+  // contas a pagar/receber/pagas/recebidas -- complementa financeByCategory
+  // pra quem quer ver cada conta individualmente, nao so o total por categoria.
+  const financeFlatRows = useMemo(() => {
+    const entries = finance?.entries || [];
+    if (financeReportMode === 'payable_open')
+      return entries.filter(
+        (e) =>
+          e.type === 'payable' &&
+          ['open', 'overdue'].includes(e.status) &&
+          e.due_date >= appliedStart &&
+          e.due_date <= appliedEnd
+      );
+    if (financeReportMode === 'receivable_open')
+      return entries.filter(
+        (e) =>
+          e.type === 'receivable' &&
+          ['open', 'overdue'].includes(e.status) &&
+          e.due_date >= appliedStart &&
+          e.due_date <= appliedEnd
+      );
+    if (financeReportMode === 'payable_paid')
+      return entries.filter(
+        (e) =>
+          e.type === 'payable' &&
+          e.status === 'paid' &&
+          e.settlement_date >= appliedStart &&
+          e.settlement_date <= appliedEnd
+      );
+    if (financeReportMode === 'receivable_paid')
+      return entries.filter(
+        (e) =>
+          e.type === 'receivable' &&
+          e.status === 'received' &&
+          e.settlement_date >= appliedStart &&
+          e.settlement_date <= appliedEnd
+      );
+    return [];
+  }, [finance, financeReportMode, appliedStart, appliedEnd]);
 
   const stockAlerts = useMemo(() => {
     const rows = (stock?.rows || []).filter((r) => r.status !== 'OK');
@@ -1532,125 +1590,214 @@ export default function Reports() {
         <View style={styles.backdrop}>
           <View style={styles.modal}>
             <ModalHeader
-              title="Financeiro por categoria"
+              title="Financeiro"
               subtitle={periodLabel}
               onClose={() => setDetailMode(null)}
               onPrint={() =>
-                printRows(
-                  'Financeiro por categoria',
-                  periodLabel,
-                  ['Tipo', 'Categoria', 'Lançamentos', 'Total', 'Realizado', 'Pendente'],
-                  [
-                    ...financeByCategory.payables.map((r) => [
-                      'Despesa',
-                      r.category,
-                      r.count,
-                      money(r.total),
-                      money(r.realized),
-                      money(r.pending),
-                    ]),
-                    ...financeByCategory.receivables.map((r) => [
-                      'Receita',
-                      r.category,
-                      r.count,
-                      money(r.total),
-                      money(r.realized),
-                      money(r.pending),
-                    ]),
-                  ]
-                )
+                financeReportMode === 'category'
+                  ? printRows(
+                      'Financeiro por categoria',
+                      periodLabel,
+                      ['Tipo', 'Categoria', 'Lançamentos', 'Total', 'Realizado', 'Pendente'],
+                      [
+                        ...financeByCategory.payables.map((r) => [
+                          'Despesa',
+                          r.category,
+                          r.count,
+                          money(r.total),
+                          money(r.realized),
+                          money(r.pending),
+                        ]),
+                        ...financeByCategory.receivables.map((r) => [
+                          'Receita',
+                          r.category,
+                          r.count,
+                          money(r.total),
+                          money(r.realized),
+                          money(r.pending),
+                        ]),
+                      ]
+                    )
+                  : printRows(
+                      financeModeLabel(financeReportMode),
+                      periodLabel,
+                      ['Descrição', 'Categoria', 'Data', 'Status', 'Valor'],
+                      financeFlatRows.map((r) => [
+                        r.description,
+                        r.category,
+                        dateBR(
+                          r.status === 'paid' || r.status === 'received'
+                            ? r.settlement_date
+                            : r.due_date
+                        ),
+                        statusLabelPt(r.status),
+                        money(r.amount),
+                      ])
+                    )
               }
               onExcel={() =>
-                downloadCsv(
-                  `relatorio_financeiro_${appliedStart}_${appliedEnd}.csv`,
-                  ['Tipo', 'Categoria', 'Lançamentos', 'Total', 'Realizado', 'Pendente'],
-                  [
-                    ...financeByCategory.payables.map((r) => [
-                      'Despesa',
-                      r.category,
-                      r.count,
-                      r.total,
-                      r.realized,
-                      r.pending,
-                    ]),
-                    ...financeByCategory.receivables.map((r) => [
-                      'Receita',
-                      r.category,
-                      r.count,
-                      r.total,
-                      r.realized,
-                      r.pending,
-                    ]),
-                  ]
-                )
+                financeReportMode === 'category'
+                  ? downloadCsv(
+                      `relatorio_financeiro_${appliedStart}_${appliedEnd}.csv`,
+                      ['Tipo', 'Categoria', 'Lançamentos', 'Total', 'Realizado', 'Pendente'],
+                      [
+                        ...financeByCategory.payables.map((r) => [
+                          'Despesa',
+                          r.category,
+                          r.count,
+                          r.total,
+                          r.realized,
+                          r.pending,
+                        ]),
+                        ...financeByCategory.receivables.map((r) => [
+                          'Receita',
+                          r.category,
+                          r.count,
+                          r.total,
+                          r.realized,
+                          r.pending,
+                        ]),
+                      ]
+                    )
+                  : downloadCsv(
+                      `relatorio_${financeReportMode}_${appliedStart}_${appliedEnd}.csv`,
+                      ['Descrição', 'Categoria', 'Data', 'Status', 'Valor'],
+                      financeFlatRows.map((r) => [
+                        r.description,
+                        r.category,
+                        r.status === 'paid' || r.status === 'received'
+                          ? r.settlement_date
+                          : r.due_date,
+                        r.status,
+                        r.amount,
+                      ])
+                    )
               }
             />
+
+            <View style={styles.periodButtons}>
+              <PeriodButton
+                label="Por categoria"
+                active={financeReportMode === 'category'}
+                onPress={() => setFinanceReportMode('category')}
+              />
+              <PeriodButton
+                label="Contas a pagar"
+                active={financeReportMode === 'payable_open'}
+                onPress={() => setFinanceReportMode('payable_open')}
+              />
+              <PeriodButton
+                label="Contas a receber"
+                active={financeReportMode === 'receivable_open'}
+                onPress={() => setFinanceReportMode('receivable_open')}
+              />
+              <PeriodButton
+                label="Contas pagas"
+                active={financeReportMode === 'payable_paid'}
+                onPress={() => setFinanceReportMode('payable_paid')}
+              />
+              <PeriodButton
+                label="Contas recebidas"
+                active={financeReportMode === 'receivable_paid'}
+                onPress={() => setFinanceReportMode('receivable_paid')}
+              />
+            </View>
 
             <ScrollView
               style={styles.modalScroll}
               contentContainerStyle={styles.modalBody}
             >
-              <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>
-                  Contas a pagar
-                </Text>
+              {financeReportMode === 'category' ? (
+                <>
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>
+                      Contas a pagar
+                    </Text>
 
-                {financeByCategory.payables.length > 0 ? (
-                  financeByCategory.payables.map((row) => (
-                    <View key={row.category} style={styles.dayRow}>
-                      <View style={styles.dayMain}>
-                        <Text style={styles.dayTitle}>
-                          {row.category}
-                        </Text>
-                        <Text style={styles.dayMeta}>
-                          {row.count} lançamento(s) • pago{' '}
-                          {money(row.realized)} • pendente{' '}
-                          {money(row.pending)}
-                        </Text>
-                      </View>
+                    {financeByCategory.payables.length > 0 ? (
+                      financeByCategory.payables.map((row) => (
+                        <View key={row.category} style={styles.dayRow}>
+                          <View style={styles.dayMain}>
+                            <Text style={styles.dayTitle}>
+                              {row.category}
+                            </Text>
+                            <Text style={styles.dayMeta}>
+                              {row.count} lançamento(s) • pago{' '}
+                              {money(row.realized)} • pendente{' '}
+                              {money(row.pending)}
+                            </Text>
+                          </View>
 
-                      <Text style={styles.dayAmount}>
-                        {money(row.total)}
+                          <Text style={styles.dayAmount}>
+                            {money(row.total)}
+                          </Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.emptyText}>
+                        Nenhuma conta a pagar com vencimento no período.
                       </Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptyText}>
-                    Nenhuma conta a pagar com vencimento no período.
-                  </Text>
-                )}
-              </View>
+                    )}
+                  </View>
 
-              <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>
-                  Contas a receber
-                </Text>
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>
+                      Contas a receber
+                    </Text>
 
-                {financeByCategory.receivables.length > 0 ? (
-                  financeByCategory.receivables.map((row) => (
-                    <View key={row.category} style={styles.dayRow}>
-                      <View style={styles.dayMain}>
-                        <Text style={styles.dayTitle}>
-                          {row.category}
-                        </Text>
-                        <Text style={styles.dayMeta}>
-                          {row.count} lançamento(s) • recebido{' '}
-                          {money(row.realized)} • pendente{' '}
-                          {money(row.pending)}
-                        </Text>
-                      </View>
+                    {financeByCategory.receivables.length > 0 ? (
+                      financeByCategory.receivables.map((row) => (
+                        <View key={row.category} style={styles.dayRow}>
+                          <View style={styles.dayMain}>
+                            <Text style={styles.dayTitle}>
+                              {row.category}
+                            </Text>
+                            <Text style={styles.dayMeta}>
+                              {row.count} lançamento(s) • recebido{' '}
+                              {money(row.realized)} • pendente{' '}
+                              {money(row.pending)}
+                            </Text>
+                          </View>
 
-                      <Text style={styles.dayAmount}>
-                        {money(row.total)}
+                          <Text style={styles.dayAmount}>
+                            {money(row.total)}
+                          </Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.emptyText}>
+                        Nenhuma conta a receber com vencimento no período.
                       </Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptyText}>
-                    Nenhuma conta a receber com vencimento no período.
+                    )}
+                  </View>
+                </>
+              ) : (
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailSectionTitle}>
+                    {financeModeLabel(financeReportMode)} • {financeFlatRows.length} lançamento(s)
                   </Text>
-                )}
-              </View>
+
+                  {financeFlatRows.length > 0 ? (
+                    financeFlatRows.map((row) => (
+                      <View key={row.id} style={styles.dayRow}>
+                        <View style={styles.dayMain}>
+                          <Text style={styles.dayTitle}>{row.description}</Text>
+                          <Text style={styles.dayMeta}>
+                            {row.category} •{' '}
+                            {row.status === 'paid' || row.status === 'received'
+                              ? `baixado em ${dateBR(row.settlement_date)}`
+                              : `vence ${dateBR(row.due_date)}`}
+                          </Text>
+                        </View>
+
+                        <Text style={styles.dayAmount}>{money(row.amount)}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyText}>Nada nesse período.</Text>
+                  )}
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
