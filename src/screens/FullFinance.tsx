@@ -5,7 +5,6 @@ import { router } from 'expo-router';
 
 import { AccountPicker } from '@/components/AccountPicker';
 import { AccountsModal } from '@/components/AccountsModal';
-import { RecurringRulesModal } from '@/components/RecurringRulesModal';
 import { AdminShell } from '@/components/AdminShell';
 import { MetricCard } from '@/components/MetricCard';
 import { SearchBar } from '@/components/SearchBar';
@@ -19,10 +18,12 @@ import {
 } from '@/components/FormKit';
 import {
   commandMessage,
+  createRecurringRule,
   enqueue,
   getFull,
   getMonthlyFinanceReport,
   setEntryAccount,
+  updateRecurringRule,
 } from '@/services/fullApi';
 import { useToast } from '@/components/Toast';
 import { theme } from '@/constants/theme';
@@ -89,7 +90,6 @@ export default function FullFinance() {
   const [monthlyError, setMonthlyError] = useState('');
 
   const [accountsOpen, setAccountsOpen] = useState(false);
-  const [recurringOpen, setRecurringOpen] = useState(false);
 
   async function loadMonthlyReport(month: string) {
     try {
@@ -221,6 +221,10 @@ export default function FullFinance() {
       dueDate:
         row?.due_date || today(),
       notes: row?.notes || '',
+      recurringRuleId: row?.recurring_rule_id || null,
+      recurring: false,
+      recurringAmountMode: 'fixed',
+      recurringEndMonth: '',
     });
 
     setOpen(true);
@@ -264,7 +268,34 @@ export default function FullFinance() {
       setBusy(true);
       setError('');
 
-      if (mode === 'entry') {
+      if (mode === 'entry' && form.recurring && !form.id) {
+        const amount = Number(
+          String(form.amount || '0').replace(',', '.')
+        );
+        const dueDay = Number(String(form.dueDate || '').slice(8, 10)) || 1;
+        const startMonth = String(form.dueDate || '').slice(0, 7);
+        const result = await createRecurringRule({
+          type: form.type,
+          description: form.description,
+          category_id: form.categoryId,
+          supplier_id: form.supplierId || null,
+          amount,
+          amount_mode: form.recurringAmountMode || 'fixed',
+          due_day: dueDay,
+          start_month: startMonth,
+          end_month: form.recurringEndMonth || null,
+          notes: form.notes || '',
+          active: true,
+        });
+        setOpen(false);
+        showToast(
+          `Conta recorrente criada. ${result?.created || 0} parcela(s) gerada(s) automaticamente.`
+        );
+        setTimeout(() => {
+          load();
+        }, 1200);
+        return;
+      } else if (mode === 'entry') {
         await enqueue(
           'finance',
           'FINANCIAL_ENTRY_UPSERT',
@@ -348,6 +379,36 @@ export default function FullFinance() {
     }
   }
 
+  async function stopRecurring() {
+    if (!form.recurringRuleId) return;
+    try {
+      setBusy(true);
+      setError('');
+
+      const confirmed = await confirmAction(
+        'Parar recorrência',
+        'As parcelas já geradas continuam existindo, mas nenhum mês novo será criado a partir de agora. Confirma?'
+      );
+      if (!confirmed) return;
+
+      await updateRecurringRule(form.recurringRuleId, { active: false });
+      setOpen(false);
+      showToast('Recorrência parada. As parcelas já geradas continuam normalmente.');
+
+      setTimeout(() => {
+        load();
+      }, 1200);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Falha ao parar a recorrência.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function reverse(row: any) {
     try {
       setError('');
@@ -425,12 +486,6 @@ export default function FullFinance() {
             label="Contas"
             tone="plain"
             onPress={() => setAccountsOpen(true)}
-          />
-
-          <ActionButton
-            label="Contas fixas"
-            tone="plain"
-            onPress={() => setRecurringOpen(true)}
           />
 
           <ActionButton
@@ -518,6 +573,7 @@ export default function FullFinance() {
                     <View style={s.main}>
                       <Text style={s.name}>
                         {row.description}
+                        {row.recurring_rule_id ? ' 🔁' : ''}
                       </Text>
 
                       <Text style={s.meta}>
@@ -834,6 +890,59 @@ export default function FullFinance() {
               }
               multiline
             />
+
+            {form.id && form.recurringRuleId ? (
+              <>
+                <Notice
+                  text='Esta conta faz parte de uma recorrência (se repete todo mês). Editar aqui só muda esta parcela.'
+                  tone="ok"
+                />
+
+                <ActionButton
+                  label="Parar recorrência (não gerar mais meses)"
+                  tone="danger"
+                  onPress={stopRecurring}
+                />
+              </>
+            ) : !form.id ? (
+              <>
+                <Choice
+                  label="Recorrência"
+                  value={form.recurring ? '1' : '0'}
+                  onChange={(value) =>
+                    set('recurring', value === '1')
+                  }
+                  options={[
+                    { label: 'Não (lançamento único)', value: '0' },
+                    { label: 'Sim (repete todo mês)', value: '1' },
+                  ]}
+                />
+
+                {form.recurring && (
+                  <>
+                    <Choice
+                      label="O valor é sempre igual ou muda todo mês?"
+                      value={form.recurringAmountMode || 'fixed'}
+                      onChange={(value) =>
+                        set('recurringAmountMode', value)
+                      }
+                      options={[
+                        { label: 'Fixo (sempre igual)', value: 'fixed' },
+                        { label: 'Estimado (costuma variar)', value: 'estimated' },
+                      ]}
+                    />
+
+                    <Field
+                      label="Repetir até quando (AAAA-MM, deixe em branco se não tiver fim)"
+                      value={form.recurringEndMonth || ''}
+                      onChangeText={(value) =>
+                        set('recurringEndMonth', value)
+                      }
+                    />
+                  </>
+                )}
+              </>
+            ) : null}
           </>
         ) : mode === 'settle' ? (
           <>
@@ -1138,14 +1247,6 @@ export default function FullFinance() {
       <AccountsModal
         visible={accountsOpen}
         onClose={() => setAccountsOpen(false)}
-        onChanged={load}
-      />
-
-      <RecurringRulesModal
-        visible={recurringOpen}
-        onClose={() => setRecurringOpen(false)}
-        categories={categories}
-        suppliers={suppliers}
         onChanged={load}
       />
     </AdminShell>
