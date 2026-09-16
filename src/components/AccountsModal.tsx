@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AccountPicker } from '@/components/AccountPicker';
-import { ActionButton, Choice, Field, Notice, formStyles as s } from '@/components/FormKit';
+import { ActionButton, Choice, Field, Notice, confirmAction, formStyles as s } from '@/components/FormKit';
 import {
   createAccount,
   createTransfer,
@@ -14,15 +14,6 @@ import {
   updateAccount,
 } from '@/services/fullApi';
 import { theme } from '@/constants/theme';
-
-function confirmAction(title: string, message: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(title, message, [
-      { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
-      { text: 'Excluir', style: 'destructive', onPress: () => resolve(true) },
-    ], { cancelable: true, onDismiss: () => resolve(false) });
-  });
-}
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { router } from 'expo-router';
 
@@ -14,6 +14,7 @@ import {
   Field,
   FormModal,
   Notice,
+  confirmAction,
   formStyles as s,
 } from '@/components/FormKit';
 import {
@@ -27,15 +28,6 @@ import {
 } from '@/services/fullApi';
 import { useToast } from '@/components/Toast';
 import { theme } from '@/constants/theme';
-
-function confirmAction(title: string, message: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    Alert.alert(title, message, [
-      { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
-      { text: 'Confirmar', style: 'destructive', onPress: () => resolve(true) },
-    ], { cancelable: true, onDismiss: () => resolve(false) });
-  });
-}
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -88,6 +80,30 @@ export default function FullFinance() {
   const [monthlyData, setMonthlyData] = useState<any>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [monthlyError, setMonthlyError] = useState('');
+  const [reportView, setReportView] = useState('dre');
+
+  const reportRows = useMemo(() => {
+    if (reportView === 'dre' || !data) return [];
+    const entries = data.entries || [];
+    const inMonth = (value: string) => (value || '').startsWith(monthlyMonth);
+    if (reportView === 'payable_open')
+      return entries.filter(
+        (e: any) => e.type === 'payable' && ['open', 'overdue'].includes(e.status) && inMonth(e.due_date)
+      );
+    if (reportView === 'receivable_open')
+      return entries.filter(
+        (e: any) => e.type === 'receivable' && ['open', 'overdue'].includes(e.status) && inMonth(e.due_date)
+      );
+    if (reportView === 'payable_paid')
+      return entries.filter(
+        (e: any) => e.type === 'payable' && e.status === 'paid' && inMonth(e.settlement_date)
+      );
+    if (reportView === 'receivable_paid')
+      return entries.filter(
+        (e: any) => e.type === 'receivable' && e.status === 'received' && inMonth(e.settlement_date)
+      );
+    return [];
+  }, [reportView, data, monthlyMonth]);
 
   const [accountsOpen, setAccountsOpen] = useState(false);
 
@@ -222,9 +238,9 @@ export default function FullFinance() {
         row?.due_date || today(),
       notes: row?.notes || '',
       recurringRuleId: row?.recurring_rule_id || null,
-      recurring: false,
+      recurringMode: 'none',
       recurringAmountMode: 'fixed',
-      recurringEndMonth: '',
+      recurringMonthsCount: '',
     });
 
     setOpen(true);
@@ -268,12 +284,27 @@ export default function FullFinance() {
       setBusy(true);
       setError('');
 
-      if (mode === 'entry' && form.recurring && !form.id) {
+      if (
+        mode === 'entry' &&
+        form.recurringMode &&
+        form.recurringMode !== 'none' &&
+        !form.id
+      ) {
         const amount = Number(
           String(form.amount || '0').replace(',', '.')
         );
         const dueDay = Number(String(form.dueDate || '').slice(8, 10)) || 1;
         const startMonth = String(form.dueDate || '').slice(0, 7);
+        let endMonth: string | null = null;
+        if (form.recurringMode === 'months') {
+          const count = Number(form.recurringMonthsCount || '0');
+          if (!(count >= 1)) {
+            setError('Informe quantos meses (1 ou mais).');
+            setBusy(false);
+            return;
+          }
+          endMonth = shiftMonth(startMonth, count - 1);
+        }
         const result = await createRecurringRule({
           type: form.type,
           description: form.description,
@@ -283,7 +314,7 @@ export default function FullFinance() {
           amount_mode: form.recurringAmountMode || 'fixed',
           due_day: dueDay,
           start_month: startMonth,
-          end_month: form.recurringEndMonth || null,
+          end_month: endMonth,
           notes: form.notes || '',
           active: true,
         });
@@ -790,7 +821,7 @@ export default function FullFinance() {
               }
             />
 
-            <Choice
+            <AccountPicker
               label="Categoria *"
               value={
                 form.categoryId || ''
@@ -801,6 +832,8 @@ export default function FullFinance() {
                   value
                 )
               }
+              allowEmpty={false}
+              emptyLabel="Selecione a categoria"
               options={categories.map(
                 (category: any) => ({
                   label:
@@ -814,7 +847,7 @@ export default function FullFinance() {
 
             {form.type ===
               'payable' && (
-              <Choice
+              <AccountPicker
                 label="Fornecedor"
                 value={
                   form.supplierId || ''
@@ -825,22 +858,16 @@ export default function FullFinance() {
                     value
                   )
                 }
-                options={[
-                  {
+                emptyLabel="Sem fornecedor"
+                options={suppliers.map(
+                  (supplier) => ({
                     label:
-                      'Sem fornecedor',
-                    value: '',
-                  },
-                  ...suppliers.map(
-                    (supplier) => ({
-                      label:
-                        supplier.name,
-                      value: String(
-                        supplier.id
-                      ),
-                    })
-                  ),
-                ]}
+                      supplier.name,
+                    value: String(
+                      supplier.id
+                    ),
+                  })
+                )}
               />
             )}
 
@@ -907,39 +934,42 @@ export default function FullFinance() {
             ) : !form.id ? (
               <>
                 <Choice
-                  label="Recorrência"
-                  value={form.recurring ? '1' : '0'}
+                  label="Repetição"
+                  value={form.recurringMode || 'none'}
                   onChange={(value) =>
-                    set('recurring', value === '1')
+                    set('recurringMode', value)
                   }
                   options={[
-                    { label: 'Não (lançamento único)', value: '0' },
-                    { label: 'Sim (repete todo mês)', value: '1' },
+                    { label: 'Não repete', value: 'none' },
+                    { label: 'Repete todo mês', value: 'forever' },
+                    { label: 'Repete por um período', value: 'months' },
                   ]}
                 />
 
-                {form.recurring && (
-                  <>
-                    <Choice
-                      label="O valor é sempre igual ou muda todo mês?"
-                      value={form.recurringAmountMode || 'fixed'}
-                      onChange={(value) =>
-                        set('recurringAmountMode', value)
-                      }
-                      options={[
-                        { label: 'Fixo (sempre igual)', value: 'fixed' },
-                        { label: 'Estimado (costuma variar)', value: 'estimated' },
-                      ]}
-                    />
+                {form.recurringMode === 'months' && (
+                  <Field
+                    label="Quantos meses (incluindo este)?"
+                    value={form.recurringMonthsCount || ''}
+                    onChangeText={(value) =>
+                      set('recurringMonthsCount', value)
+                    }
+                    keyboardType="decimal-pad"
+                    placeholder="Ex.: 12"
+                  />
+                )}
 
-                    <Field
-                      label="Repetir até quando (AAAA-MM, deixe em branco se não tiver fim)"
-                      value={form.recurringEndMonth || ''}
-                      onChangeText={(value) =>
-                        set('recurringEndMonth', value)
-                      }
-                    />
-                  </>
+                {form.recurringMode && form.recurringMode !== 'none' && (
+                  <Choice
+                    label="O valor é sempre igual ou muda todo mês?"
+                    value={form.recurringAmountMode || 'fixed'}
+                    onChange={(value) =>
+                      set('recurringAmountMode', value)
+                    }
+                    options={[
+                      { label: 'Fixo (sempre igual)', value: 'fixed' },
+                      { label: 'Estimado (costuma variar)', value: 'estimated' },
+                    ]}
+                  />
                 )}
               </>
             ) : null}
@@ -1040,6 +1070,21 @@ export default function FullFinance() {
               </Pressable>
             </View>
 
+            <View style={monthlyStyles.reportPicker}>
+              <Choice
+                label="Relatório"
+                value={reportView}
+                onChange={setReportView}
+                options={[
+                  { label: 'Resumo do mês', value: 'dre' },
+                  { label: 'Contas a pagar', value: 'payable_open' },
+                  { label: 'Contas a receber', value: 'receivable_open' },
+                  { label: 'Contas pagas', value: 'payable_paid' },
+                  { label: 'Contas recebidas', value: 'receivable_paid' },
+                ]}
+              />
+            </View>
+
             <View style={monthlyStyles.monthNav}>
               <Pressable
                 style={monthlyStyles.monthArrow}
@@ -1083,11 +1128,38 @@ export default function FullFinance() {
                 <Notice text={monthlyError} tone="error" />
               )}
 
-              {monthlyLoading && !monthlyData && (
+              {reportView !== 'dre' && (
+                <View style={s.card}>
+                  <Text style={s.cardTitle}>
+                    {monthLabel(monthlyMonth)} • {reportRows.length} lançamento(s)
+                  </Text>
+
+                  {reportRows.length === 0 ? (
+                    <Text style={s.empty}>Nada nesse período.</Text>
+                  ) : (
+                    reportRows.map((row: any) => (
+                      <View key={row.id} style={s.row}>
+                        <View style={s.main}>
+                          <Text style={s.name}>{row.description}</Text>
+                          <Text style={s.meta}>
+                            {row.category} •{' '}
+                            {row.status === 'paid' || row.status === 'received'
+                              ? `baixado em ${row.settlement_date}`
+                              : `vence ${row.due_date}`}
+                          </Text>
+                        </View>
+                        <Text style={s.amount}>{money(row.amount)}</Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+
+              {monthlyLoading && !monthlyData && reportView === 'dre' && (
                 <Text style={s.empty}>Carregando...</Text>
               )}
 
-              {!!monthlyData && (
+              {reportView === 'dre' && !!monthlyData && (
                 <>
                   <View style={s.grid}>
                     <MetricCard
@@ -1281,6 +1353,9 @@ function SummaryLine({
 }
 
 const monthlyStyles = StyleSheet.create({
+  reportPicker: {
+    marginTop: 12,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

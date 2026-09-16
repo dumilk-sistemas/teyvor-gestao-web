@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AccountPicker } from '@/components/AccountPicker';
@@ -156,6 +156,28 @@ export default function FullCashFlow() {
   const totalOut = data ? data.totals?.realized_out + data.totals?.forecast_out : 0;
   const todayIso = isoFromDate(new Date());
 
+  const byCategory = useMemo(() => {
+    if (!data?.rows) return [];
+    const groups: Record<string, { in: number; out: number; inForecast: number; outForecast: number }> = {};
+    for (const day of data.rows) {
+      for (const item of day.items || []) {
+        const key = item.category || 'Sem categoria';
+        const g = groups[key] || { in: 0, out: 0, inForecast: 0, outForecast: 0 };
+        if (item.kind === 'in') {
+          if (item.realized) g.in += item.amount;
+          else g.inForecast += item.amount;
+        } else {
+          if (item.realized) g.out += item.amount;
+          else g.outForecast += item.amount;
+        }
+        groups[key] = g;
+      }
+    }
+    return Object.entries(groups)
+      .map(([category, v]) => ({ category, ...v, total: v.in + v.inForecast - v.out - v.outForecast }))
+      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+  }, [data]);
+
   return (
     <AdminShell
       title="Fluxo de Caixa"
@@ -291,6 +313,7 @@ export default function FullCashFlow() {
       {!!data && !data.no_accounts && (
         <>
           <View style={s.grid}>
+            <MetricCard label="Saldo inicial" value={money(data.opening_balance)} />
             <MetricCard label="Entradas no período" value={money(totalIn)} />
             <MetricCard label="Saídas no período" value={money(totalOut)} />
             <MetricCard
@@ -298,7 +321,46 @@ export default function FullCashFlow() {
               value={money(data.closing_balance)}
               tone={data.closing_balance < 0 ? 'warning' : 'default'}
             />
+            <MetricCard
+              label="Geração de caixa do período"
+              value={money(data.totals?.net || 0)}
+              tone={(data.totals?.net || 0) < 0 ? 'warning' : 'default'}
+              note="Entradas menos saídas do período"
+            />
           </View>
+
+          {byCategory.length > 0 && (
+            <View style={s.card}>
+              <Text style={s.cardTitle}>Fluxo por categoria</Text>
+
+              {byCategory.map((cat) => (
+                <View key={cat.category} style={s.row}>
+                  <View style={s.main}>
+                    <Text style={s.name}>{cat.category}</Text>
+                    <Text style={s.meta}>
+                      {cat.in + cat.inForecast > 0
+                        ? `Entra ${money(cat.in + cat.inForecast)}${
+                            cat.inForecast > 0 ? ` (previsto ${money(cat.inForecast)})` : ''
+                          }`
+                        : ''}
+                      {cat.out + cat.outForecast > 0
+                        ? ` ${cat.in + cat.inForecast > 0 ? '• ' : ''}Sai ${money(cat.out + cat.outForecast)}${
+                            cat.outForecast > 0 ? ` (previsto ${money(cat.outForecast)})` : ''
+                          }`
+                        : ''}
+                    </Text>
+                  </View>
+
+                  <Text
+                    style={[styles.categoryTotal, cat.total < 0 && { color: '#A63D40' }]}
+                  >
+                    {cat.total >= 0 ? '+' : ''}
+                    {money(cat.total)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={s.card}>
             <Text style={s.cardTitle}>
@@ -392,6 +454,11 @@ export default function FullCashFlow() {
 }
 
 const styles = StyleSheet.create({
+  categoryTotal: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: theme.colors.text,
+  },
   dayBlock: {
     padding: 15,
     borderTopWidth: 1,

@@ -23,6 +23,16 @@ export function FormModal({visible,title,children,onCancel,onSave,saveLabel='Sal
 
 export function Notice({text,tone='ok'}:{text:string;tone?:'ok'|'error'}){return <View style={[styles.notice,tone==='error'&&styles.noticeError]}><Text style={[styles.noticeText,tone==='error'&&styles.noticeErrorText]}>{text}</Text></View>}
 
+// react-native-web nao implementa Alert.alert (e' um metodo vazio),
+// entao qualquer confirmacao baseada nele nunca aparece e a Promise
+// nunca resolve -- usa o confirm() nativo do navegador em vez disso.
+export function confirmAction(title: string, message: string): Promise<boolean> {
+  if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
+  return Promise.resolve(true);
+}
+
 export const formStyles=StyleSheet.create({
   grid:{flexDirection:'row',flexWrap:'wrap',gap:10},card:{backgroundColor:'#FFF',borderWidth:1,borderColor:theme.colors.border,borderRadius:theme.radius.md,overflow:'hidden'},
   cardTitle:{fontSize:18,fontWeight:'900',padding:16,color:theme.colors.text},row:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:12,padding:15,borderTopWidth:1,borderTopColor:theme.colors.border},
