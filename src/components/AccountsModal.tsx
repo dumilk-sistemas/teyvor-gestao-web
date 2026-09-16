@@ -1,18 +1,29 @@
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AccountPicker } from '@/components/AccountPicker';
 import { ActionButton, Choice, Field, Notice, formStyles as s } from '@/components/FormKit';
 import {
   createAccount,
   createTransfer,
+  deleteAccount,
   getAccounts,
   getPaymentMapping,
   getTransfers,
   setPaymentMapping,
   updateAccount,
 } from '@/services/fullApi';
+import { useToast } from '@/components/Toast';
 import { theme } from '@/constants/theme';
+
+function confirmAction(title: string, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(title, message, [
+      { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+      { text: 'Excluir', style: 'destructive', onPress: () => resolve(true) },
+    ], { cancelable: true, onDismiss: () => resolve(false) });
+  });
+}
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -66,11 +77,19 @@ export function AccountsModal({
   onClose: () => void;
   onChanged?: () => void;
 }) {
+  const { showToast } = useToast();
+  const scrollRef = useRef<ScrollView>(null);
+
   const [accounts, setAccounts] = useState<any[]>([]);
   const [mapping, setMapping] = useState<Record<string, number | null>>({});
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  function showError(message: string) {
+    setError(message);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }
 
   const [newAccountOpen, setNewAccountOpen] = useState(false);
   const [form, setForm] = useState<any>(emptyAccountForm);
@@ -97,7 +116,7 @@ export function AccountsModal({
       setMapping(mapRes.mapping || {});
       setTransfers(trRes.transfers || []);
     } catch (e: any) {
-      setError(e?.message || 'Não foi possível carregar as contas.');
+      showError(e?.message || 'Não foi possível carregar as contas.');
     } finally {
       setLoading(false);
     }
@@ -110,7 +129,7 @@ export function AccountsModal({
 
   async function saveAccount() {
     if (!form.name.trim()) {
-      setError('Informe o nome da conta.');
+      showError('Informe o nome da conta.');
       return;
     }
     try {
@@ -125,10 +144,11 @@ export function AccountsModal({
       });
       setForm(emptyAccountForm);
       setNewAccountOpen(false);
+      showToast('Conta criada.');
       await load();
       onChanged?.();
     } catch (e: any) {
-      setError(e?.message || 'Não foi possível criar a conta.');
+      showError(e?.message || 'Não foi possível criar a conta.');
     } finally {
       setBusy(false);
     }
@@ -137,20 +157,38 @@ export function AccountsModal({
   async function toggleDefault(id: number) {
     try {
       await updateAccount(id, { is_default: true });
+      showToast('Conta padrão atualizada.');
       await load();
       onChanged?.();
     } catch (e: any) {
-      setError(e?.message || 'Falha ao definir conta padrão.');
+      showError(e?.message || 'Falha ao definir conta padrão.');
     }
   }
 
   async function toggleActive(account: any) {
     try {
       await updateAccount(account.id, { active: !account.active });
+      showToast(account.active ? 'Conta desativada.' : 'Conta ativada.');
       await load();
       onChanged?.();
     } catch (e: any) {
-      setError(e?.message || 'Falha ao atualizar conta.');
+      showError(e?.message || 'Falha ao atualizar conta.');
+    }
+  }
+
+  async function removeAccount(account: any) {
+    const ok = await confirmAction(
+      'Excluir conta',
+      `Tem certeza que quer excluir "${account.name}"? Essa ação não pode ser desfeita.`
+    );
+    if (!ok) return;
+    try {
+      await deleteAccount(account.id);
+      showToast('Conta excluída.');
+      await load();
+      onChanged?.();
+    } catch (e: any) {
+      showError(e?.message || 'Não foi possível excluir a conta.');
     }
   }
 
@@ -174,7 +212,7 @@ export function AccountsModal({
   async function saveEdit() {
     if (!editingId) return;
     if (!editForm.name.trim()) {
-      setError('Informe o nome da conta.');
+      showError('Informe o nome da conta.');
       return;
     }
     try {
@@ -187,10 +225,11 @@ export function AccountsModal({
         opening_date: editForm.opening_date,
       });
       cancelEdit();
+      showToast('Conta atualizada.');
       await load();
       onChanged?.();
     } catch (e: any) {
-      setError(e?.message || 'Não foi possível salvar as alterações.');
+      showError(e?.message || 'Não foi possível salvar as alterações.');
     } finally {
       setEditBusy(false);
     }
@@ -198,12 +237,16 @@ export function AccountsModal({
 
   async function changeMapping(method: string, value: string) {
     const accountId = value ? Number(value) : null;
+    const previous = mapping[method] ?? null;
     setMapping((prev) => ({ ...prev, [method]: accountId }));
     try {
       await setPaymentMapping({ [method]: accountId });
+      const target = accountId === null ? '(sem conta)' : accountName(accounts, accountId);
+      showToast(`"${method}" agora vai para ${target}.`);
       onChanged?.();
     } catch (e: any) {
-      setError(e?.message || 'Falha ao salvar mapeamento.');
+      setMapping((prev) => ({ ...prev, [method]: previous }));
+      showError(e?.message || 'Falha ao salvar mapeamento.');
     }
   }
 
@@ -257,7 +300,7 @@ export function AccountsModal({
             </Pressable>
           </View>
 
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
             {!!error && <Notice text={error} tone="error" />}
 
             <View style={s.card}>
@@ -353,6 +396,10 @@ export function AccountsModal({
                           <Text style={styles.linkAction}>
                             {acc.active ? 'Desativar' : 'Ativar'}
                           </Text>
+                        </Pressable>
+
+                        <Pressable onPress={() => removeAccount(acc)}>
+                          <Text style={[styles.linkAction, styles.linkActionDanger]}>Excluir</Text>
                         </Pressable>
                       </View>
 
@@ -563,6 +610,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: theme.colors.text,
     textDecorationLine: 'underline',
+  },
+  linkActionDanger: {
+    color: theme.colors.danger,
   },
   cardNote: {
     fontSize: 12,

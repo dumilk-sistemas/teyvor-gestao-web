@@ -3,6 +3,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:8000/api/v1';
 const TOKEN_KEY = 'dumilk_admin_token';
 
+// O FastAPI manda `detail` como string na maioria dos erros, mas em
+// erro de validacao (422) manda uma lista de objetos -- sem isso,
+// `new Error(detail)` vira o texto inutil "[object Object]".
+function detailToMessage(detail: unknown): string {
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((item) => (item && typeof item === 'object' ? item.msg || JSON.stringify(item) : String(item))).join(' ');
+  }
+  return 'Não foi possível concluir a operação.';
+}
+
 export async function fullRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await AsyncStorage.getItem(TOKEN_KEY);
   const response = await fetch(`${BASE_URL}${path}`, {
@@ -15,7 +26,7 @@ export async function fullRequest<T>(path: string, options: RequestInit = {}): P
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || 'Não foi possível concluir a operação.');
+    throw new Error(detailToMessage(body.detail));
   }
   return response.json();
 }
@@ -89,6 +100,12 @@ export async function updateAccount(id: number, payload: Record<string, unknown>
   return fullRequest<any>(`/admin/accounts/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAccount(id: number) {
+  return fullRequest<any>(`/admin/accounts/${id}`, {
+    method: 'DELETE',
   });
 }
 
