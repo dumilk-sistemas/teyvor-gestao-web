@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AccountPicker } from '@/components/AccountPicker';
-import { ActionButton, Choice, Field, Notice, confirmAction, formStyles as s } from '@/components/FormKit';
+import { ActionButton, Choice, Field, Notice, formStyles as s } from '@/components/FormKit';
 import {
   createAccount,
   createTransfer,
@@ -28,7 +28,21 @@ const isoToBR = (value: string) => {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
 };
 
-const toNumber = (value: string) => Number(String(value).replace(',', '.')) || 0;
+const toNumber = (value: string) => {
+  const raw = String(value || '').trim().replace(/[^\d,.-]/g, '');
+  const comma = raw.lastIndexOf(',');
+  const dot = raw.lastIndexOf('.');
+  let normalized = raw;
+  if (comma >= 0 && dot >= 0) {
+    normalized = comma > dot ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '');
+  } else if (comma >= 0) {
+    normalized = raw.replace(/\./g, '').replace(',', '.');
+  } else if ((raw.match(/\./g) || []).length > 1) {
+    normalized = raw.replace(/\./g, '');
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 const PAYMENT_METHODS = ['Dinheiro', 'Pix', 'Débito', 'Crédito', 'Outros'];
 
@@ -98,6 +112,9 @@ export function AccountsModal({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<any>(emptyAccountForm);
   const [editBusy, setEditBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const [transferForm, setTransferForm] = useState<any>(emptyTransferForm);
   const [transferBusy, setTransferBusy] = useState(false);
@@ -176,19 +193,42 @@ export function AccountsModal({
     }
   }
 
-  async function removeAccount(account: any) {
-    const ok = await confirmAction(
-      'Excluir conta',
-      `Tem certeza que quer excluir "${account.name}"? Essa ação não pode ser desfeita.`
-    );
-    if (!ok) return;
+  function askRemoveAccount(account: any) {
+    setDeleteError('');
+    setDeleteTarget(account);
+  }
+
+  async function removeAccount() {
+    if (!deleteTarget) return;
     try {
-      await deleteAccount(account.id);
+      setDeleteBusy(true);
+      setDeleteError('');
+      await deleteAccount(deleteTarget.id);
+      setDeleteTarget(null);
       showToast('Conta excluída.');
       await load();
       onChanged?.();
     } catch (e: any) {
-      showError(e?.message || 'Não foi possível excluir a conta.');
+      setDeleteError(e?.message || 'Não foi possível excluir a conta.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
+  async function deactivateBlockedAccount() {
+    if (!deleteTarget) return;
+    try {
+      setDeleteBusy(true);
+      setDeleteError('');
+      await updateAccount(deleteTarget.id, { active: false });
+      setDeleteTarget(null);
+      showToast('A conta foi desativada e o histórico financeiro foi preservado.');
+      await load();
+      onChanged?.();
+    } catch (e: any) {
+      setDeleteError(e?.message || 'Não foi possível desativar a conta.');
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -289,6 +329,7 @@ export function AccountsModal({
     .map((a) => ({ label: a.name, value: String(a.id) }));
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.modal}>
@@ -399,7 +440,7 @@ export function AccountsModal({
                           </Text>
                         </Pressable>
 
-                        <Pressable onPress={() => removeAccount(acc)}>
+                        <Pressable onPress={() => askRemoveAccount(acc)}>
                           <Text style={[styles.linkAction, styles.linkActionDanger]}>Excluir</Text>
                         </Pressable>
                       </View>
@@ -544,10 +585,169 @@ export function AccountsModal({
         </View>
       </View>
     </Modal>
+
+    <Modal
+      visible={!!deleteTarget}
+      transparent
+      animationType="fade"
+      onRequestClose={() => !deleteBusy && setDeleteTarget(null)}
+    >
+      <View style={styles.deleteBackdrop}>
+        <View style={styles.deleteModal}>
+          <View style={styles.deleteIcon}>
+            <Text style={styles.deleteIconText}>!</Text>
+          </View>
+
+          <Text style={styles.deleteTitle}>Excluir conta financeira?</Text>
+          <Text style={styles.deleteText}>
+            Você está prestes a excluir permanentemente a conta{' '}
+            <Text style={styles.deleteAccountName}>{deleteTarget?.name || ''}</Text>.
+          </Text>
+
+          <View style={styles.deleteSummary}>
+            <Text style={styles.deleteSummaryLabel}>Saldo atual calculado</Text>
+            <Text style={[
+              styles.deleteSummaryValue,
+              Number(deleteTarget?.current_balance || 0) < 0 && { color: theme.colors.danger },
+            ]}>
+              {money(Number(deleteTarget?.current_balance || 0))}
+            </Text>
+          </View>
+
+          <Text style={styles.deleteWarning}>
+            Essa ação não pode ser desfeita. Se houver transferências vinculadas, a exclusão será bloqueada para preservar o histórico financeiro.
+          </Text>
+
+          {!!deleteError && (
+            <View style={styles.deleteErrorArea}>
+              <Notice text={deleteError} tone="error" />
+              {!deleteTarget?.active ? (
+                <Text style={styles.deleteHelp}>Esta conta já está desativada. Você pode mantê-la assim sem afetar os relatórios anteriores.</Text>
+              ) : (
+                <Text style={styles.deleteHelp}>Você pode desativar a conta: ela deixa de ser usada em novos movimentos, mas o histórico permanece correto.</Text>
+              )}
+            </View>
+          )}
+
+          <View style={styles.deleteActions}>
+            <ActionButton
+              label="Cancelar"
+              tone="plain"
+              disabled={deleteBusy}
+              onPress={() => {
+                setDeleteError('');
+                setDeleteTarget(null);
+              }}
+            />
+            {!!deleteError && deleteTarget?.active && (
+              <ActionButton
+                label="Desativar conta"
+                tone="plain"
+                disabled={deleteBusy}
+                onPress={deactivateBlockedAccount}
+              />
+            )}
+            {!deleteError && (
+              <ActionButton
+                label={deleteBusy ? 'Excluindo...' : 'Excluir definitivamente'}
+                tone="danger"
+                disabled={deleteBusy}
+                onPress={removeAccount}
+              />
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  deleteBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(13,17,23,0.68)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 18,
+  },
+  deleteModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    maxWidth: 500,
+    padding: 22,
+    width: '100%',
+  },
+  deleteIcon: {
+    alignItems: 'center',
+    backgroundColor: '#FDECEC',
+    borderRadius: 22,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  deleteIconText: {
+    color: theme.colors.danger,
+    fontFamily: 'Sora_800ExtraBold',
+    fontSize: 22,
+  },
+  deleteTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 20,
+    marginTop: 14,
+  },
+  deleteText: {
+    color: theme.colors.muted,
+    fontSize: 13.5,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  deleteAccountName: {
+    color: theme.colors.text,
+    fontWeight: '900',
+  },
+  deleteSummary: {
+    alignItems: 'center',
+    backgroundColor: '#F7F6F3',
+    borderRadius: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    padding: 13,
+  },
+  deleteSummaryLabel: {
+    color: theme.colors.muted,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  deleteSummaryValue: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  deleteWarning: {
+    color: '#784749',
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 14,
+  },
+  deleteErrorArea: {
+    gap: 8,
+    marginTop: 14,
+  },
+  deleteHelp: {
+    color: theme.colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  deleteActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'flex-end',
+    marginTop: 20,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

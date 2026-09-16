@@ -128,12 +128,30 @@ export function AdminShell({
     router.push(href as never);
   }
 
+  function goBack() {
+    if (['/payables', '/receivables', '/cashflow'].includes(pathname)) {
+      router.replace('/finance');
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/dashboard');
+  }
+
   function routeIsActive(href: string) {
     if (pathname === href) return true;
     return href === '/finance' && ['/payables', '/receivables', '/cashflow'].includes(pathname);
   }
 
   const moreActive = visibleMoreNav.some(([href]) => routeIsActive(href));
+  const backButton = pathname !== '/dashboard' ? (
+    <Pressable style={[styles.backButton, mobile && styles.mobileBackButton]} onPress={goBack}>
+      <Feather name="arrow-left" size={15} color={mobile ? '#FFFFFF' : c.text} />
+      <Text style={[styles.backButtonText, mobile && styles.mobileBackButtonText]}>Voltar</Text>
+    </Pressable>
+  ) : null;
 
   const defaultRefreshButton = onRefresh ? (
     <Pressable
@@ -218,6 +236,7 @@ export function AdminShell({
           >
             <View style={styles.pageHeadRow}>
               <View style={styles.titleArea}>
+                {backButton}
                 <Text style={styles.desktopTitle}>{title}</Text>
 
                 <Text style={styles.subtitle}>
@@ -260,6 +279,7 @@ export function AdminShell({
       >
         <View style={styles.brandRow}>
           <View style={styles.titleArea}>
+            {backButton}
             <Text style={styles.eyebrow}>
               {c.brandName} GESTÃO 360
             </Text>
@@ -338,6 +358,7 @@ export function AdminShell({
   return (
     <View style={styles.mobileRoot}>
       <View style={styles.mobileHeader}>
+        {backButton}
         <View style={styles.mobileHeaderText}>
           <Text style={styles.mobileEyebrow}>
             {c.brandName} GESTÃO 360
@@ -687,6 +708,38 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   titleArea: {
     flex: 1,
+  },
+
+  backButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: c.surface,
+    borderColor: c.border,
+    borderRadius: 9,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+
+  backButtonText: {
+    color: c.text,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  mobileBackButton: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.15)',
+    marginBottom: 0,
+    marginRight: 10,
+    paddingHorizontal: 8,
+  },
+
+  mobileBackButtonText: {
+    color: '#FFFFFF',
   },
 
   eyebrow: {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { router } from 'expo-router';
@@ -64,10 +64,42 @@ const shiftDate = (iso: string, deltaDays: number) => {
   ).padStart(2, '0')}`;
 };
 
+const parseMoneyInput = (value: unknown) => {
+  const raw = String(value ?? '').trim().replace(/[^\d,.-]/g, '');
+  if (!raw) return 0;
+
+  const lastComma = raw.lastIndexOf(',');
+  const lastDot = raw.lastIndexOf('.');
+  let normalized = raw;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    normalized = lastComma > lastDot
+      ? raw.replace(/\./g, '').replace(',', '.')
+      : raw.replace(/,/g, '');
+  } else if (lastComma >= 0) {
+    normalized = raw.replace(/\./g, '').replace(',', '.');
+  } else if ((raw.match(/\./g) || []).length > 1) {
+    normalized = raw.replace(/\./g, '');
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const validIsoDate = (value: unknown) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.getFullYear() === Number(match[1]) &&
+    date.getMonth() === Number(match[2]) - 1 &&
+    date.getDate() === Number(match[3]);
+};
+
 const statusLabel = (status: string) => {
   if (status === 'paid') return 'Pago';
   if (status === 'received') return 'Recebido';
   if (status === 'overdue') return 'Vencido';
+  if (status === 'pending_sync') return 'Sincronizando';
   return 'Em aberto';
 };
 
@@ -83,6 +115,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [mode, setMode] = useState('entry');
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<any>({});
+  const [modalError, setModalError] = useState('');
+  const pendingEntriesRef = useRef<any[]>([]);
   const [search, setSearch] = useState('');
   const [listMonth, setListMonth] = useState(currentMonthString());
 
@@ -164,7 +198,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       String(row.due_date || '').slice(0, 7) === listMonth
     );
     const open = entries
-      .filter((row: any) => ['open', 'overdue'].includes(row.status))
+      .filter((row: any) => ['open', 'overdue', 'pending_sync'].includes(row.status))
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
     const overdue = entries
       .filter((row: any) => row.status === 'overdue')
@@ -173,7 +207,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       .filter((row: any) => ['paid', 'received'].includes(row.status))
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
     const recurring = entries
-      .filter((row: any) => row.recurring_rule_id && ['open', 'overdue'].includes(row.status))
+      .filter((row: any) => row.recurring_rule_id && ['open', 'overdue', 'pending_sync'].includes(row.status))
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
     return { open, overdue, settled, recurring, count: entries.length };
   }, [data, listMonth, view]);
@@ -204,7 +238,20 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       // financeiro normalmente.
       const supplierData = await getFull('suppliers').catch(() => null);
 
-      setData(financeData);
+      const serverEntries = financeData?.entries || [];
+      const stillPending = pendingEntriesRef.current.filter((pending) => {
+        const server = serverEntries.find((row: any) => String(row.id) === String(pending.id));
+        if (!server) return true;
+        return server.description !== pending.description ||
+          Number(server.amount || 0) !== Number(pending.amount || 0) ||
+          server.due_date !== pending.due_date;
+      });
+      pendingEntriesRef.current = stillPending;
+      const pendingIds = new Set(stillPending.map((row) => String(row.id)));
+      setData({
+        ...financeData,
+        entries: [...stillPending, ...serverEntries.filter((row: any) => !pendingIds.has(String(row.id)))],
+      });
       setSuppliers(supplierData?.rows || []);
     } catch (e) {
       setError(
@@ -215,6 +262,40 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function addPendingEntry(entry: any) {
+    if (!entry) return;
+    const category = (data?.categories || []).find(
+      (item: any) => String(item.id) === String(entry.categoryId || '')
+    );
+    const pending = {
+      id: entry.id,
+      type: entry.type || 'payable',
+      description: entry.description || '',
+      category: category?.name || 'Sem categoria',
+      category_id: entry.categoryId || '',
+      supplier_id: entry.supplierId || null,
+      amount: Number(entry.amount || 0),
+      due_date: entry.dueDate || '',
+      competence_date: entry.competenceDate || '',
+      status: 'pending_sync',
+      notes: entry.notes || '',
+      account_id: null,
+      recurring_rule_id: entry.recurringRuleId || null,
+    };
+    pendingEntriesRef.current = [
+      pending,
+      ...pendingEntriesRef.current.filter((row) => String(row.id) !== String(pending.id)),
+    ];
+    setData((current: any) => current ? {
+      ...current,
+      entries: [pending, ...(current.entries || []).filter((row: any) => String(row.id) !== String(pending.id))],
+    } : current);
+  }
+
+  function refreshAfterSync() {
+    [3000, 8000, 16000].forEach((delay) => setTimeout(() => load(), delay));
   }
 
   useEffect(() => {
@@ -235,6 +316,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
     type = 'payable',
     row?: any
   ) => {
+    setModalError('');
     setMode('entry');
 
     setForm({
@@ -265,6 +347,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   };
 
   const startSettle = (row: any) => {
+    setModalError('');
     setMode('settle');
 
     setForm({
@@ -282,6 +365,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const startAnticipate = (
     row: any
   ) => {
+    setModalError('');
     setMode('anticipate');
 
     setForm({
@@ -301,6 +385,31 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
     try {
       setBusy(true);
       setError('');
+      setModalError('');
+
+      if (mode === 'entry') {
+        const amount = parseMoneyInput(form.amount);
+        if (String(form.description || '').trim().length < 2) {
+          setModalError('Informe uma descrição com pelo menos 2 caracteres.');
+          return;
+        }
+        if (!form.categoryId) {
+          setModalError('Selecione uma categoria.');
+          return;
+        }
+        if (amount <= 0) {
+          setModalError('Informe um valor maior que zero. Você pode usar 1500,00 ou 1.500,00.');
+          return;
+        }
+        if (!validIsoDate(form.dueDate)) {
+          setModalError('Informe o vencimento no formato AAAA-MM-DD.');
+          return;
+        }
+        if (form.competenceDate && !validIsoDate(form.competenceDate)) {
+          setModalError('Informe a competência no formato AAAA-MM-DD.');
+          return;
+        }
+      }
 
       if (
         mode === 'entry' &&
@@ -308,17 +417,14 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
         form.recurringMode !== 'none' &&
         !form.id
       ) {
-        const amount = Number(
-          String(form.amount || '0').replace(',', '.')
-        );
+        const amount = parseMoneyInput(form.amount);
         const dueDay = Number(String(form.dueDate || '').slice(8, 10)) || 1;
         const startMonth = String(form.dueDate || '').slice(0, 7);
         let endMonth: string | null = null;
         if (form.recurringMode === 'months') {
           const count = Number(form.recurringMonthsCount || '0');
           if (!(count >= 1)) {
-            setError('Informe quantos meses (1 ou mais).');
-            setBusy(false);
+            setModalError('Informe quantos meses a recorrência deve durar (1 ou mais).');
             return;
           }
           endMonth = shiftMonth(startMonth, count - 1);
@@ -336,16 +442,27 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           notes: form.notes || '',
           active: true,
         });
+        addPendingEntry({
+          id: `REC-${result.id}-${startMonth}`,
+          type: form.type,
+          description: form.description,
+          categoryId: form.categoryId,
+          supplierId: form.supplierId || null,
+          amount,
+          competenceDate: `${startMonth}-01`,
+          dueDate: form.dueDate,
+          notes: form.notes || '',
+          recurringRuleId: result.id,
+        });
         setOpen(false);
+        setForm({});
         showToast(
           `Conta recorrente criada. ${result?.created || 0} parcela(s) gerada(s) automaticamente.`
         );
-        setTimeout(() => {
-          load();
-        }, 1200);
+        refreshAfterSync();
         return;
       } else if (mode === 'entry') {
-        await enqueue(
+        const result = await enqueue(
           'finance',
           'FINANCIAL_ENTRY_UPSERT',
           {
@@ -358,11 +475,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                 form.categoryId,
               supplierId:
                 form.supplierId || null,
-              amount: Number(
-                String(
-                  form.amount || '0'
-                ).replace(',', '.')
-              ),
+              amount: parseMoneyInput(form.amount),
               competenceDate:
                 form.competenceDate,
               dueDate: form.dueDate,
@@ -370,6 +483,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             },
           }
         );
+        addPendingEntry(result.payload?.entry);
       } else if (
         mode === 'settle'
       ) {
@@ -411,18 +525,21 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
         );
       }
 
-      setOpen(false);
-      showToast(commandMessage);
+      const successMessage = mode === 'entry'
+        ? `${form.type === 'receivable' ? 'Conta a receber' : 'Conta a pagar'} ${form.id ? 'atualizada' : 'salva'} com sucesso. A sincronização será concluída automaticamente.`
+        : commandMessage;
 
-      setTimeout(() => {
-        load();
-      }, 1200);
+      setOpen(false);
+      setForm({});
+      showToast(successMessage);
+
+      refreshAfterSync();
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Falha ao enviar operação financeira.'
-      );
+      const message = e instanceof Error
+        ? e.message
+        : 'Falha ao enviar operação financeira.';
+      setModalError(message);
+      showToast(message, 'error');
     } finally {
       setBusy(false);
     }
@@ -674,6 +791,10 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             placeholder="Buscar por descrição ou categoria"
           />
 
+          {(data.entries || []).some((row: any) => row.status === 'pending_sync') && (
+            <Notice text="Lançamento salvo e aguardando o PDV concluir a sincronização. Esta tela será atualizada automaticamente." />
+          )}
+
           <View style={s.card}>
             <Text style={s.cardTitle}>
               {view === 'payable' ? `Contas a pagar — ${monthLabel(listMonth)}` : view === 'receivable' ? `Contas a receber — ${monthLabel(listMonth)}` : 'Lançamentos'}
@@ -702,7 +823,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                           : 'A receber'}
                       </Text>
 
-                      {(data.accounts || []).length > 0 && (
+                      {row.status !== 'pending_sync' && (data.accounts || []).length > 0 && (
                         <AccountPicker
                           label="Conta"
                           options={(data.accounts || []).map((a: any) => ({
@@ -737,10 +858,11 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                             s.badBadge,
                         ]}
                       >
-                        {row.status}
+                        {statusLabel(row.status)}
                       </Text>
 
-                      <View style={s.toolbar}>
+                      {row.status !== 'pending_sync' && (
+                        <View style={s.toolbar}>
                         <ActionButton
                           label="Editar"
                           tone="plain"
@@ -776,7 +898,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                             }
                           />
                         )}
-                      </View>
+                        </View>
+                      )}
                     </View>
                   </View>
                 )
@@ -790,10 +913,11 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             )}
           </View>
 
-          <View style={s.card}>
-            <Text style={s.cardTitle}>
-              Recebíveis de cartão
-            </Text>
+          {view !== 'payable' && (
+            <View style={s.card}>
+              <Text style={s.cardTitle}>
+                Recebíveis de cartão
+              </Text>
 
             {(data.card_receivables || [])
               .length > 0 ? (
@@ -851,7 +975,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                 cartão.
               </Text>
             )}
-          </View>
+            </View>
+          )}
         </>
       )}
 
@@ -866,12 +991,15 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               ? 'Baixar lançamento'
               : 'Antecipar recebível'
         }
-        onCancel={() =>
-          setOpen(false)
-        }
+        onCancel={() => {
+          setModalError('');
+          setOpen(false);
+        }}
         onSave={save}
         busy={busy}
       >
+        {!!modalError && <Notice text={modalError} tone="error" />}
+
         {mode === 'entry' ? (
           <>
             <Choice
