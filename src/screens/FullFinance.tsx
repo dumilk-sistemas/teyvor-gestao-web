@@ -189,7 +189,7 @@ export default function FullFinance() {
 
   const set = (
     key: string,
-    value: string
+    value: any
   ) => {
     setForm((current: any) => ({
       ...current,

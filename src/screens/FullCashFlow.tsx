@@ -313,43 +313,73 @@ export default function FullCashFlow() {
               data.rows.map((day: any) => {
                 const totalDayIn = day.realized_in + day.forecast_in;
                 const totalDayOut = day.realized_out + day.forecast_out;
+                const items = day.items || [];
 
                 return (
-                  <View key={day.date} style={s.row}>
-                    <View style={s.main}>
-                      <Text style={s.name}>
-                        {dayLabel(day.date)}
-                        {day.date === todayIso ? ' • hoje' : ''}
-                      </Text>
+                  <View key={day.date} style={styles.dayBlock}>
+                    <View style={styles.dayHeader}>
+                      <View style={s.main}>
+                        <Text style={s.name}>
+                          {dayLabel(day.date)}
+                          {day.date === todayIso ? ' • hoje' : ''}
+                        </Text>
 
-                      <Text style={s.meta}>
-                        {totalDayIn > 0
-                          ? `Entra ${money(totalDayIn)}${
-                              day.forecast_in > 0
-                                ? ` (previsto ${money(day.forecast_in)})`
-                                : ''
-                            }`
-                          : 'Sem entrada'}
-                        {totalDayOut > 0
-                          ? ` • Sai ${money(totalDayOut)}${
-                              day.forecast_out > 0
-                                ? ` (previsto ${money(day.forecast_out)})`
-                                : ''
-                            }`
-                          : ''}
-                      </Text>
+                        <Text style={s.meta}>
+                          {totalDayIn > 0
+                            ? `Entra ${money(totalDayIn)}${
+                                day.forecast_in > 0
+                                  ? ` (previsto ${money(day.forecast_in)})`
+                                  : ''
+                              }`
+                            : 'Sem entrada'}
+                          {totalDayOut > 0
+                            ? ` • Sai ${money(totalDayOut)}${
+                                day.forecast_out > 0
+                                  ? ` (previsto ${money(day.forecast_out)})`
+                                  : ''
+                              }`
+                            : ''}
+                        </Text>
+                      </View>
+
+                      <View style={s.right}>
+                        <Text style={styles.balanceLabel}>Saldo do dia</Text>
+                        <Text
+                          style={[
+                            s.amount,
+                            day.balance < 0 && { color: '#A63D40' },
+                          ]}
+                        >
+                          {money(day.balance)}
+                        </Text>
+                      </View>
                     </View>
 
-                    <View style={s.right}>
-                      <Text
-                        style={[
-                          s.amount,
-                          day.balance < 0 && { color: '#A63D40' },
-                        ]}
-                      >
-                        {money(day.balance)}
-                      </Text>
-                    </View>
+                    {items.length > 0 && (
+                      <View style={styles.itemList}>
+                        {items.map((item: any, idx: number) => (
+                          <View key={idx} style={styles.itemRow}>
+                            <Text style={styles.itemLabel} numberOfLines={1}>
+                              {item.kind === 'in' ? '↑ ' : '↓ '}
+                              {item.label}
+                              {!item.realized ? ' (previsto)' : ''}
+                            </Text>
+
+                            <Text
+                              style={[
+                                styles.itemAmount,
+                                item.kind === 'in'
+                                  ? styles.itemAmountIn
+                                  : styles.itemAmountOut,
+                              ]}
+                            >
+                              {item.kind === 'in' ? '+' : '-'}
+                              {money(item.amount)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                   </View>
                 );
               })
@@ -362,6 +392,49 @@ export default function FullCashFlow() {
 }
 
 const styles = StyleSheet.create({
+  dayBlock: {
+    padding: 15,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  balanceLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: theme.colors.muted,
+    textTransform: 'uppercase',
+  },
+  itemList: {
+    marginTop: 10,
+    gap: 6,
+    paddingLeft: 4,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  itemLabel: {
+    flex: 1,
+    fontSize: 12.5,
+    color: theme.colors.text,
+  },
+  itemAmount: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  itemAmountIn: {
+    color: theme.colors.success,
+  },
+  itemAmountOut: {
+    color: theme.colors.danger,
+  },
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
