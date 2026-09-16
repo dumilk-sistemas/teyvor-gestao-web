@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { theme, useThemeColors } from '@/constants/theme';
@@ -20,49 +21,43 @@ export function AccountPicker({
   emptyLabel?: string;
 }) {
   const c = useThemeColors();
+  const [open, setOpen] = useState(false);
+
+  const allOptions = allowEmpty ? [{ label: emptyLabel, value: '' }, ...options] : options;
+  const current = allOptions.find((o) => o.value === value);
 
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
 
-      <View style={styles.chips}>
-        {allowEmpty && (
-          <Pressable
-            onPress={() => onChange('')}
-            style={styles.chip}
-          >
-            <Text style={[styles.chipText, styles.chipTextMuted]}>
-              {emptyLabel}
-            </Text>
-          </Pressable>
-        )}
+      <Pressable style={styles.select} onPress={() => setOpen((v) => !v)}>
+        <Text style={[styles.selectText, !current?.value && styles.selectTextMuted]}>
+          {current ? current.label : emptyLabel}
+        </Text>
+        <Text style={styles.chevron}>{open ? '▲' : '▼'}</Text>
+      </Pressable>
 
-        {options.map((o) => {
-          const active = value === o.value;
-          return (
-            <Pressable
-              key={o.value}
-              onPress={() => onChange(o.value)}
-              style={[
-                styles.chip,
-                active && {
-                  backgroundColor: `${c.gold}1F`,
-                  borderColor: c.gold,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  active && { color: c.gold },
-                ]}
+      {open && (
+        <View style={styles.dropdown}>
+          {allOptions.map((o) => {
+            const active = o.value === value;
+            return (
+              <Pressable
+                key={o.value || '(vazio)'}
+                onPress={() => {
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+                style={[styles.option, active && { backgroundColor: `${c.gold}1F` }]}
               >
-                {o.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+                <Text style={[styles.optionText, active && { color: c.gold, fontWeight: '800' }]}>
+                  {o.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -70,6 +65,8 @@ export function AccountPicker({
 const styles = StyleSheet.create({
   field: {
     gap: 7,
+    position: 'relative',
+    zIndex: 1,
   },
   label: {
     fontSize: 11,
@@ -78,27 +75,48 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
-  chips: {
+  select: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-  chip: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: '#FAFAF8',
   },
-  chipText: {
-    fontSize: 12.5,
+  selectText: {
+    fontSize: 13.5,
     fontWeight: '700',
     color: theme.colors.text,
   },
-  chipTextMuted: {
+  selectTextMuted: {
     color: theme.colors.muted,
     fontWeight: '600',
     fontStyle: 'italic',
+  },
+  chevron: {
+    fontSize: 10,
+    color: theme.colors.muted,
+  },
+  dropdown: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  option: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  optionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.text,
   },
 });

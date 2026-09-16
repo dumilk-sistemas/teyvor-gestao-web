@@ -13,7 +13,6 @@ import {
   setPaymentMapping,
   updateAccount,
 } from '@/services/fullApi';
-import { useToast } from '@/components/Toast';
 import { theme } from '@/constants/theme';
 
 function confirmAction(title: string, message: string): Promise<boolean> {
@@ -77,18 +76,28 @@ export function AccountsModal({
   onClose: () => void;
   onChanged?: () => void;
 }) {
-  const { showToast } = useToast();
   const scrollRef = useRef<ScrollView>(null);
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [accounts, setAccounts] = useState<any[]>([]);
   const [mapping, setMapping] = useState<Record<string, number | null>>({});
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   function showError(message: string) {
+    setSuccess('');
     setError(message);
     scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }
+
+  function showToast(message: string) {
+    setError('');
+    setSuccess(message);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    if (successTimer.current) clearTimeout(successTimer.current);
+    successTimer.current = setTimeout(() => setSuccess(''), 4000);
   }
 
   const [newAccountOpen, setNewAccountOpen] = useState(false);
@@ -302,6 +311,7 @@ export function AccountsModal({
 
           <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
             {!!error && <Notice text={error} tone="error" />}
+            {!!success && <Notice text={success} tone="ok" />}
 
             <View style={s.card}>
               <View style={styles.cardHeadRow}>
