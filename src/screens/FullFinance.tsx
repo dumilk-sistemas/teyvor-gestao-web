@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 
 import { AccountPicker } from '@/components/AccountPicker';
 import { AccountsModal } from '@/components/AccountsModal';
+import { RecurringRulesModal } from '@/components/RecurringRulesModal';
 import { AdminShell } from '@/components/AdminShell';
 import { MetricCard } from '@/components/MetricCard';
 import { SearchBar } from '@/components/SearchBar';
@@ -88,6 +89,7 @@ export default function FullFinance() {
   const [monthlyError, setMonthlyError] = useState('');
 
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
 
   async function loadMonthlyReport(month: string) {
     try {
@@ -423,6 +425,12 @@ export default function FullFinance() {
             label="Contas"
             tone="plain"
             onPress={() => setAccountsOpen(true)}
+          />
+
+          <ActionButton
+            label="Contas fixas"
+            tone="plain"
+            onPress={() => setRecurringOpen(true)}
           />
 
           <ActionButton
@@ -1130,6 +1138,14 @@ export default function FullFinance() {
       <AccountsModal
         visible={accountsOpen}
         onClose={() => setAccountsOpen(false)}
+        onChanged={load}
+      />
+
+      <RecurringRulesModal
+        visible={recurringOpen}
+        onClose={() => setRecurringOpen(false)}
+        categories={categories}
+        suppliers={suppliers}
         onChanged={load}
       />
     </AdminShell>

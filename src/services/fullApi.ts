@@ -144,6 +144,33 @@ export async function createTransfer(payload: {
   });
 }
 
+// Contas fixas / recorrentes -- a regra mora so na nuvem, mas cada
+// parcela gerada vira um lancamento de verdade no PDV (mesmo comando
+// que "+ Conta a pagar" ja usa), entao aparece e e' baixada normalmente.
+export async function getRecurringRules() {
+  return fullRequest<any>('/admin/recurring-rules');
+}
+
+export async function createRecurringRule(payload: Record<string, unknown>) {
+  return fullRequest<any>('/admin/recurring-rules', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateRecurringRule(id: number, payload: Record<string, unknown>) {
+  return fullRequest<any>(`/admin/recurring-rules/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateRecurringRule(id: number, monthsAhead = 12) {
+  return fullRequest<any>(`/admin/recurring-rules/${id}/generate?months_ahead=${monthsAhead}`, {
+    method: 'POST',
+  });
+}
+
 // Fiscal (NFC-e) -- fase 1, so cadastro. O certificado digital e' um
 // arquivo, por isso usa multipart em vez de JSON (nao pode passar pelo
 // fullRequest, que sempre manda Content-Type: application/json).
