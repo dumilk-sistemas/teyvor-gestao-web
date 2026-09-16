@@ -1,1 +1,1 @@
-export { default } from '@/screens/FullFinance';
+export { default } from '@/screens/FinanceHome';

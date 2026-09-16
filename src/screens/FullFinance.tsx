@@ -71,7 +71,9 @@ const statusLabel = (status: string) => {
   return 'Em aberto';
 };
 
-export default function FullFinance() {
+type FinanceView = 'all' | 'payable' | 'receivable';
+
+export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [data, setData] = useState<any>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -82,6 +84,7 @@ export default function FullFinance() {
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<any>({});
   const [search, setSearch] = useState('');
+  const [listMonth, setListMonth] = useState(currentMonthString());
 
   const [monthlyOpen, setMonthlyOpen] = useState(false);
   const [monthlyMonth, setMonthlyMonth] = useState(currentMonthString());
@@ -145,18 +148,35 @@ export default function FullFinance() {
     const entries = data?.entries || [];
     const term = search.trim().toLocaleLowerCase('pt-BR');
 
-    if (!term) {
-      return entries;
-    }
-
-    return entries.filter((row: any) =>
-      [row.description, row.category]
+    return entries.filter((row: any) => {
+      if (view !== 'all' && row.type !== view) return false;
+      if (view !== 'all' && String(row.due_date || '').slice(0, 7) !== listMonth) return false;
+      if (!term) return true;
+      return [row.description, row.category]
         .filter(Boolean)
-        .some((field) =>
-          String(field).toLocaleLowerCase('pt-BR').includes(term)
-        )
+        .some((field) => String(field).toLocaleLowerCase('pt-BR').includes(term));
+    });
+  }, [data, listMonth, search, view]);
+
+  const periodSummary = useMemo(() => {
+    const entries = (data?.entries || []).filter((row: any) =>
+      (view === 'all' || row.type === view) &&
+      String(row.due_date || '').slice(0, 7) === listMonth
     );
-  }, [data, search]);
+    const open = entries
+      .filter((row: any) => ['open', 'overdue'].includes(row.status))
+      .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+    const overdue = entries
+      .filter((row: any) => row.status === 'overdue')
+      .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+    const settled = entries
+      .filter((row: any) => ['paid', 'received'].includes(row.status))
+      .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+    const recurring = entries
+      .filter((row: any) => row.recurring_rule_id && ['open', 'overdue'].includes(row.status))
+      .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+    return { open, overdue, settled, recurring, count: entries.length };
+  }, [data, listMonth, view]);
 
   const nearTerm = useMemo(() => {
     const entries = data?.entries || [];
@@ -481,8 +501,14 @@ export default function FullFinance() {
 
   return (
     <AdminShell
-      title="Financeiro"
-      subtitle="Contas a pagar, receber, baixas e antecipações"
+      title={view === 'payable' ? 'Contas a pagar' : view === 'receivable' ? 'Contas a receber' : 'Financeiro'}
+      subtitle={
+        view === 'payable'
+          ? 'Despesas, vencimentos, recorrências e baixas'
+          : view === 'receivable'
+            ? 'Recebimentos, vencimentos e baixas'
+            : 'Contas a pagar, receber, baixas e antecipações'
+      }
       syncText={
         data?.last_sync_at
           ? `Atualizado em ${new Date(
@@ -495,21 +521,17 @@ export default function FullFinance() {
       syncNote
       headerActions={
         <>
-          <ActionButton
-            label="+ Conta a pagar"
-            tone="gold"
-            onPress={() =>
-              startEntry('payable')
-            }
-          />
+          {view !== 'receivable' && (
+            <ActionButton label="+ Conta a pagar" tone="gold" onPress={() => startEntry('payable')} />
+          )}
 
-          <ActionButton
-            label="+ Conta a receber"
-            tone="dark"
-            onPress={() =>
-              startEntry('receivable')
-            }
-          />
+          {view !== 'payable' && (
+            <ActionButton label="+ Conta a receber" tone="dark" onPress={() => startEntry('receivable')} />
+          )}
+
+          {view !== 'all' && (
+            <ActionButton label="Visão geral" tone="plain" onPress={() => router.push('/finance')} />
+          )}
 
           <ActionButton
             label="Contas"
@@ -546,7 +568,55 @@ export default function FullFinance() {
 
       {!!data && (
         <>
+          {view !== 'all' && (
+            <View style={monthlyStyles.periodBar}>
+              <View>
+                <Text style={monthlyStyles.periodCaption}>PERÍODO DOS LANÇAMENTOS</Text>
+                <Text style={monthlyStyles.periodTitle}>{monthLabel(listMonth)}</Text>
+              </View>
+              <View style={monthlyStyles.periodActions}>
+                <Pressable style={monthlyStyles.monthArrow} onPress={() => setListMonth((value) => shiftMonth(value, -1))}>
+                  <Text style={monthlyStyles.monthArrowText}>‹</Text>
+                </Pressable>
+                <Pressable style={monthlyStyles.monthArrow} onPress={() => setListMonth((value) => shiftMonth(value, 1))}>
+                  <Text style={monthlyStyles.monthArrowText}>›</Text>
+                </Pressable>
+                {listMonth !== currentMonthString() && (
+                  <Pressable style={monthlyStyles.currentMonthButton} onPress={() => setListMonth(currentMonthString())}>
+                    <Text style={monthlyStyles.currentMonthButtonText}>Mês atual</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          )}
+
           <View style={s.grid}>
+            {view !== 'all' ? (
+              <>
+                <MetricCard
+                  label={view === 'payable' ? 'A pagar no mês' : 'A receber no mês'}
+                  value={money(periodSummary.open)}
+                  note="Somente lançamentos do período selecionado"
+                />
+                <MetricCard
+                  label="Vencido no mês"
+                  value={money(periodSummary.overdue)}
+                  tone={periodSummary.overdue > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label={view === 'payable' ? 'Pago no mês' : 'Recebido no mês'}
+                  value={money(periodSummary.settled)}
+                />
+                {view === 'payable' && (
+                  <MetricCard
+                    label="Recorrentes do mês"
+                    value={money(periodSummary.recurring)}
+                    note="Cada recorrência é contada apenas uma vez no mês"
+                  />
+                )}
+              </>
+            ) : (
+              <>
             <MetricCard
               label="A pagar"
               value={money(
@@ -594,6 +664,8 @@ export default function FullFinance() {
                   ?.card_forecast || 0
               )}
             />
+              </>
+            )}
           </View>
 
           <SearchBar
@@ -604,7 +676,7 @@ export default function FullFinance() {
 
           <View style={s.card}>
             <Text style={s.cardTitle}>
-              Lançamentos
+              {view === 'payable' ? `Contas a pagar — ${monthLabel(listMonth)}` : view === 'receivable' ? `Contas a receber — ${monthLabel(listMonth)}` : 'Lançamentos'}
             </Text>
 
             {filteredEntries.length >
@@ -1325,6 +1397,35 @@ function SummaryLine({
 }
 
 const monthlyStyles = StyleSheet.create({
+  periodBar: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    justifyContent: 'space-between',
+    padding: 16,
+  },
+  periodCaption: {
+    color: theme.colors.muted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  periodTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 16,
+    marginTop: 3,
+  },
+  periodActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

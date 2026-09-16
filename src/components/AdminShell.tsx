@@ -128,7 +128,12 @@ export function AdminShell({
     router.push(href as never);
   }
 
-  const moreActive = visibleMoreNav.some(([href]) => pathname === href);
+  function routeIsActive(href: string) {
+    if (pathname === href) return true;
+    return href === '/finance' && ['/payables', '/receivables', '/cashflow'].includes(pathname);
+  }
+
+  const moreActive = visibleMoreNav.some(([href]) => routeIsActive(href));
 
   const defaultRefreshButton = onRefresh ? (
     <Pressable
@@ -164,7 +169,7 @@ export function AdminShell({
               showsVerticalScrollIndicator={false}
             >
               {visibleDesktopNav.map(([href, label, icon]) => {
-                const active = pathname === href;
+                const active = routeIsActive(href);
 
                 return (
                   <Pressable
@@ -278,7 +283,7 @@ export function AdminShell({
 
         <View style={styles.navbar}>
           {visibleDesktopNav.map(([href, label]) => {
-            const active = pathname === href;
+            const active = routeIsActive(href);
 
             return (
               <Pressable
@@ -427,7 +432,7 @@ export function AdminShell({
           </View>
 
           {visibleMoreNav.map(([href, label]) => {
-            const active = pathname === href;
+            const active = routeIsActive(href);
 
             return (
               <Pressable
@@ -474,7 +479,7 @@ export function AdminShell({
 
       <View style={styles.bottomNav}>
         {visibleMobileMainNav.map(([href, icon, label]) => {
-          const active = pathname === href;
+          const active = routeIsActive(href);
 
           return (
             <Pressable

@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 import { AccountPicker } from '@/components/AccountPicker';
 import { AdminShell } from '@/components/AdminShell';
-import { MetricCard } from '@/components/MetricCard';
-import { ActionButton, Notice, formStyles as s } from '@/components/FormKit';
+import { Notice, formStyles as s } from '@/components/FormKit';
 import { getCashFlow } from '@/services/fullApi';
-import { theme } from '@/constants/theme';
+import { theme, useThemeColors } from '@/constants/theme';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -88,17 +95,62 @@ const formatDateInput = (value: string) => {
 
 type Mode = 'month' | 'custom';
 
+type FlowItem = {
+  kind: 'in' | 'out';
+  realized: boolean;
+  label: string;
+  amount: number;
+  category?: string;
+};
+
+type FlowDay = {
+  date: string;
+  realized_in: number;
+  forecast_in: number;
+  realized_out: number;
+  forecast_out: number;
+  balance: number;
+  items: FlowItem[];
+};
+
+type CashFlowData = {
+  start: string;
+  end: string;
+  clamped: boolean;
+  opening_balance: number;
+  opening_date: string;
+  closing_balance: number;
+  has_negative_day: boolean;
+  no_accounts?: boolean;
+  last_sync_at?: string;
+  account_id?: number | null;
+  accounts?: Array<{ id: number; name: string }>;
+  totals: {
+    realized_in: number;
+    forecast_in: number;
+    realized_out: number;
+    forecast_out: number;
+    net: number;
+  };
+  rows: FlowDay[];
+};
+
 export default function FullCashFlow() {
+  const { width } = useWindowDimensions();
+  const mobile = width < 700;
+  const compact = width < 1040;
+  const colors = useThemeColors();
   const [mode, setMode] = useState<Mode>('month');
   const [month, setMonth] = useState(currentMonthString());
   const initialRange = monthRange(currentMonthString());
   const [startInput, setStartInput] = useState(isoToBR(initialRange.start));
   const [endInput, setEndInput] = useState(isoToBR(initialRange.end));
   const [periodError, setPeriodError] = useState('');
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<CashFlowData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [accountId, setAccountId] = useState<number | null>(null);
+  const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
 
   async function load(start: string, end: string, accId: number | null = accountId) {
     try {
@@ -152,8 +204,16 @@ export default function FullCashFlow() {
     }
   }
 
-  const totalIn = data ? data.totals?.realized_in + data.totals?.forecast_in : 0;
-  const totalOut = data ? data.totals?.realized_out + data.totals?.forecast_out : 0;
+  const totalIn = data ? data.totals.realized_in + data.totals.forecast_in : 0;
+  const totalOut = data ? data.totals.realized_out + data.totals.forecast_out : 0;
+  const firstDay = data?.rows?.[0];
+  const periodOpeningBalance = firstDay
+    ? firstDay.balance
+      - firstDay.realized_in
+      - firstDay.forecast_in
+      + firstDay.realized_out
+      + firstDay.forecast_out
+    : data?.opening_balance || 0;
   const todayIso = isoFromDate(new Date());
 
   const byCategory = useMemo(() => {
@@ -173,15 +233,60 @@ export default function FullCashFlow() {
         groups[key] = g;
       }
     }
-    return Object.entries(groups)
-      .map(([category, v]) => ({ category, ...v, total: v.in + v.inForecast - v.out - v.outForecast }))
-      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+    return Object.entries(groups).map(([category, v]) => ({
+      category,
+      ...v,
+      totalIn: v.in + v.inForecast,
+      totalOut: v.out + v.outForecast,
+      net: v.in + v.inForecast - v.out - v.outForecast,
+    }));
   }, [data]);
+
+  const expenseCategories = useMemo(
+    () => byCategory.filter((item) => item.totalOut > 0).sort((a, b) => b.totalOut - a.totalOut),
+    [byCategory]
+  );
+
+  const periodInsights = useMemo(() => {
+    const rows = data?.rows || [];
+    const negativeRows = rows.filter((row) => row.balance < 0);
+    const lowest = rows.reduce<FlowDay | null>(
+      (current, row) => (!current || row.balance < current.balance ? row : current),
+      null
+    );
+    const highestOut = rows.reduce<FlowDay | null>((current, row) => {
+      const value = row.realized_out + row.forecast_out;
+      const currentValue = current ? current.realized_out + current.forecast_out : -1;
+      return value > currentValue ? row : current;
+    }, null);
+    return { negativeRows, lowest, highestOut };
+  }, [data]);
+
+  const chartRows = useMemo(() => {
+    const rows = data?.rows || [];
+    if (rows.length <= 18) return rows;
+    const step = Math.ceil(rows.length / 18);
+    return rows.filter((_, index) => index % step === 0 || index === rows.length - 1);
+  }, [data]);
+
+  const maxChartMovement = useMemo(
+    () => Math.max(1, ...chartRows.flatMap((row) => [
+      row.realized_in + row.forecast_in,
+      row.realized_out + row.forecast_out,
+    ])),
+    [chartRows]
+  );
+
+  const maxExpenseCategory = expenseCategories[0]?.totalOut || 1;
+
+  function toggleDay(date: string) {
+    setExpandedDays((current) => ({ ...current, [date]: !current[date] }));
+  }
 
   return (
     <AdminShell
       title="Fluxo de Caixa"
-      subtitle="Entradas, saídas e saldo projetado por período"
+      subtitle="Posição financeira, projeções e riscos do período"
       syncText={
         data?.last_sync_at
           ? `Atualizado em ${new Date(data.last_sync_at).toLocaleString('pt-BR')}`
@@ -196,248 +301,377 @@ export default function FullCashFlow() {
           applyCustomPeriod();
         }
       }}
-      headerActions={
-        <ActionButton
-          label={mode === 'month' ? 'Período personalizado' : 'Voltar para mês'}
-          tone="plain"
-          onPress={() => {
-            if (mode === 'month') {
-              setMode('custom');
-            } else {
-              setMode('month');
-              const { start, end } = monthRange(month);
-              load(start, end);
-            }
-          }}
-        />
-      }
+      headerActions={null}
     >
       {!!error && <Notice text={error} tone="error" />}
 
       {!!data?.no_accounts && (
         <Notice
-          text="Nenhuma conta cadastrada ainda. Vá em Financeiro → Contas para cadastrar sua primeira conta (nome, saldo inicial e data) e liberar o fluxo de caixa."
+          text="Nenhuma conta cadastrada ainda. Vá em Financeiro → Contas para cadastrar a primeira conta e liberar o fluxo de caixa."
           tone="error"
         />
       )}
 
-      {!data?.no_accounts && (data?.accounts || []).length > 0 && (
-        <AccountPicker
-          label="Conta"
-          options={(data.accounts || []).map((a: any) => ({
-            label: a.name,
-            value: String(a.id),
-          }))}
-          value={accountId != null ? String(accountId) : ''}
-          onChange={changeAccount}
-          emptyLabel="Todas as contas"
-        />
-      )}
-
-      {!!data && !data.no_accounts && data.clamped && (
-        <Notice
-          text={`Essa conta só tem saldo cadastrado a partir de ${isoToBR(data.opening_date)} — datas anteriores não aparecem.`}
-        />
-      )}
-
-      {!!data && !data.no_accounts && data.has_negative_day && (
-        <Notice
-          text="Atenção: o saldo projetado fica negativo em algum dia deste período."
-          tone="error"
-        />
-      )}
-
-      {mode === 'month' ? (
-        <View style={styles.monthNav}>
-          <Pressable style={styles.monthArrow} onPress={() => changeMonth(-1)}>
-            <Text style={styles.monthArrowText}>‹</Text>
-          </Pressable>
-
-          <Text style={styles.monthLabel}>{monthLabel(month)}</Text>
-
-          <Pressable style={styles.monthArrow} onPress={() => changeMonth(1)}>
-            <Text style={styles.monthArrowText}>›</Text>
-          </Pressable>
-
-          {month !== currentMonthString() && (
-            <Pressable
-              style={styles.currentMonthButton}
-              onPress={() => setMonth(currentMonthString())}
-            >
-              <Text style={styles.currentMonthButtonText}>Mês atual</Text>
-            </Pressable>
-          )}
-        </View>
-      ) : (
-        <View style={styles.customArea}>
-          <View style={styles.dateFields}>
-            <View style={styles.dateField}>
-              <Text style={styles.dateLabel}>Data inicial</Text>
-              <TextInput
-                value={startInput}
-                onChangeText={(value) => {
-                  setStartInput(formatDateInput(value));
-                  setPeriodError('');
-                }}
-                placeholder="DD/MM/AAAA"
-                keyboardType="number-pad"
-                maxLength={10}
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.dateField}>
-              <Text style={styles.dateLabel}>Data final</Text>
-              <TextInput
-                value={endInput}
-                onChangeText={(value) => {
-                  setEndInput(formatDateInput(value));
-                  setPeriodError('');
-                }}
-                placeholder="DD/MM/AAAA"
-                keyboardType="number-pad"
-                maxLength={10}
-                style={styles.input}
-              />
-            </View>
+      <View style={styles.filterCard}>
+        <View style={[styles.filterTop, mobile && styles.filterTopMobile]}>
+          <View>
+            <Text style={styles.sectionEyebrow}>FILTROS</Text>
+            <Text style={styles.filterTitle}>Período e conta financeira</Text>
           </View>
 
-          {!!periodError && <Text style={styles.periodError}>{periodError}</Text>}
-
-          <Pressable style={styles.applyButton} onPress={applyCustomPeriod}>
-            <Text style={styles.applyButtonText}>Aplicar período</Text>
-          </Pressable>
+          <View style={styles.modeSwitch}>
+            <Pressable
+              onPress={() => {
+                setMode('month');
+                const { start, end } = monthRange(month);
+                load(start, end);
+              }}
+              style={[styles.modeButton, mode === 'month' && { backgroundColor: colors.primary }]}
+            >
+              <Text style={[styles.modeButtonText, mode === 'month' && styles.modeButtonTextActive]}>Mensal</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                if (data) {
+                  setStartInput(isoToBR(data.start));
+                  setEndInput(isoToBR(data.end));
+                }
+                setMode('custom');
+              }}
+              style={[styles.modeButton, mode === 'custom' && { backgroundColor: colors.primary }]}
+            >
+              <Text style={[styles.modeButtonText, mode === 'custom' && styles.modeButtonTextActive]}>Personalizado</Text>
+            </Pressable>
+          </View>
         </View>
+
+        {!data?.no_accounts && (data?.accounts || []).length > 0 && (
+          <AccountPicker
+            label="Conta"
+            options={(data?.accounts || []).map((account) => ({
+              label: account.name,
+              value: String(account.id),
+            }))}
+            value={accountId != null ? String(accountId) : ''}
+            onChange={changeAccount}
+            emptyLabel="Todas as contas"
+          />
+        )}
+
+        {mode === 'month' ? (
+          <View style={styles.monthNav}>
+            <Pressable style={styles.monthArrow} onPress={() => changeMonth(-1)}>
+              <Feather name="chevron-left" size={18} color={theme.colors.text} />
+            </Pressable>
+            <View style={styles.monthTextArea}>
+              <Text style={styles.monthCaption}>Competência</Text>
+              <Text style={styles.monthLabel}>{monthLabel(month)}</Text>
+            </View>
+            <Pressable style={styles.monthArrow} onPress={() => changeMonth(1)}>
+              <Feather name="chevron-right" size={18} color={theme.colors.text} />
+            </Pressable>
+            {month !== currentMonthString() && (
+              <Pressable style={styles.currentMonthButton} onPress={() => setMonth(currentMonthString())}>
+                <Text style={styles.currentMonthButtonText}>Ir para o mês atual</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : (
+          <View style={styles.customArea}>
+            <View style={styles.dateFields}>
+              <View style={styles.dateField}>
+                <Text style={styles.dateLabel}>Data inicial</Text>
+                <TextInput
+                  value={startInput}
+                  onChangeText={(value) => {
+                    setStartInput(formatDateInput(value));
+                    setPeriodError('');
+                  }}
+                  placeholder="DD/MM/AAAA"
+                  keyboardType="number-pad"
+                  maxLength={10}
+                  style={styles.input}
+                />
+              </View>
+              <View style={styles.dateField}>
+                <Text style={styles.dateLabel}>Data final</Text>
+                <TextInput
+                  value={endInput}
+                  onChangeText={(value) => {
+                    setEndInput(formatDateInput(value));
+                    setPeriodError('');
+                  }}
+                  placeholder="DD/MM/AAAA"
+                  keyboardType="number-pad"
+                  maxLength={10}
+                  style={styles.input}
+                />
+              </View>
+              <Pressable style={[styles.applyButton, { backgroundColor: colors.primary }]} onPress={applyCustomPeriod}>
+                <Text style={styles.applyButtonText}>Aplicar período</Text>
+              </Pressable>
+            </View>
+            {!!periodError && <Text style={styles.periodError}>{periodError}</Text>}
+          </View>
+        )}
+      </View>
+
+      {!!data && !data.no_accounts && data.clamped && (
+        <Notice text={`O saldo desta conta começa em ${isoToBR(data.opening_date)}. Datas anteriores foram desconsideradas.`} />
       )}
 
       {!!data && !data.no_accounts && (
         <>
-          <View style={s.grid}>
-            <MetricCard label="Saldo inicial" value={money(data.opening_balance)} />
-            <MetricCard label="Entradas no período" value={money(totalIn)} />
-            <MetricCard label="Saídas no período" value={money(totalOut)} />
-            <MetricCard
-              label="Saldo final do período"
-              value={money(data.closing_balance)}
-              tone={data.closing_balance < 0 ? 'warning' : 'default'}
-            />
-            <MetricCard
-              label="Geração de caixa do período"
-              value={money(data.totals?.net || 0)}
-              tone={(data.totals?.net || 0) < 0 ? 'warning' : 'default'}
-              note="Entradas menos saídas do período"
-            />
-          </View>
-
-          {byCategory.length > 0 && (
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Fluxo por categoria</Text>
-
-              {byCategory.map((cat) => (
-                <View key={cat.category} style={s.row}>
-                  <View style={s.main}>
-                    <Text style={s.name}>{cat.category}</Text>
-                    <Text style={s.meta}>
-                      {cat.in + cat.inForecast > 0
-                        ? `Entra ${money(cat.in + cat.inForecast)}${
-                            cat.inForecast > 0 ? ` (previsto ${money(cat.inForecast)})` : ''
-                          }`
-                        : ''}
-                      {cat.out + cat.outForecast > 0
-                        ? ` ${cat.in + cat.inForecast > 0 ? '• ' : ''}Sai ${money(cat.out + cat.outForecast)}${
-                            cat.outForecast > 0 ? ` (previsto ${money(cat.outForecast)})` : ''
-                          }`
-                        : ''}
-                    </Text>
-                  </View>
-
-                  <Text
-                    style={[styles.categoryTotal, cat.total < 0 && { color: '#A63D40' }]}
-                  >
-                    {cat.total >= 0 ? '+' : ''}
-                    {money(cat.total)}
+          <View style={[styles.executiveGrid, compact && styles.executiveGridCompact]}>
+            <View style={[styles.balanceHero, compact && styles.balanceHeroCompact]}>
+              <View style={styles.heroTop}>
+                <View style={styles.heroIcon}>
+                  <Feather name="trending-up" size={18} color="#FFFFFF" />
+                </View>
+                <View style={[
+                  styles.healthBadge,
+                  data.has_negative_day ? styles.healthBadgeDanger : styles.healthBadgeOk,
+                ]}>
+                  <View style={[
+                    styles.healthDot,
+                    { backgroundColor: data.has_negative_day ? '#F09A9D' : '#86D8A3' },
+                  ]} />
+                  <Text style={styles.healthBadgeText}>
+                    {data.has_negative_day ? 'Requer atenção' : 'Caixa saudável'}
                   </Text>
                 </View>
-              ))}
+              </View>
+              <Text style={styles.heroLabel}>Saldo projetado no fim do período</Text>
+              <Text style={[styles.heroValue, data.closing_balance < 0 && styles.heroValueDanger]}>
+                {money(data.closing_balance)}
+              </Text>
+              <View style={styles.heroDivider} />
+              <View style={styles.heroFooter}>
+                <View>
+                  <Text style={styles.heroMetaLabel}>Saldo no início do período</Text>
+                  <Text style={styles.heroMetaValue}>{money(periodOpeningBalance)}</Text>
+                </View>
+                <View style={styles.heroFooterRight}>
+                  <Text style={styles.heroMetaLabel}>Geração de caixa</Text>
+                  <Text style={[styles.heroMetaValue, data.totals.net < 0 && styles.heroValueDanger]}>
+                    {data.totals.net >= 0 ? '+' : ''}{money(data.totals.net)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.metricGrid}>
+              {[
+                { label: 'Entradas realizadas', value: data.totals.realized_in, icon: 'arrow-down-left', tone: 'in' },
+                { label: 'Entradas previstas', value: data.totals.forecast_in, icon: 'clock', tone: 'forecastIn' },
+                { label: 'Saídas realizadas', value: data.totals.realized_out, icon: 'arrow-up-right', tone: 'out' },
+                { label: 'Saídas previstas', value: data.totals.forecast_out, icon: 'calendar', tone: 'forecastOut' },
+              ].map((metric) => {
+                const isIn = metric.tone === 'in' || metric.tone === 'forecastIn';
+                const isForecast = metric.tone === 'forecastIn' || metric.tone === 'forecastOut';
+                const iconColor = isIn ? theme.colors.success : theme.colors.danger;
+                return (
+                  <View key={metric.label} style={[styles.metricCard, mobile && styles.metricCardMobile]}>
+                    <View style={[styles.metricIcon, { backgroundColor: isIn ? '#EAF7EF' : '#FDECEC' }]}>
+                      <Feather name={metric.icon as any} size={16} color={iconColor} />
+                    </View>
+                    <Text style={styles.metricLabel}>{metric.label}</Text>
+                    <Text style={styles.metricValue}>{money(metric.value)}</Text>
+                    <Text style={styles.metricNote}>{isForecast ? 'Ainda não liquidado' : 'Movimentação confirmada'}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {data.has_negative_day && (
+            <View style={styles.riskBanner}>
+              <View style={styles.riskIcon}>
+                <Feather name="alert-triangle" size={18} color={theme.colors.danger} />
+              </View>
+              <View style={styles.riskTextArea}>
+                <Text style={styles.riskTitle}>Risco de saldo negativo identificado</Text>
+                <Text style={styles.riskText}>
+                  O caixa fica negativo em {periodInsights.negativeRows.length} {periodInsights.negativeRows.length === 1 ? 'dia' : 'dias'} do período. O menor saldo projetado é {money(periodInsights.lowest?.balance || 0)} em {periodInsights.lowest ? isoToBR(periodInsights.lowest.date) : '—'}.
+                </Text>
+              </View>
             </View>
           )}
 
-          <View style={s.card}>
-            <Text style={s.cardTitle}>
-              {data.start === data.end
-                ? isoToBR(data.start)
-                : `${isoToBR(data.start)} a ${isoToBR(data.end)}`}
-            </Text>
+          <View style={[styles.analysisGrid, compact && styles.analysisGridCompact]}>
+            <View style={[styles.panel, styles.chartPanel]}>
+              <View style={[styles.panelHead, styles.chartPanelHead, mobile && styles.panelHeadMobile]}>
+                <View>
+                  <Text style={styles.panelTitle}>Entradas e saídas por dia</Text>
+                  <Text style={styles.panelSubtitle}>Movimentação total, incluindo valores previstos</Text>
+                </View>
+                <View style={styles.legend}>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, styles.legendIn]} /><Text style={styles.legendText}>Entradas</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, styles.legendOut]} /><Text style={styles.legendText}>Saídas</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, styles.legendForecast]} /><Text style={styles.legendText}>Previsto</Text></View>
+                </View>
+              </View>
+
+              {chartRows.length === 0 ? (
+                <Text style={s.empty}>Sem movimentação no período.</Text>
+              ) : (
+                <View style={styles.chartArea}>
+                  <View style={styles.chartBaseline} />
+                  {chartRows.map((day, index) => {
+                    const dayIn = day.realized_in + day.forecast_in;
+                    const dayOut = day.realized_out + day.forecast_out;
+                    const inHeight = dayIn > 0 ? Math.max(5, (dayIn / maxChartMovement) * 104) : 0;
+                    const outHeight = dayOut > 0 ? Math.max(5, (dayOut / maxChartMovement) * 104) : 0;
+                    return (
+                      <View key={day.date} style={styles.chartColumn}>
+                        <View style={styles.bars}>
+                          <View style={[styles.chartBar, { height: inHeight, backgroundColor: theme.colors.success }]}>
+                            {day.forecast_in > 0 && dayIn > 0 && (
+                              <View style={[styles.forecastCap, { height: Math.max(3, (day.forecast_in / dayIn) * inHeight) }]} />
+                            )}
+                          </View>
+                          <View style={[styles.chartBar, { height: outHeight, backgroundColor: theme.colors.danger }]}>
+                            {day.forecast_out > 0 && dayOut > 0 && (
+                              <View style={[styles.forecastCap, { height: Math.max(3, (day.forecast_out / dayOut) * outHeight) }]} />
+                            )}
+                          </View>
+                        </View>
+                        <Text style={styles.chartDate}>{index % 2 === 0 || chartRows.length < 10 ? day.date.slice(8) : ''}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+              <View style={styles.chartSummary}>
+                <Text style={styles.chartSummaryText}>Entradas {money(totalIn)}</Text>
+                <Text style={styles.chartSummaryDivider}>•</Text>
+                <Text style={styles.chartSummaryText}>Saídas {money(totalOut)}</Text>
+              </View>
+            </View>
+
+            <View style={[styles.panel, styles.insightPanel]}>
+              <Text style={styles.panelTitle}>Indicadores do período</Text>
+              <Text style={styles.panelSubtitle}>Pontos que exigem acompanhamento</Text>
+              <View style={styles.insightList}>
+                <View style={styles.insightRow}>
+                  <View style={[styles.insightIcon, { backgroundColor: '#F1F0EC' }]}><Feather name="trending-down" size={17} color={theme.colors.text} /></View>
+                  <View style={styles.insightContent}><Text style={styles.insightLabel}>Menor saldo projetado</Text><Text style={[styles.insightValue, (periodInsights.lowest?.balance || 0) < 0 && styles.negative]}>{money(periodInsights.lowest?.balance || 0)}</Text><Text style={styles.insightDate}>{periodInsights.lowest ? isoToBR(periodInsights.lowest.date) : 'Sem dados'}</Text></View>
+                </View>
+                <View style={styles.insightRow}>
+                  <View style={[styles.insightIcon, { backgroundColor: '#FDECEC' }]}><Feather name="alert-circle" size={17} color={theme.colors.danger} /></View>
+                  <View style={styles.insightContent}><Text style={styles.insightLabel}>Dias com saldo negativo</Text><Text style={[styles.insightValue, periodInsights.negativeRows.length > 0 && styles.negative]}>{periodInsights.negativeRows.length}</Text><Text style={styles.insightDate}>{periodInsights.negativeRows.length ? 'Revisar pagamentos e recebimentos' : 'Nenhum risco no período'}</Text></View>
+                </View>
+                <View style={styles.insightRow}>
+                  <View style={[styles.insightIcon, { backgroundColor: '#FFF4E5' }]}><Feather name="arrow-up-right" size={17} color="#A96213" /></View>
+                  <View style={styles.insightContent}><Text style={styles.insightLabel}>Maior volume de saídas</Text><Text style={styles.insightValue}>{money(periodInsights.highestOut ? periodInsights.highestOut.realized_out + periodInsights.highestOut.forecast_out : 0)}</Text><Text style={styles.insightDate}>{periodInsights.highestOut ? isoToBR(periodInsights.highestOut.date) : 'Sem dados'}</Text></View>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {expenseCategories.length > 0 && (
+            <View style={styles.panel}>
+              <View style={styles.panelHead}>
+                <View>
+                  <Text style={styles.panelTitle}>Maiores saídas por categoria</Text>
+                  <Text style={styles.panelSubtitle}>Categorias com maior impacto no caixa do período</Text>
+                </View>
+                <Text style={styles.panelTotal}>Total {money(totalOut)}</Text>
+              </View>
+              <View style={styles.categoryGrid}>
+                {expenseCategories.slice(0, 8).map((category) => (
+                  <View key={category.category} style={[styles.categoryItem, mobile && styles.categoryItemMobile]}>
+                    <View style={styles.categoryTop}>
+                      <Text style={styles.categoryName} numberOfLines={1}>{category.category}</Text>
+                      <Text style={styles.categoryValue}>{money(category.totalOut)}</Text>
+                    </View>
+                    <View style={styles.categoryTrack}>
+                      <View style={[styles.categoryFill, { width: `${Math.max(4, (category.totalOut / maxExpenseCategory) * 100)}%`, backgroundColor: colors.primary }]} />
+                    </View>
+                    {category.outForecast > 0 && <Text style={styles.categoryForecast}>{money(category.outForecast)} previsto</Text>}
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          <View style={styles.panel}>
+            <View style={[styles.panelHead, mobile && styles.panelHeadMobile]}>
+              <View>
+                <Text style={styles.panelTitle}>Movimentação diária</Text>
+                <Text style={styles.panelSubtitle}>
+                  {data.start === data.end ? isoToBR(data.start) : `${isoToBR(data.start)} a ${isoToBR(data.end)}`}
+                </Text>
+              </View>
+              <View style={styles.periodPill}><Feather name="calendar" size={13} color={theme.colors.muted} /><Text style={styles.periodPillText}>{data.rows.length} dias</Text></View>
+            </View>
+
+            {!mobile && data.rows.length > 0 && (
+              <View style={styles.tableHeader}>
+                <Text style={[styles.tableHeadText, styles.dateColumn]}>DATA</Text>
+                <Text style={[styles.tableHeadText, styles.numberColumn]}>ENTRADAS</Text>
+                <Text style={[styles.tableHeadText, styles.numberColumn]}>SAÍDAS</Text>
+                <Text style={[styles.tableHeadText, styles.numberColumn]}>LÍQUIDO PREVISTO</Text>
+                <Text style={[styles.tableHeadText, styles.balanceColumn]}>SALDO FINAL</Text>
+                <View style={styles.expandColumn} />
+              </View>
+            )}
 
             {data.rows.length === 0 ? (
               <Text style={s.empty}>Sem movimentação no período.</Text>
             ) : (
-              data.rows.map((day: any) => {
+              data.rows.map((day) => {
                 const totalDayIn = day.realized_in + day.forecast_in;
                 const totalDayOut = day.realized_out + day.forecast_out;
+                const forecastNet = day.forecast_in - day.forecast_out;
                 const items = day.items || [];
-
+                const expanded = !!expandedDays[day.date];
                 return (
-                  <View key={day.date} style={styles.dayBlock}>
-                    <View style={styles.dayHeader}>
-                      <View style={s.main}>
-                        <Text style={s.name}>
-                          {dayLabel(day.date)}
-                          {day.date === todayIso ? ' • hoje' : ''}
-                        </Text>
-
-                        <Text style={s.meta}>
-                          {totalDayIn > 0
-                            ? `Entra ${money(totalDayIn)}${
-                                day.forecast_in > 0
-                                  ? ` (previsto ${money(day.forecast_in)})`
-                                  : ''
-                              }`
-                            : 'Sem entrada'}
-                          {totalDayOut > 0
-                            ? ` • Sai ${money(totalDayOut)}${
-                                day.forecast_out > 0
-                                  ? ` (previsto ${money(day.forecast_out)})`
-                                  : ''
-                              }`
-                            : ''}
-                        </Text>
+                  <View key={day.date} style={[styles.tableGroup, day.date === todayIso && styles.todayGroup]}>
+                    <Pressable disabled={!items.length} onPress={() => toggleDay(day.date)} style={[styles.tableRow, mobile && styles.tableRowMobile]}>
+                      <View style={[styles.dateColumn, mobile && styles.mobileDateColumn]}>
+                        <Text style={styles.tableDate}>{dayLabel(day.date)}</Text>
+                        <View style={styles.rowMetaLine}>
+                          {day.date === todayIso && <Text style={[styles.todayBadge, { color: colors.primary }]}>HOJE</Text>}
+                          <Text style={styles.itemCount}>{items.length ? `${items.length} ${items.length === 1 ? 'lançamento' : 'lançamentos'}` : 'Sem lançamentos'}</Text>
+                        </View>
                       </View>
 
-                      <View style={s.right}>
-                        <Text style={styles.balanceLabel}>Saldo do dia</Text>
-                        <Text
-                          style={[
-                            s.amount,
-                            day.balance < 0 && { color: '#A63D40' },
-                          ]}
-                        >
-                          {money(day.balance)}
-                        </Text>
-                      </View>
-                    </View>
+                      {mobile ? (
+                        <View style={styles.mobileValues}>
+                          <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Entradas</Text><Text style={styles.inValue}>{money(totalDayIn)}</Text></View>
+                          <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Saídas</Text><Text style={styles.outValue}>{money(totalDayOut)}</Text></View>
+                          <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Saldo</Text><Text style={[styles.balanceValue, day.balance < 0 && styles.negative]}>{money(day.balance)}</Text></View>
+                        </View>
+                      ) : (
+                        <>
+                          <Text style={[styles.tableValue, styles.numberColumn, styles.inValue]}>{totalDayIn ? `+${money(totalDayIn)}` : '—'}</Text>
+                          <Text style={[styles.tableValue, styles.numberColumn, styles.outValue]}>{totalDayOut ? `-${money(totalDayOut)}` : '—'}</Text>
+                          <Text style={[styles.tableValue, styles.numberColumn, forecastNet < 0 ? styles.negative : styles.forecastValue]}>{forecastNet ? `${forecastNet > 0 ? '+' : ''}${money(forecastNet)}` : '—'}</Text>
+                          <Text style={[styles.tableValue, styles.balanceColumn, styles.balanceValue, day.balance < 0 && styles.negative]}>{money(day.balance)}</Text>
+                        </>
+                      )}
 
-                    {items.length > 0 && (
+                      <View style={styles.expandColumn}>
+                        {items.length > 0 && <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={theme.colors.muted} />}
+                      </View>
+                    </Pressable>
+
+                    {expanded && items.length > 0 && (
                       <View style={styles.itemList}>
-                        {items.map((item: any, idx: number) => (
-                          <View key={idx} style={styles.itemRow}>
-                            <Text style={styles.itemLabel} numberOfLines={1}>
-                              {item.kind === 'in' ? '↑ ' : '↓ '}
-                              {item.label}
-                              {!item.realized ? ' (previsto)' : ''}
-                            </Text>
-
-                            <Text
-                              style={[
-                                styles.itemAmount,
-                                item.kind === 'in'
-                                  ? styles.itemAmountIn
-                                  : styles.itemAmountOut,
-                              ]}
-                            >
-                              {item.kind === 'in' ? '+' : '-'}
-                              {money(item.amount)}
-                            </Text>
+                        {items.map((item, index) => (
+                          <View key={`${day.date}-${index}`} style={[styles.itemRow, mobile && styles.itemRowMobile]}>
+                            <View style={[styles.itemDirection, item.kind === 'in' ? styles.itemDirectionIn : styles.itemDirectionOut]}>
+                              <Feather name={item.kind === 'in' ? 'arrow-down-left' : 'arrow-up-right'} size={14} color={item.kind === 'in' ? theme.colors.success : theme.colors.danger} />
+                            </View>
+                            <View style={styles.itemMain}>
+                              <Text style={styles.itemLabel} numberOfLines={1}>{item.label}</Text>
+                              <View style={styles.itemMeta}>
+                                <Text style={styles.itemCategory}>{item.category || 'Sem categoria'}</Text>
+                                <Text style={[styles.statusBadge, item.realized ? styles.statusRealized : styles.statusForecast]}>{item.realized ? 'REALIZADO' : 'PREVISTO'}</Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.itemAmount, item.kind === 'in' ? styles.itemAmountIn : styles.itemAmountOut]}>{item.kind === 'in' ? '+' : '-'}{money(item.amount)}</Text>
                           </View>
                         ))}
                       </View>
@@ -446,6 +680,10 @@ export default function FullCashFlow() {
                 );
               })
             )}
+            <View style={styles.tableFoot}>
+              <Feather name="info" size={14} color={theme.colors.muted} />
+              <Text style={styles.tableFootText}>O saldo final considera valores realizados e previstos até cada data.</Text>
+            </View>
           </View>
         </>
       )}
@@ -454,133 +692,242 @@ export default function FullCashFlow() {
 }
 
 const styles = StyleSheet.create({
-  categoryTotal: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: theme.colors.text,
+  filterCard: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    padding: 18,
+    gap: 16,
   },
-  dayBlock: {
-    padding: 15,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
-  dayHeader: {
+  filterTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    gap: 16,
   },
-  balanceLabel: {
-    fontSize: 10.5,
-    fontWeight: '700',
+  filterTopMobile: { alignItems: 'flex-start', flexDirection: 'column' },
+  sectionEyebrow: {
     color: theme.colors.muted,
-    textTransform: 'uppercase',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    letterSpacing: 1.1,
   },
-  itemList: {
-    marginTop: 10,
-    gap: 6,
-    paddingLeft: 4,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 10,
-  },
-  itemLabel: {
-    flex: 1,
-    fontSize: 12.5,
+  filterTitle: {
     color: theme.colors.text,
-  },
-  itemAmount: {
-    fontSize: 12.5,
-    fontWeight: '800',
-  },
-  itemAmountIn: {
-    color: theme.colors.success,
-  },
-  itemAmountOut: {
-    color: theme.colors.danger,
-  },
-  monthNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  monthArrow: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F1EC',
-  },
-  monthArrowText: {
-    fontSize: 20,
-    lineHeight: 22,
-    color: theme.colors.text,
-  },
-  monthLabel: {
+    fontFamily: 'Sora_700Bold',
     fontSize: 16,
-    fontWeight: '900',
-    color: theme.colors.text,
+    marginTop: 3,
   },
-  currentMonthButton: {
-    marginLeft: 'auto',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  currentMonthButtonText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: theme.colors.text,
-  },
-  customArea: {
-    gap: 10,
-  },
-  dateFields: {
+  modeSwitch: {
+    backgroundColor: '#F0EFEA',
+    borderRadius: 10,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+    padding: 3,
   },
-  dateField: {
-    flex: 1,
-    minWidth: 135,
+  modeButton: { borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  modeButtonText: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 12 },
+  modeButtonTextActive: { color: '#FFFFFF' },
+  monthNav: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  monthArrow: {
+    alignItems: 'center',
+    backgroundColor: '#F3F1EC',
+    borderRadius: 9,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
-  dateLabel: {
-    marginBottom: 5,
-    fontSize: 12,
-    fontWeight: '800',
-    color: theme.colors.muted,
-  },
-  input: {
+  monthTextArea: { minWidth: 170 },
+  monthCaption: { color: theme.colors.muted, fontSize: 10.5, fontWeight: '700', textTransform: 'uppercase' },
+  monthLabel: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 16, marginTop: 1 },
+  currentMonthButton: {
+    borderColor: theme.colors.border,
+    borderRadius: 9,
     borderWidth: 1,
+    marginLeft: 'auto',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  currentMonthButtonText: { color: theme.colors.text, fontSize: 12, fontWeight: '800' },
+  customArea: { gap: 8 },
+  dateFields: { alignItems: 'flex-end', flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  dateField: { flex: 1, minWidth: 150 },
+  dateLabel: { color: theme.colors.muted, fontSize: 12, fontWeight: '800', marginBottom: 5 },
+  input: {
+    backgroundColor: '#FFFFFF',
     borderColor: theme.colors.border,
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    fontSize: 15,
+    borderWidth: 1,
     color: theme.colors.text,
-    backgroundColor: '#FFF',
+    fontSize: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  periodError: {
-    color: theme.colors.danger,
-    fontSize: 13,
-    fontWeight: '700',
+  periodError: { color: theme.colors.danger, fontSize: 13, fontWeight: '700' },
+  applyButton: { borderRadius: 10, justifyContent: 'center', minHeight: 43, paddingHorizontal: 18 },
+  applyButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
+
+  executiveGrid: { alignItems: 'stretch', flexDirection: 'row', gap: 12 },
+  executiveGridCompact: { flexDirection: 'column' },
+  balanceHero: {
+    backgroundColor: '#18212B',
+    borderRadius: theme.radius.md,
+    flex: 0.95,
+    justifyContent: 'space-between',
+    minHeight: 244,
+    minWidth: 330,
+    padding: 22,
   },
-  applyButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: theme.colors.text,
+  balanceHeroCompact: { minWidth: 0 },
+  heroTop: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  heroIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
-  applyButtonText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '900',
+  healthBadge: { alignItems: 'center', borderRadius: 20, flexDirection: 'row', gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
+  healthBadgeOk: { backgroundColor: 'rgba(47,125,74,0.25)' },
+  healthBadgeDanger: { backgroundColor: 'rgba(166,61,64,0.3)' },
+  healthDot: { borderRadius: 4, height: 7, width: 7 },
+  healthBadgeText: { color: '#FFFFFF', fontSize: 11.5, fontWeight: '800' },
+  heroLabel: { color: '#AEB9C3', fontSize: 12.5, fontWeight: '700', marginTop: 22 },
+  heroValue: { color: '#FFFFFF', fontFamily: 'Sora_800ExtraBold', fontSize: 33, marginTop: 5 },
+  heroValueDanger: { color: '#FFB2B4' },
+  heroDivider: { backgroundColor: 'rgba(255,255,255,0.12)', height: 1, marginVertical: 19 },
+  heroFooter: { flexDirection: 'row', justifyContent: 'space-between', gap: 16 },
+  heroFooterRight: { alignItems: 'flex-end' },
+  heroMetaLabel: { color: '#91A0AD', fontSize: 10.5, fontWeight: '700', textTransform: 'uppercase' },
+  heroMetaValue: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', marginTop: 4 },
+  metricGrid: { flex: 2, flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  metricCard: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    flexBasis: '47%',
+    flexGrow: 1,
+    minHeight: 116,
+    minWidth: 205,
+    padding: 16,
   },
+  metricCardMobile: { minWidth: '100%' },
+  metricIcon: { alignItems: 'center', borderRadius: 8, height: 30, justifyContent: 'center', width: 30 },
+  metricLabel: { color: theme.colors.muted, fontSize: 11.5, fontWeight: '800', marginTop: 11 },
+  metricValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 20, marginTop: 4 },
+  metricNote: { color: '#929292', fontSize: 10.5, marginTop: 4 },
+
+  riskBanner: {
+    alignItems: 'center',
+    backgroundColor: '#FFF4F3',
+    borderColor: '#F1CDCE',
+    borderRadius: 13,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  riskIcon: { alignItems: 'center', backgroundColor: '#FDE4E5', borderRadius: 9, height: 36, justifyContent: 'center', width: 36 },
+  riskTextArea: { flex: 1 },
+  riskTitle: { color: theme.colors.danger, fontSize: 13, fontWeight: '900' },
+  riskText: { color: '#784749', fontSize: 12.5, lineHeight: 18, marginTop: 2 },
+
+  analysisGrid: { alignItems: 'stretch', flexDirection: 'row', gap: 12 },
+  analysisGridCompact: { flexDirection: 'column' },
+  panel: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  insightPanel: { flex: 0.9, minWidth: 275, padding: 18 },
+  panelHead: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', gap: 14, padding: 18 },
+  chartPanel: { flex: 2.1, minHeight: 300, padding: 18 },
+  chartPanelHead: { padding: 0 },
+  panelHeadMobile: { flexDirection: 'column' },
+  panelTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 16 },
+  panelSubtitle: { color: theme.colors.muted, fontSize: 12, marginTop: 4 },
+  panelTotal: { color: theme.colors.text, fontSize: 13, fontWeight: '900' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  legendItem: { alignItems: 'center', flexDirection: 'row', gap: 5 },
+  legendDot: { borderRadius: 3, height: 7, width: 7 },
+  legendIn: { backgroundColor: theme.colors.success },
+  legendOut: { backgroundColor: theme.colors.danger },
+  legendForecast: { backgroundColor: '#C8CDD1' },
+  legendText: { color: theme.colors.muted, fontSize: 10.5, fontWeight: '700' },
+  chartArea: { alignItems: 'flex-end', flexDirection: 'row', height: 155, marginTop: 24, paddingBottom: 25, position: 'relative' },
+  chartBaseline: { backgroundColor: '#E9E7E1', bottom: 24, height: 1, left: 0, position: 'absolute', right: 0 },
+  chartColumn: { alignItems: 'center', flex: 1, height: 130, justifyContent: 'flex-end', minWidth: 16 },
+  bars: { alignItems: 'flex-end', flexDirection: 'row', gap: 2, height: 106 },
+  chartBar: { borderRadius: 3, justifyContent: 'flex-end', minWidth: 4, overflow: 'hidden', width: 7 },
+  forecastCap: { backgroundColor: 'rgba(255,255,255,0.55)', position: 'absolute', top: 0, width: '100%' },
+  chartDate: { color: '#8B8B8B', fontSize: 9.5, height: 16, marginTop: 5 },
+  chartSummary: { borderTopColor: '#EEECE7', borderTopWidth: 1, flexDirection: 'row', gap: 8, paddingTop: 12 },
+  chartSummaryText: { color: theme.colors.muted, fontSize: 11.5, fontWeight: '700' },
+  chartSummaryDivider: { color: '#C2C0BA', fontSize: 11 },
+  insightList: { gap: 4, marginTop: 14 },
+  insightRow: { alignItems: 'center', borderTopColor: '#EFEEE9', borderTopWidth: 1, flexDirection: 'row', gap: 11, paddingVertical: 13 },
+  insightIcon: { alignItems: 'center', borderRadius: 9, height: 36, justifyContent: 'center', width: 36 },
+  insightContent: { flex: 1 },
+  insightLabel: { color: theme.colors.muted, fontSize: 10.5, fontWeight: '700', textTransform: 'uppercase' },
+  insightValue: { color: theme.colors.text, fontSize: 15, fontWeight: '900', marginTop: 2 },
+  insightDate: { color: theme.colors.muted, fontSize: 10.5, marginTop: 2 },
+  negative: { color: theme.colors.danger },
+
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 18, paddingBottom: 20, paddingHorizontal: 18 },
+  categoryItem: { flexBasis: '47%', flexGrow: 1, minWidth: 260 },
+  categoryItemMobile: { minWidth: '100%' },
+  categoryTop: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
+  categoryName: { color: theme.colors.text, flex: 1, fontSize: 12.5, fontWeight: '800' },
+  categoryValue: { color: theme.colors.text, fontSize: 12.5, fontWeight: '900' },
+  categoryTrack: { backgroundColor: '#EEEDE8', borderRadius: 4, height: 6, marginTop: 8, overflow: 'hidden' },
+  categoryFill: { borderRadius: 4, height: '100%' },
+  categoryForecast: { color: theme.colors.muted, fontSize: 10.5, marginTop: 5 },
+
+  periodPill: { alignItems: 'center', backgroundColor: '#F3F2EE', borderRadius: 16, flexDirection: 'row', gap: 5, paddingHorizontal: 10, paddingVertical: 6 },
+  periodPillText: { color: theme.colors.muted, fontSize: 11, fontWeight: '800' },
+  tableHeader: { backgroundColor: '#F7F6F3', borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10 },
+  tableHeadText: { color: '#858585', fontSize: 9.5, fontWeight: '900', letterSpacing: 0.4 },
+  tableGroup: { borderBottomColor: '#ECEAE5', borderBottomWidth: 1 },
+  todayGroup: { borderLeftColor: '#C9A548', borderLeftWidth: 3 },
+  tableRow: { alignItems: 'center', flexDirection: 'row', minHeight: 68, paddingHorizontal: 16, paddingVertical: 10 },
+  tableRowMobile: { alignItems: 'stretch', flexDirection: 'column', gap: 12 },
+  dateColumn: { flex: 1.35, minWidth: 130 },
+  mobileDateColumn: { minWidth: 0, width: '100%' },
+  numberColumn: { flex: 1, minWidth: 100, textAlign: 'right' },
+  balanceColumn: { flex: 1.1, minWidth: 115, textAlign: 'right' },
+  expandColumn: { alignItems: 'flex-end', justifyContent: 'center', width: 32 },
+  tableDate: { color: theme.colors.text, fontSize: 13, fontWeight: '900' },
+  rowMetaLine: { alignItems: 'center', flexDirection: 'row', gap: 7, marginTop: 4 },
+  todayBadge: { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  itemCount: { color: theme.colors.muted, fontSize: 10.5 },
+  tableValue: { color: theme.colors.text, fontSize: 12.5, fontWeight: '800' },
+  inValue: { color: theme.colors.success },
+  outValue: { color: theme.colors.danger },
+  forecastValue: { color: '#4D6478' },
+  balanceValue: { color: theme.colors.text, fontWeight: '900' },
+  mobileValues: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, width: '100%' },
+  mobileValue: { flex: 1, minWidth: 90 },
+  mobileValueLabel: { color: theme.colors.muted, fontSize: 9.5, fontWeight: '700', marginBottom: 3, textTransform: 'uppercase' },
+  itemList: { backgroundColor: '#FAF9F6', borderTopColor: '#ECEAE5', borderTopWidth: 1, paddingHorizontal: 18 },
+  itemRow: { alignItems: 'center', borderBottomColor: '#EEECE8', borderBottomWidth: 1, flexDirection: 'row', gap: 11, paddingVertical: 11 },
+  itemRowMobile: { alignItems: 'flex-start' },
+  itemDirection: { alignItems: 'center', borderRadius: 8, height: 30, justifyContent: 'center', width: 30 },
+  itemDirectionIn: { backgroundColor: '#EAF7EF' },
+  itemDirectionOut: { backgroundColor: '#FDECEC' },
+  itemMain: { flex: 1 },
+  itemLabel: { color: theme.colors.text, fontSize: 12.5, fontWeight: '700' },
+  itemMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 4 },
+  itemCategory: { color: theme.colors.muted, fontSize: 10.5 },
+  statusBadge: { borderRadius: 8, fontSize: 8.5, fontWeight: '900', overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 3 },
+  statusRealized: { backgroundColor: '#E8F4EC', color: theme.colors.success },
+  statusForecast: { backgroundColor: '#ECEFF2', color: '#596B78' },
+  itemAmount: { fontSize: 12.5, fontWeight: '900' },
+  itemAmountIn: { color: theme.colors.success },
+  itemAmountOut: { color: theme.colors.danger },
+  tableFoot: { alignItems: 'center', backgroundColor: '#FAF9F6', flexDirection: 'row', gap: 7, paddingHorizontal: 16, paddingVertical: 11 },
+  tableFootText: { color: theme.colors.muted, flex: 1, fontSize: 10.5 },
 });
