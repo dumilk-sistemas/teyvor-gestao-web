@@ -997,9 +997,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
         }}
         onSave={save}
         busy={busy}
+        errorText={modalError}
       >
-        {!!modalError && <Notice text={modalError} tone="error" />}
-
         {mode === 'entry' ? (
           <>
             <Choice

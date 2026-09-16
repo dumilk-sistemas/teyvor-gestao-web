@@ -104,8 +104,8 @@ export async function updateAccount(id: number, payload: Record<string, unknown>
 }
 
 export async function deleteAccount(id: number) {
-  return fullRequest<any>(`/admin/accounts/${id}`, {
-    method: 'DELETE',
+  return fullRequest<any>(`/admin/accounts/${id}/delete`, {
+    method: 'POST',
   });
 }
 
