@@ -76,6 +76,10 @@ export function AccountsModal({
   const [form, setForm] = useState<any>(emptyAccountForm);
   const [busy, setBusy] = useState(false);
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<any>(emptyAccountForm);
+  const [editBusy, setEditBusy] = useState(false);
+
   const [transferForm, setTransferForm] = useState<any>(emptyTransferForm);
   const [transferBusy, setTransferBusy] = useState(false);
   const [transferError, setTransferError] = useState('');
@@ -147,6 +151,48 @@ export function AccountsModal({
       onChanged?.();
     } catch (e: any) {
       setError(e?.message || 'Falha ao atualizar conta.');
+    }
+  }
+
+  function startEdit(acc: any) {
+    setNewAccountOpen(false);
+    setEditingId(acc.id);
+    setEditForm({
+      name: acc.name,
+      account_type: acc.account_type,
+      initial_balance: String(acc.initial_balance),
+      opening_date: acc.opening_date,
+      is_default: acc.is_default,
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditForm(emptyAccountForm);
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    if (!editForm.name.trim()) {
+      setError('Informe o nome da conta.');
+      return;
+    }
+    try {
+      setEditBusy(true);
+      setError('');
+      await updateAccount(editingId, {
+        name: editForm.name.trim(),
+        account_type: editForm.account_type,
+        initial_balance: toNumber(editForm.initial_balance),
+        opening_date: editForm.opening_date,
+      });
+      cancelEdit();
+      await load();
+      onChanged?.();
+    } catch (e: any) {
+      setError(e?.message || 'Não foi possível salvar as alterações.');
+    } finally {
+      setEditBusy(false);
     }
   }
 
@@ -297,12 +343,52 @@ export function AccountsModal({
                           </Pressable>
                         )}
 
+                        <Pressable onPress={() => (editingId === acc.id ? cancelEdit() : startEdit(acc))}>
+                          <Text style={styles.linkAction}>
+                            {editingId === acc.id ? 'Cancelar edição' : 'Editar'}
+                          </Text>
+                        </Pressable>
+
                         <Pressable onPress={() => toggleActive(acc)}>
                           <Text style={styles.linkAction}>
                             {acc.active ? 'Desativar' : 'Ativar'}
                           </Text>
                         </Pressable>
                       </View>
+
+                      {editingId === acc.id && (
+                        <View style={styles.formArea}>
+                          <Field
+                            label="Nome"
+                            value={editForm.name}
+                            onChangeText={(v) => setEditForm({ ...editForm, name: v })}
+                          />
+
+                          <Choice
+                            label="Tipo"
+                            options={ACCOUNT_TYPES}
+                            value={editForm.account_type}
+                            onChange={(v) => setEditForm({ ...editForm, account_type: v })}
+                          />
+
+                          <Field
+                            label="Saldo inicial"
+                            value={String(editForm.initial_balance)}
+                            onChangeText={(v) => setEditForm({ ...editForm, initial_balance: v })}
+                            placeholder="0,00"
+                            keyboardType="decimal-pad"
+                          />
+
+                          <Field
+                            label="Data do saldo inicial (AAAA-MM-DD)"
+                            value={editForm.opening_date}
+                            onChangeText={(v) => setEditForm({ ...editForm, opening_date: v })}
+                            placeholder={isoToday()}
+                          />
+
+                          <ActionButton label="Salvar alterações" onPress={saveEdit} disabled={editBusy} />
+                        </View>
+                      )}
                     </View>
 
                     <Text
