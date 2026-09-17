@@ -14,9 +14,10 @@ import { Feather } from '@expo/vector-icons';
 import { AdminShell } from '@/components/AdminShell';
 import { Notice } from '@/components/FormKit';
 import { theme } from '@/constants/theme';
+import { useBranding } from '@/contexts/BrandingContext';
 import { getReports } from '@/services/api';
 import { getFull } from '@/services/fullApi';
-import type { CustomersData, FinanceData, PurchasesData, ReportsData, StockData } from '@/types/api';
+import type { Branding, CustomersData, FinanceData, PurchasesData, ReportsData, StockData } from '@/types/api';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -143,29 +144,56 @@ function downloadCsv(
 
 function escapeHtml(value: string | number) {
   return String(value ?? '').replace(
-    /[&<>]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string)
+    /[&<>"']/g,
+    (c) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;',
+      }[c] as string)
   );
+}
+
+function safePrintColor(value: string | null | undefined, fallback: string) {
+  return /^#[0-9a-f]{6}$/i.test(value || '') ? String(value) : fallback;
 }
 
 function printRows(
   title: string,
   subtitle: string,
   headers: string[],
-  rows: Array<Array<string | number>>
+  rows: Array<Array<string | number>>,
+  branding: Branding
 ) {
   if (Platform.OS !== 'web') {
     return;
   }
 
+  const primary = safePrintColor(branding.color_primary, '#C49A3A');
+  const secondary = safePrintColor(branding.color_secondary, '#1F2933');
+  const brandName = escapeHtml(branding.brand_name || 'TEYVOR');
+  const generatedAt = new Date().toLocaleString('pt-BR');
+  const safeLogoUrl = branding.logo_url && /^https?:\/\//i.test(branding.logo_url)
+    ? escapeHtml(branding.logo_url)
+    : '';
+  const brandLogo = safeLogoUrl
+    ? `<img class="brand-logo" src="${safeLogoUrl}" alt="${brandName}">`
+    : `<div class="brand-mark" aria-hidden="true"></div>`;
+
   const head = `<tr>${headers
-    .map((h) => `<th>${escapeHtml(h)}</th>`)
+    .map((h) => `<th scope="col">${escapeHtml(h)}</th>`)
     .join('')}</tr>`;
   const body = rows
     .map(
       (row) =>
         `<tr>${row
-          .map((cell) => `<td>${escapeHtml(cell)}</td>`)
+          .map((cell) => {
+            const text = String(cell ?? '').trim();
+            const numeric = /^-?(?:R\$\s*)?[\d.]+(?:,\d+)?(?:\s*(?:un|kg|%))?$/i.test(text);
+            return `<td${numeric ? ' class="numeric"' : ''}>${escapeHtml(cell)}</td>`;
+          })
           .join('')}</tr>`
     )
     .join('');
@@ -173,16 +201,52 @@ function printRows(
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(
     title
   )}</title><style>
-    body{font-family:Arial,Helvetica,sans-serif;padding:24px;color:#171717}
-    h1{font-size:18px;margin:0 0 4px}
-    p{font-size:12px;color:#666;margin:0 0 18px}
-    table{width:100%;border-collapse:collapse;font-size:12px}
-    th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
-    th{background:#f2f2f2}
+    :root{--primary:${primary};--secondary:${secondary};--ink:#17202a;--muted:#66717d;--line:#dfe3e6;--soft:#f5f6f4}
+    *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    @page{size:A4 portrait;margin:15mm 11mm 18mm}
+    html,body{margin:0;padding:0;background:#fff;color:var(--ink);font-family:Inter,"Segoe UI",Arial,sans-serif}
+    body{font-size:10px;line-height:1.4}
+    .brand-header{display:flex;align-items:center;justify-content:space-between;border-top:5px solid var(--primary);border-bottom:1px solid var(--line);padding:12px 2px 11px;margin-bottom:22px}
+    .brand-lockup{display:flex;align-items:center;gap:10px;min-width:0}
+    .brand-logo{display:block;max-width:118px;max-height:38px;object-fit:contain}
+    .brand-mark{width:9px;height:34px;border-radius:3px;background:var(--primary);box-shadow:5px 0 0 var(--secondary)}
+    .brand-name{font-size:18px;font-weight:800;letter-spacing:.08em;color:#111820;line-height:1}
+    .brand-sub{margin-top:4px;color:var(--primary);font-size:8px;font-weight:800;letter-spacing:.22em}
+    .document-label{border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--muted);font-size:8px;font-weight:700;letter-spacing:.12em}
+    .report-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:14px}
+    .report-heading h1{font-size:21px;line-height:1.16;margin:0 0 7px;color:#111820;letter-spacing:-.02em}
+    .report-heading p{font-size:10px;color:var(--muted);margin:0}
+    .issue-meta{min-width:150px;text-align:right;color:var(--muted);font-size:8px;line-height:1.6}
+    .issue-meta strong{display:block;color:#27313a;font-size:9px}
+    .summary{display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--soft);border-left:4px solid var(--primary);border-radius:5px;padding:9px 11px;margin-bottom:14px;color:#39434c}
+    .summary strong{color:#151b21}
+    .record-count{white-space:nowrap;font-weight:700;color:var(--secondary)}
+    table{width:100%;border-collapse:separate;border-spacing:0;font-size:8.5px;table-layout:auto}
+    thead{display:table-header-group}
+    tr{break-inside:avoid;page-break-inside:avoid}
+    th{background:#17202a;color:#fff;font-weight:700;padding:7px 6px;text-align:left;border-right:1px solid rgba(255,255,255,.18);white-space:nowrap}
+    th:first-child{border-radius:5px 0 0 0}
+    th:last-child{border-radius:0 5px 0 0;border-right:0}
+    td{padding:6px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+    td:first-child{border-left:1px solid var(--line)}
+    tbody tr:nth-child(even) td{background:#fafaf8}
+    td.numeric{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .empty{padding:28px;text-align:center;border:1px solid var(--line);border-radius:6px;color:var(--muted)}
+    .footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:14px;padding-top:7px;color:#7a838c;font-size:7px;break-inside:avoid;page-break-inside:avoid}
+    .footer strong{color:var(--primary);letter-spacing:.06em}
+    @media print{.brand-header,.summary,th{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
   </style></head><body>
-    <h1>${escapeHtml(title)}</h1>
-    <p>${escapeHtml(subtitle)}</p>
-    <table><thead>${head}</thead><tbody>${body}</tbody></table>
+    <header class="brand-header">
+      <div class="brand-lockup">${brandLogo}<div><div class="brand-name">${brandName}</div><div class="brand-sub">GESTÃO 360</div></div></div>
+      <div class="document-label">RELATÓRIO GERENCIAL</div>
+    </header>
+    <section class="report-heading">
+      <div><h1>${escapeHtml(title)}</h1><p>Informações consolidadas para acompanhamento e tomada de decisão.</p></div>
+      <div class="issue-meta"><strong>Emitido em</strong>${escapeHtml(generatedAt)}</div>
+    </section>
+    <section class="summary"><span><strong>Período / referência:</strong> ${escapeHtml(subtitle)}</span><span class="record-count">${rows.length} ${rows.length === 1 ? 'registro' : 'registros'}</span></section>
+    ${rows.length > 0 ? `<table><thead>${head}</thead><tbody>${body}</tbody></table>` : '<div class="empty">Nenhuma informação encontrada para o período selecionado.</div>'}
+    <footer class="footer"><span><strong>${brandName} GESTÃO 360</strong> · Documento gerado pelo sistema</span><span>${escapeHtml(title)}</span></footer>
   </body></html>`;
 
   const iframe = document.createElement('iframe');
@@ -204,11 +268,26 @@ function printRows(
   frameWindow.document.write(html);
   frameWindow.document.close();
 
-  setTimeout(() => {
+  const readyToPrint = async () => {
+    const images = Array.from(frameWindow.document.images);
+    await Promise.all(
+      images.map(
+        (image) =>
+          image.complete
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                image.onload = () => resolve();
+                image.onerror = () => resolve();
+              })
+      )
+    );
+    await frameWindow.document.fonts?.ready;
     frameWindow.focus();
     frameWindow.print();
     setTimeout(() => document.body.removeChild(iframe), 1000);
-  }, 300);
+  };
+
+  setTimeout(() => void readyToPrint(), 300);
 }
 
 type PeriodKey =
@@ -267,6 +346,7 @@ type CashData = {
 const METHODS = ['Dinheiro', 'Pix', 'Débito', 'Crédito', 'Outros'];
 
 export default function Reports() {
+  const { branding } = useBranding();
   const [data, setData] = useState<ReportsData | null>(null);
   const [cash, setCash] = useState<CashData | null>(null);
   const [customers, setCustomers] = useState<CustomersData | null>(null);
@@ -282,6 +362,13 @@ export default function Reports() {
   const [reportSearch, setReportSearch] = useState('');
 
   const today = isoFromDate(new Date());
+
+  const printReport = (
+    title: string,
+    subtitle: string,
+    headers: string[],
+    rows: Array<Array<string | number>>
+  ) => printRows(title, subtitle, headers, rows, branding);
 
   const [period, setPeriod] = useState<PeriodKey>('30days');
   const [appliedStart, setAppliedStart] = useState(
@@ -1151,7 +1238,7 @@ export default function Reports() {
                 setDetailMode(null)
               }
               onPrint={() =>
-                printRows(
+                printReport(
                   'Relatório de vendas',
                   periodLabel,
                   ['Data', 'Vendas', 'Faturamento'],
@@ -1310,7 +1397,7 @@ export default function Reports() {
                 selectedClosing
                   ? undefined
                   : () =>
-                      printRows(
+                      printReport(
                         'Relatório de caixa',
                         periodLabel,
                         [
@@ -1594,7 +1681,7 @@ export default function Reports() {
               subtitle={`${periodLabel} • Curva ABC por receita (top 10)`}
               onClose={() => setDetailMode(null)}
               onPrint={() =>
-                printRows(
+                printReport(
                   'Produtos mais vendidos — Curva ABC',
                   periodLabel,
                   ['Produto', 'Quantidade', 'Faturamento', '% individual', '% acumulado', 'Curva'],
@@ -1680,7 +1767,7 @@ export default function Reports() {
               subtitle={periodLabel}
               onClose={() => setDetailMode(null)}
               onPrint={() =>
-                printRows(
+                printReport(
                   'Formas de pagamento',
                   periodLabel,
                   ['Forma de pagamento', 'Valor', 'Percentual'],
@@ -1739,7 +1826,7 @@ export default function Reports() {
               subtitle={`${periodLabel} • Curva ABC (top 15)`}
               onClose={() => setDetailMode(null)}
               onPrint={() =>
-                printRows(
+                printReport(
                   'Ranking de clientes — Curva ABC',
                   periodLabel,
                   ['Cliente', 'Compras', 'Total gasto', 'Ticket médio', '% individual', '% acumulado', 'Curva'],
@@ -1828,7 +1915,7 @@ export default function Reports() {
               onClose={() => setDetailMode(null)}
               onPrint={() =>
                 financeReportMode === 'category'
-                  ? printRows(
+                  ? printReport(
                       'Financeiro por categoria',
                       periodLabel,
                       ['Tipo', 'Categoria', 'Lançamentos', 'Total', 'Realizado', 'Pendente'],
@@ -1851,7 +1938,7 @@ export default function Reports() {
                         ]),
                       ]
                     )
-                  : printRows(
+                  : printReport(
                       financeModeLabel(financeReportMode),
                       periodLabel,
                       ['Descrição', 'Categoria', 'Data', 'Status', 'Valor'],
@@ -2049,7 +2136,7 @@ export default function Reports() {
               subtitle={periodLabel}
               onClose={() => setDetailMode(null)}
               onPrint={() =>
-                printRows(
+                printReport(
                   'Relatório de compras e recebimentos',
                   periodLabel,
                   ['Data', 'Fornecedor', 'Documento', 'Itens', 'Total', 'Conta a pagar'],
@@ -2123,7 +2210,7 @@ export default function Reports() {
               subtitle="Situação atual da loja"
               onClose={() => setDetailMode(null)}
               onPrint={() =>
-                printRows(
+                printReport(
                   'Alertas de estoque',
                   `Situação em ${dateBR(today)}`,
                   ['Código', 'Produto', 'Estoque', 'Mínimo', 'Situação'],

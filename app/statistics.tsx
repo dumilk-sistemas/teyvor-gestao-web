@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
 import { theme, useThemeColors } from '@/constants/theme';
@@ -15,6 +16,7 @@ import { getFull } from '@/services/fullApi';
 import type { ReportsData } from '@/types/api';
 
 type Tab = 'day' | 'month' | 'year' | 'period';
+type FeatherIconName = ComponentProps<typeof Feather>['name'];
 
 type BarItem = {
   key: string;
@@ -731,6 +733,29 @@ export default function Statistics() {
     );
   }, [view.bars]);
 
+  const activeBars = useMemo(
+    () => view.bars.filter((item) => item.value > 0),
+    [view.bars]
+  );
+
+  const rankedBars = useMemo(
+    () =>
+      [...activeBars]
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 8),
+    [activeBars]
+  );
+
+  const averagePerActiveRange =
+    activeBars.length > 0
+      ? view.summary.total / activeBars.length
+      : 0;
+
+  const bestRangeShare =
+    bestBar && view.summary.total > 0
+      ? (bestBar.value / view.summary.total) * 100
+      : 0;
+
   // Complementa o gráfico de evolução com um retrato do MESMO período:
   // pra onde o dinheiro entrou (formas de pagamento) e o que mais vendeu,
   // no mesmo espírito do "painel integrado" dos concorrentes.
@@ -932,34 +957,51 @@ export default function Statistics() {
         </View>
       )}
 
-      <View style={styles.tabs}>
+      <View style={styles.analysisPanel}>
+        <View style={styles.analysisPanelHeader}>
+          <View>
+            <Text style={styles.analysisEyebrow}>JANELA DE ANÁLISE</Text>
+            <Text style={styles.analysisTitle}>Compare o desempenho</Text>
+          </View>
+
+          <View style={styles.analysisStatus}>
+            <View style={styles.analysisStatusDot} />
+            <Text style={styles.analysisStatusText}>Dados consolidados</Text>
+          </View>
+        </View>
+
+        <View style={styles.tabs}>
         <TabButton
           label="Dia"
+          icon="sun"
           active={tab === 'day'}
           onPress={() => setTab('day')}
         />
 
         <TabButton
           label="Mês"
+          icon="calendar"
           active={tab === 'month'}
           onPress={() => setTab('month')}
         />
 
         <TabButton
           label="Ano"
+          icon="bar-chart-2"
           active={tab === 'year'}
           onPress={() => setTab('year')}
         />
 
         <TabButton
           label="Período"
+          icon="sliders"
           active={tab === 'period'}
           onPress={() => setTab('period')}
         />
-      </View>
+        </View>
 
-      {tab === 'period' && (
-        <View style={styles.customPeriodCard}>
+        {tab === 'period' && (
+          <View style={styles.customPeriodCard}>
           <Text style={styles.customPeriodTitle}>
             Escolha o período
           </Text>
@@ -1044,10 +1086,10 @@ export default function Statistics() {
               {periodNotice}
             </Text>
           )}
-        </View>
-      )}
+          </View>
+        )}
 
-      <View style={styles.periodCard}>
+        <View style={styles.periodCard}>
         {tab !== 'period' ? (
           <Pressable
             style={styles.arrowButton}
@@ -1087,41 +1129,69 @@ export default function Statistics() {
         ) : (
           <View style={styles.arrowSpacer} />
         )}
+        </View>
       </View>
 
-      <View style={styles.heroCard}>
-        <Text style={styles.heroLabel}>FATURAMENTO</Text>
-
-        <Text style={styles.heroValue}>
-          {money(view.summary.total)}
-        </Text>
-
-        <Comparison
+      <View style={styles.metricsGrid}>
+        <PerformanceMetric
+          label="Faturamento"
+          value={money(view.summary.total)}
+          icon="dollar-sign"
+          color="#247A4D"
+          background="#EAF6EF"
           current={view.summary.total}
           previous={view.previous.total}
         />
 
-        <View style={styles.heroDivider} />
+        <PerformanceMetric
+          label="Vendas concluídas"
+          value={String(view.summary.sales)}
+          icon="shopping-bag"
+          color="#3568B8"
+          background="#EDF3FC"
+          current={view.summary.sales}
+          previous={view.previous.sales}
+        />
 
-        <View style={styles.heroStats}>
-          <View style={styles.heroStat}>
-            <Text style={styles.heroStatLabel}>Vendas</Text>
-            <Text style={styles.heroStatValue}>
-              {String(view.summary.sales)}
-            </Text>
-          </View>
+        <PerformanceMetric
+          label="Ticket médio"
+          value={money(view.summary.ticket)}
+          icon="trending-up"
+          color="#8A6520"
+          background="#FBF3DF"
+          current={view.summary.ticket}
+          previous={view.previous.ticket}
+        />
 
-          <View style={styles.heroStatDivider} />
+        <PerformanceMetric
+          label="Média por faixa ativa"
+          value={money(averagePerActiveRange)}
+          icon="activity"
+          color="#6E56A6"
+          background="#F2EEFA"
+          helper={`${activeBars.length} ${activeBars.length === 1 ? 'faixa com movimento' : 'faixas com movimento'}`}
+        />
+      </View>
 
-          <View style={styles.heroStat}>
-            <Text style={styles.heroStatLabel}>
-              Ticket médio
-            </Text>
-            <Text style={styles.heroStatValue}>
-              {money(view.summary.ticket)}
-            </Text>
-          </View>
-        </View>
+      <View style={styles.periodHighlights}>
+        <HighlightItem
+          icon="award"
+          label="Melhor desempenho"
+          value={bestBar && bestBar.value > 0 ? bestBar.detailLabel : 'Sem movimento'}
+          detail={bestBar && bestBar.value > 0 ? money(bestBar.value) : 'Nenhuma venda no período'}
+        />
+        <HighlightItem
+          icon="pie-chart"
+          label="Concentração da melhor faixa"
+          value={`${bestRangeShare.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}
+          detail="Participação no faturamento total"
+        />
+        <HighlightItem
+          icon="check-circle"
+          label="Cobertura do período"
+          value={`${activeBars.length} de ${view.bars.length}`}
+          detail="Faixas com vendas registradas"
+        />
       </View>
 
       <View style={styles.chartCard}>
@@ -1132,18 +1202,29 @@ export default function Statistics() {
             </Text>
 
             <Text style={styles.chartSubtitle}>
-              Arraste horizontalmente para consultar todas as faixas.
+              Evolução do faturamento no período selecionado. Arraste para consultar todas as faixas.
             </Text>
           </View>
 
           {bestBar && bestBar.value > 0 && (
             <View style={styles.bestBadge}>
-              <Text style={styles.bestBadgeLabel}>Maior</Text>
+              <Text style={styles.bestBadgeLabel}>PICO DO PERÍODO</Text>
               <Text style={styles.bestBadgeValue}>
                 {compactMoney(bestBar.value)}
               </Text>
             </View>
           )}
+        </View>
+
+        <View style={styles.chartLegend}>
+          <View style={styles.legendItem}>
+            <View style={styles.legendDefaultDot} />
+            <Text style={styles.legendText}>Faturamento</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={styles.legendHighlightDot} />
+            <Text style={styles.legendText}>Maior faixa</Text>
+          </View>
         </View>
 
         {view.bars.length > 0 ? (
@@ -1153,6 +1234,10 @@ export default function Statistics() {
             contentContainerStyle={styles.chartScrollContent}
           >
             <View style={styles.chartArea}>
+              <View style={[styles.chartGuide, styles.chartGuideTop]} />
+              <View style={[styles.chartGuide, styles.chartGuideMiddle]} />
+              <View style={[styles.chartGuide, styles.chartGuideBottom]} />
+
               {view.bars.map((item) => {
                 const percentage =
                   item.value > 0
@@ -1169,10 +1254,17 @@ export default function Statistics() {
                     key={item.key}
                     style={styles.barColumn}
                   >
+                    <Text numberOfLines={1} style={styles.barValue}>
+                      {item.value > 0
+                        ? compactMoney(item.value).replace(/^R\$\s*/, '')
+                        : '—'}
+                    </Text>
                     <View style={styles.barTrack}>
                       <View
                         style={[
                           styles.barFill,
+                          item.key === bestBar?.key &&
+                            styles.barFillHighlight,
                           {
                             height: `${percentage}%`,
                           },
@@ -1204,23 +1296,42 @@ export default function Statistics() {
         )}
       </View>
 
-      {view.bars.some((item) => item.value > 0) && (
+      {rankedBars.length > 0 && (
         <View style={styles.detailCard}>
           <View style={styles.detailHeader}>
-            <Text style={styles.detailTitle}>
-              Detalhamento
-            </Text>
+            <View style={styles.sectionTitleGroup}>
+              <View style={styles.sectionIcon}>
+                <Feather name="list" size={15} color={c.gold} />
+              </View>
+              <View>
+                <Text style={styles.detailTitle}>Ranking do período</Text>
+                <Text style={styles.sectionSubtitle}>Faixas com maior faturamento</Text>
+              </View>
+            </View>
 
             <Text style={styles.detailHeaderMeta}>
-              {view.bars.filter((item) => item.value > 0).length}{' '}
-              faixa(s) com vendas
+              Top {rankedBars.length}
             </Text>
           </View>
 
-          {view.bars
-            .filter((item) => item.value > 0)
-            .map((item) => (
+          {rankedBars.map((item, index) => (
               <View key={item.key} style={styles.detailRow}>
+                <View
+                  style={[
+                    styles.rankBadge,
+                    index === 0 && styles.rankBadgeFirst,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.rankBadgeText,
+                      index === 0 && styles.rankBadgeTextFirst,
+                    ]}
+                  >
+                    {index + 1}
+                  </Text>
+                </View>
+
                 <View style={styles.detailMain}>
                   <Text style={styles.detailName}>
                     {item.detailLabel}
@@ -1230,6 +1341,20 @@ export default function Statistics() {
                     {item.sales} venda(s) • Ticket{' '}
                     {money(item.ticket)}
                   </Text>
+
+                  <View style={styles.rankingTrack}>
+                    <View
+                      style={[
+                        styles.rankingFill,
+                        {
+                          width: `${Math.max(
+                            5,
+                            (item.value / Math.max(1, bestBar?.value || 1)) * 100
+                          )}%`,
+                        },
+                      ]}
+                    />
+                  </View>
                 </View>
 
                 <Text style={styles.detailAmount}>
@@ -1241,11 +1366,27 @@ export default function Statistics() {
       )}
 
       {(periodInsights.payments.length > 0 || periodInsights.products.length > 0) && (
-        <View style={styles.insightsGrid}>
+        <View style={styles.insightsSection}>
+          <View style={styles.contentSectionHeader}>
+            <View>
+              <Text style={styles.contentSectionEyebrow}>COMPOSIÇÃO DO RESULTADO</Text>
+              <Text style={styles.contentSectionTitle}>O que movimentou o período</Text>
+            </View>
+            <Text style={styles.contentSectionPeriod}>{view.title}</Text>
+          </View>
+
+          <View style={styles.insightsGrid}>
           {periodInsights.payments.length > 0 && (
             <View style={styles.insightCard}>
-              <Text style={styles.detailTitle}>Formas de pagamento</Text>
-              <Text style={styles.insightSubtitle}>{view.title}</Text>
+              <View style={styles.insightHeader}>
+                <View style={[styles.insightIcon, styles.paymentIcon]}>
+                  <Feather name="credit-card" size={16} color="#3568B8" />
+                </View>
+                <View>
+                  <Text style={styles.detailTitle}>Formas de pagamento</Text>
+                  <Text style={styles.insightSubtitle}>Participação no faturamento</Text>
+                </View>
+              </View>
 
               {periodInsights.payments.map((row) => (
                 <View key={row.method} style={styles.paymentRow}>
@@ -1270,14 +1411,24 @@ export default function Statistics() {
 
           {periodInsights.products.length > 0 && (
             <View style={styles.insightCard}>
-              <Text style={styles.detailTitle}>Produtos mais vendidos</Text>
-              <Text style={styles.insightSubtitle}>{view.title}</Text>
+              <View style={styles.insightHeader}>
+                <View style={[styles.insightIcon, styles.productIcon]}>
+                  <Feather name="package" size={16} color="#8A6520" />
+                </View>
+                <View>
+                  <Text style={styles.detailTitle}>Produtos mais vendidos</Text>
+                  <Text style={styles.insightSubtitle}>Ranking por receita</Text>
+                </View>
+              </View>
 
               {periodInsights.products.map((product, index) => (
                 <View key={product.name} style={styles.detailRow}>
+                  <View style={styles.productRank}>
+                    <Text style={styles.productRankText}>{index + 1}</Text>
+                  </View>
                   <View style={styles.detailMain}>
                     <Text style={styles.detailName}>
-                      {index + 1}. {product.name}
+                      {product.name}
                     </Text>
                     <Text style={styles.detailMeta}>
                       {product.qty} vendido(s)
@@ -1290,18 +1441,91 @@ export default function Statistics() {
               ))}
             </View>
           )}
+          </View>
         </View>
       )}
     </AdminShell>
   );
 }
 
+function PerformanceMetric({
+  label,
+  value,
+  icon,
+  color,
+  background,
+  current,
+  previous,
+  helper,
+}: {
+  label: string;
+  value: string;
+  icon: FeatherIconName;
+  color: string;
+  background: string;
+  current?: number;
+  previous?: number;
+  helper?: string;
+}) {
+  const c = useThemeColors();
+  const styles = useMemo(() => makeStyles(c), [c]);
+
+  return (
+    <View style={styles.metricCard}>
+      <View style={styles.metricTopRow}>
+        <View style={[styles.metricIcon, { backgroundColor: background }]}>
+          <Feather name={icon} size={17} color={color} />
+        </View>
+        <Text style={styles.metricLabel}>{label}</Text>
+      </View>
+
+      <Text style={styles.metricValue}>{value}</Text>
+
+      {current !== undefined && previous !== undefined ? (
+        <Comparison current={current} previous={previous} compact />
+      ) : (
+        <Text style={styles.metricHelper}>{helper}</Text>
+      )}
+    </View>
+  );
+}
+
+function HighlightItem({
+  icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: FeatherIconName;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  const c = useThemeColors();
+  const styles = useMemo(() => makeStyles(c), [c]);
+
+  return (
+    <View style={styles.highlightItem}>
+      <View style={styles.highlightIcon}>
+        <Feather name={icon} size={15} color={c.gold} />
+      </View>
+      <View style={styles.highlightContent}>
+        <Text style={styles.highlightLabel}>{label}</Text>
+        <Text numberOfLines={1} style={styles.highlightValue}>{value}</Text>
+        <Text numberOfLines={1} style={styles.highlightDetail}>{detail}</Text>
+      </View>
+    </View>
+  );
+}
+
 function TabButton({
   label,
+  icon,
   active,
   onPress,
 }: {
   label: string;
+  icon: FeatherIconName;
   active: boolean;
   onPress: () => void;
 }) {
@@ -1315,6 +1539,11 @@ function TabButton({
       ]}
       onPress={onPress}
     >
+      <Feather
+        name={icon}
+        size={15}
+        color={active ? '#FFFFFF' : theme.colors.muted}
+      />
       <Text
         style={[
           styles.tabText,
@@ -1349,9 +1578,11 @@ function QuickButton({
 function Comparison({
   current,
   previous,
+  compact = false,
 }: {
   current: number;
   previous: number;
+  compact?: boolean;
 }) {
   const tone = comparisonTone(current, previous);
   const c = useThemeColors();
@@ -1361,6 +1592,7 @@ function Comparison({
     <View
       style={[
         styles.comparisonPill,
+        compact && styles.comparisonPillCompact,
         tone === 'positive' &&
           styles.comparisonPillPositive,
         tone === 'negative' &&
@@ -1397,13 +1629,65 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     fontWeight: '800',
   },
 
-  tabs: {
-    flexDirection: 'row',
+  analysisPanel: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: 14,
-    padding: 5,
+    borderRadius: 18,
+    padding: 14,
+    gap: 12,
+  },
+
+  analysisPanelHeader: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+
+  analysisEyebrow: {
+    color: c.gold,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+
+  analysisTitle: {
+    color: theme.colors.text,
+    fontSize: 17,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+
+  analysisStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F4F7F4',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  analysisStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colors.success,
+  },
+
+  analysisStatusText: {
+    color: theme.colors.muted,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: '#F2F1ED',
+    borderRadius: 12,
+    padding: 4,
     gap: 4,
   },
 
@@ -1411,8 +1695,10 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     flex: 1,
     minHeight: 42,
     borderRadius: 10,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 7,
     paddingHorizontal: 5,
   },
 
@@ -1431,10 +1717,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   customPeriodCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 16,
+    backgroundColor: '#F8F7F4',
+    borderRadius: 12,
     padding: 14,
     gap: 12,
   },
@@ -1527,22 +1811,22 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAFAF8',
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 16,
-    padding: 10,
+    borderColor: '#E9E7E1',
+    borderRadius: 12,
+    padding: 8,
   },
 
   arrowSpacer: {
-    width: 46,
-    height: 46,
+    width: 38,
+    height: 38,
   },
 
   arrowButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F3F1EC',
@@ -1553,8 +1837,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   arrowText: {
-    fontSize: 32,
-    lineHeight: 34,
+    fontSize: 26,
+    lineHeight: 28,
     color: theme.colors.text,
   },
 
@@ -1580,6 +1864,117 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     fontSize: 11,
     color: theme.colors.muted,
     textAlign: 'center',
+  },
+
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+
+  metricCard: {
+    flexGrow: 1,
+    flexBasis: 210,
+    minWidth: 190,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    padding: 15,
+  },
+
+  metricTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+
+  metricIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  metricLabel: {
+    color: theme.colors.muted,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.45,
+  },
+
+  metricValue: {
+    color: theme.colors.text,
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '900',
+    marginTop: 12,
+  },
+
+  metricHelper: {
+    color: theme.colors.muted,
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+
+  periodHighlights: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    padding: 6,
+    gap: 2,
+  },
+
+  highlightItem: {
+    flexGrow: 1,
+    flexBasis: 230,
+    minWidth: 210,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+
+  highlightIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F6F1E5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  highlightContent: {
+    flex: 1,
+  },
+
+  highlightLabel: {
+    color: theme.colors.muted,
+    fontSize: 9,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  highlightValue: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+
+  highlightDetail: {
+    color: theme.colors.muted,
+    fontSize: 10,
+    marginTop: 2,
   },
 
   heroCard: {
@@ -1617,6 +2012,12 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     backgroundColor: '#F1F0EC',
+  },
+
+  comparisonPillCompact: {
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
   },
 
   comparisonPillPositive: {
@@ -1682,8 +2083,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 18,
   },
 
   chartHeader: {
@@ -1711,10 +2112,10 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   bestBadge: {
-    borderRadius: 10,
-    backgroundColor: '#F3F0E8',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: '#F7F2E6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     alignItems: 'flex-end',
   },
 
@@ -1732,41 +2133,111 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     color: theme.colors.text,
   },
 
+  chartLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginTop: 14,
+  },
+
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  legendDefaultDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 3,
+    backgroundColor: '#738496',
+  },
+
+  legendHighlightDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 3,
+    backgroundColor: c.gold,
+  },
+
+  legendText: {
+    color: theme.colors.muted,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
   chartScrollContent: {
-    paddingTop: 18,
+    paddingTop: 12,
     paddingBottom: 2,
   },
 
   chartArea: {
     minWidth: '100%',
-    height: 218,
+    height: 230,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 6,
+    gap: 8,
+    paddingTop: 16,
+    position: 'relative',
+  },
+
+  chartGuide: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: '#ECEAE5',
+  },
+
+  chartGuideTop: {
+    top: 38,
+  },
+
+  chartGuideMiddle: {
+    top: 108,
+  },
+
+  chartGuideBottom: {
+    top: 178,
   },
 
   barColumn: {
-    width: 42,
+    width: 50,
     alignItems: 'center',
+    zIndex: 1,
+  },
+
+  barValue: {
+    width: 54,
+    height: 16,
+    color: theme.colors.muted,
+    fontSize: 8,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 4,
   },
 
   barTrack: {
-    width: 27,
-    height: 180,
-    borderRadius: 7,
-    backgroundColor: '#F0EEE9',
+    width: 30,
+    height: 160,
+    borderRadius: 6,
+    backgroundColor: 'rgba(115, 132, 150, 0.10)',
     overflow: 'hidden',
     justifyContent: 'flex-end',
   },
 
   barFill: {
     width: '100%',
+    backgroundColor: '#738496',
+    borderRadius: 6,
+  },
+
+  barFillHighlight: {
     backgroundColor: c.gold,
-    borderRadius: 7,
   },
 
   barLabel: {
-    width: 42,
+    width: 50,
     marginTop: 7,
     fontSize: 9,
     fontWeight: '800',
@@ -1807,7 +2278,28 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    padding: 15,
+    padding: 16,
+  },
+
+  sectionTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  sectionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F7F2E6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  sectionSubtitle: {
+    color: theme.colors.muted,
+    fontSize: 10,
+    marginTop: 2,
   },
 
   detailTitle: {
@@ -1826,14 +2318,37 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 13,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
   },
 
   detailMain: {
     flex: 1,
+  },
+
+  rankBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: '#F1F2F3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  rankBadgeFirst: {
+    backgroundColor: '#F7F0DE',
+  },
+
+  rankBadgeText: {
+    color: theme.colors.muted,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  rankBadgeTextFirst: {
+    color: '#8A6520',
   },
 
   detailName: {
@@ -1849,10 +2364,58 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     color: theme.colors.muted,
   },
 
+  rankingTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#EEEDE9',
+    overflow: 'hidden',
+    marginTop: 7,
+  },
+
+  rankingFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: c.gold,
+  },
+
   detailAmount: {
     fontSize: 13,
     fontWeight: '900',
     color: theme.colors.text,
+  },
+
+  insightsSection: {
+    gap: 10,
+  },
+
+  contentSectionHeader: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+
+  contentSectionEyebrow: {
+    color: c.gold,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+
+  contentSectionTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+
+  contentSectionPeriod: {
+    color: theme.colors.muted,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'capitalize',
   },
 
   insightsGrid: {
@@ -1873,12 +2436,48 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     paddingBottom: 6,
   },
 
+  insightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 15,
+  },
+
+  insightIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  paymentIcon: {
+    backgroundColor: '#EDF3FC',
+  },
+
+  productIcon: {
+    backgroundColor: '#FBF3DF',
+  },
+
   insightSubtitle: {
     color: theme.colors.muted,
     fontSize: 11,
-    marginTop: -8,
-    paddingHorizontal: 15,
-    paddingBottom: 10,
+    marginTop: 2,
+  },
+
+  productRank: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: '#F6F1E5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  productRankText: {
+    color: '#8A6520',
+    fontSize: 10,
+    fontWeight: '900',
   },
 
   paymentRow: {
