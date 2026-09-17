@@ -204,6 +204,9 @@ export default function FullSuppliers() {
                 data.summary?.suppliers ||
                   0
               )}
+              icon="truck"
+              color="#3568B8"
+              background="#EEF4FC"
             />
 
             <MetricCard
@@ -211,6 +214,9 @@ export default function FullSuppliers() {
               value={String(
                 data.summary?.active || 0
               )}
+              icon="check-circle"
+              color="#25835A"
+              background="#EAF7F0"
             />
 
             <MetricCard
@@ -219,6 +225,9 @@ export default function FullSuppliers() {
                 data.summary
                   ?.total_purchased || 0
               )}
+              icon="shopping-cart"
+              color="#B8862F"
+              background="#FBF3E0"
             />
 
             <MetricCard
@@ -227,6 +236,9 @@ export default function FullSuppliers() {
                 data.summary
                   ?.open_payables || 0
               )}
+              icon="arrow-up-right"
+              color="#C84E4E"
+              background="#FFF3F3"
             />
           </View>
 

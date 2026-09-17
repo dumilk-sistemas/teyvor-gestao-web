@@ -125,7 +125,12 @@ export default function Customers() {
     </View>}
 
     {data && <>
-      <View style={styles.grid}><MetricCard label="Clientes" value={String(data.summary.customers)}/><MetricCard label="Ativos" value={String(data.summary.active)}/><MetricCard label="Faturamento identificado" value={money(data.summary.identified_revenue)}/><MetricCard label="Vendas sem cliente" value={String(data.summary.unidentified_sales)}/></View>
+      <View style={styles.grid}>
+        <MetricCard label="Clientes" value={String(data.summary.customers)} icon="users" color="#3568B8" background="#EEF4FC" />
+        <MetricCard label="Ativos" value={String(data.summary.active)} icon="user-check" color="#25835A" background="#EAF7F0" />
+        <MetricCard label="Faturamento identificado" value={money(data.summary.identified_revenue)} icon="dollar-sign" color="#B8862F" background="#FBF3E0" />
+        <MetricCard label="Vendas sem cliente" value={String(data.summary.unidentified_sales)} icon="alert-circle" color="#C84E4E" background="#FFF3F3" />
+      </View>
       <View style={styles.toolbar}><TextInput value={search} onChangeText={setSearch} style={styles.search} placeholder="Buscar por nome, CPF/CNPJ, telefone ou cidade" /></View>
       <View style={styles.card}>
         <Text style={styles.title}>Clientes ({filtered.length})</Text>

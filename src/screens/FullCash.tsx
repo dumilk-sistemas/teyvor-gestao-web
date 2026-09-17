@@ -369,6 +369,9 @@ export default function FullCash() {
                     data.current
                       .opening_float
                   )}
+                  icon="briefcase"
+                  color="#3568B8"
+                  background="#EEF4FC"
                 />
 
                 <MetricCard
@@ -380,6 +383,9 @@ export default function FullCash() {
                     data.current
                       .total_sales
                   )}
+                  icon="shopping-bag"
+                  color="#25835A"
+                  background="#EAF7F0"
                 />
 
                 <MetricCard
@@ -388,6 +394,9 @@ export default function FullCash() {
                     data.current
                       .expected_cash
                   )}
+                  icon="check-circle"
+                  color="#B8862F"
+                  background="#FBF3E0"
                 />
 
                 <MetricCard
@@ -396,6 +405,9 @@ export default function FullCash() {
                     data.current
                       .withdrawals
                   )}
+                  icon="arrow-up-right"
+                  color="#C84E4E"
+                  background="#FFF3F3"
                 />
               </View>
 

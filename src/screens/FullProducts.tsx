@@ -309,6 +309,9 @@ export default function FullProducts() {
               value={String(
                 data.summary?.products || 0
               )}
+              icon="box"
+              color="#3568B8"
+              background="#EEF4FC"
             />
 
             <MetricCard
@@ -316,6 +319,9 @@ export default function FullProducts() {
               value={String(
                 data.summary?.categories || 0
               )}
+              icon="tag"
+              color="#B8862F"
+              background="#FBF3E0"
             />
 
             <MetricCard
@@ -323,6 +329,9 @@ export default function FullProducts() {
               value={String(
                 data.summary?.by_weight || 0
               )}
+              icon="sliders"
+              color="#25835A"
+              background="#EAF7F0"
             />
 
             <MetricCard
@@ -330,12 +339,18 @@ export default function FullProducts() {
               value={String(
                 data.summary?.scale || 0
               )}
+              icon="check-square"
+              color="#66717D"
+              background="#F2F4F5"
             />
 
             <MetricCard
               label="Classificados p/ nota fiscal"
               value={`${data.summary?.fiscal_classified || 0}/${data.summary?.products || 0}`}
               note="NCM + CFOP preenchidos"
+              icon="file-text"
+              color="#6A70A8"
+              background="#F0F1FA"
             />
           </View>
 

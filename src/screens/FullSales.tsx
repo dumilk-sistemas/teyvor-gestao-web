@@ -397,24 +397,36 @@ export default function FullSales() {
               label={`Faturamento — ${PERIOD_LABELS[period]}`}
               value={money(visibleSummary.total)}
               note="Somente vendas concluídas"
+              icon="dollar-sign"
+              color="#25835A"
+              background="#EAF7F0"
             />
 
             <MetricCard
               label="Vendas válidas"
               value={String(visibleSummary.valid_sales)}
               note="Operações concluídas"
+              icon="shopping-bag"
+              color="#3568B8"
+              background="#EEF4FC"
             />
 
             <MetricCard
               label="Ticket médio"
               value={money(visibleSummary.ticket)}
               note="Valor médio por venda"
+              icon="trending-up"
+              color="#B8862F"
+              background="#FBF3E0"
             />
 
             <MetricCard
               label="Canceladas"
               value={String(visibleSummary.excluded_sales)}
               note="Operações não concluídas"
+              icon="x-circle"
+              color="#C84E4E"
+              background="#FFF3F3"
             />
           </View>
 
