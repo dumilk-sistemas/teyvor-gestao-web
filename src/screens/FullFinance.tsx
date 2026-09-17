@@ -94,6 +94,34 @@ const validIsoDate = (value: unknown) => {
     date.getDate() === Number(match[3]);
 };
 
+const PAYMENT_METHODS = [
+  'Boleto',
+  'Pix',
+  'Transferência',
+  'Cheque',
+  'Dinheiro',
+  'Débito automático',
+  'Cartão de débito',
+  'Cartão de crédito',
+  'Outros',
+];
+
+const plannedPaymentMethod = (row: any) => {
+  const explicit = String(row?.planned_payment_method || row?.plannedPaymentMethod || '').trim();
+  if (explicit) return explicit;
+  const notes = String(row?.notes || '');
+  const match = notes.match(/Forma prevista:\s*([^\n.•]+)/i);
+  return match?.[1]?.trim() || '';
+};
+
+const notesWithPlannedMethod = (notes: unknown, method: unknown) => {
+  const cleanNotes = String(notes || '')
+    .replace(/(?:^|\n)Forma prevista:\s*[^\n.•]+[.•]?\s*/gi, '')
+    .trim();
+  const prefix = method ? `Forma prevista: ${method}.` : '';
+  return [prefix, cleanNotes].filter(Boolean).join('\n');
+};
+
 const statusLabel = (status: string) => {
   if (status === 'paid') return 'Pago';
   if (status === 'received') return 'Recebido';
@@ -107,6 +135,7 @@ type FinanceView = 'all' | 'payable' | 'receivable';
 export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [data, setData] = useState<any>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { showToast } = useToast();
@@ -124,6 +153,12 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [monthlyData, setMonthlyData] = useState<any>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [monthlyError, setMonthlyError] = useState('');
+
+  const counterpartyName = (row: any) => {
+    const collection = row?.type === 'receivable' ? customers : suppliers;
+    const id = row?.type === 'receivable' ? row?.customer_id : row?.supplier_id;
+    return collection.find((item: any) => String(item.id) === String(id || ''))?.name || '';
+  };
 
   async function loadMonthlyReport(month: string) {
     try {
@@ -183,11 +218,17 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       if (view !== 'all' && row.type !== view) return false;
       if (view !== 'all' && String(row.due_date || '').slice(0, 7) !== listMonth) return false;
       if (!term) return true;
-      return [row.description, row.category]
+      return [
+        counterpartyName(row),
+        row.description,
+        row.category,
+        plannedPaymentMethod(row),
+        row.payment_method,
+      ]
         .filter(Boolean)
         .some((field) => String(field).toLocaleLowerCase('pt-BR').includes(term));
     });
-  }, [data, listMonth, search, view]);
+  }, [customers, data, listMonth, search, suppliers, view]);
 
   const periodSummary = useMemo(() => {
     const entries = (data?.entries || []).filter((row: any) =>
@@ -228,12 +269,13 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       setLoading(true);
       setError('');
 
-      const financeData = await getFull('finance');
-
-      // Fornecedores só são usados para exibir o nome em contas a
-      // pagar. Perfis sem acesso a Fornecedores ainda veem o
-      // financeiro normalmente.
-      const supplierData = await getFull('suppliers').catch(() => null);
+      const [financeData, supplierData, customerData] = await Promise.all([
+        getFull('finance'),
+        // A tela financeira continua disponível mesmo se o perfil não
+        // puder consultar uma das bases de contrapartes.
+        getFull('suppliers').catch(() => null),
+        getFull('customers').catch(() => null),
+      ]);
 
       const serverEntries = financeData?.entries || [];
       const stillPending = pendingEntriesRef.current.filter((pending) => {
@@ -250,6 +292,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
         entries: [...stillPending, ...serverEntries.filter((row: any) => !pendingIds.has(String(row.id)))],
       });
       setSuppliers(supplierData?.rows || []);
+      setCustomers(customerData?.rows || []);
     } catch (e) {
       setError(
         e instanceof Error
@@ -273,6 +316,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       category: category?.name || 'Sem categoria',
       category_id: entry.categoryId || '',
       supplier_id: entry.supplierId || null,
+      customer_id: entry.customerId || null,
+      planned_payment_method: entry.plannedPaymentMethod || '',
       amount: Number(entry.amount || 0),
       due_date: entry.dueDate || '',
       competence_date: entry.competenceDate || '',
@@ -326,6 +371,10 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       supplierId: String(
         row?.supplier_id || ''
       ),
+      customerId: String(
+        row?.customer_id || ''
+      ),
+      plannedPaymentMethod: plannedPaymentMethod(row),
       amount: String(
         row?.amount || 0
       ).replace('.', ','),
@@ -352,7 +401,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       description: row.description,
       type: row.type,
       date: today(),
-      method: 'Pix',
+      method: plannedPaymentMethod(row) || 'Pix',
       note: '',
     });
 
@@ -394,6 +443,18 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           setModalError('Selecione uma categoria.');
           return;
         }
+        if (form.type === 'payable' && !form.supplierId) {
+          setModalError('Selecione o fornecedor ou favorecido da conta.');
+          return;
+        }
+        if (form.type === 'receivable' && !form.customerId) {
+          setModalError('Selecione o cliente ou pagador da conta.');
+          return;
+        }
+        if (!form.plannedPaymentMethod) {
+          setModalError('Selecione a forma prevista de pagamento.');
+          return;
+        }
         if (amount <= 0) {
           setModalError('Informe um valor maior que zero. Você pode usar 1500,00 ou 1.500,00.');
           return;
@@ -431,12 +492,13 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           description: form.description,
           category_id: form.categoryId,
           supplier_id: form.supplierId || null,
+          customer_id: form.customerId || null,
           amount,
           amount_mode: form.recurringAmountMode || 'fixed',
           due_day: dueDay,
           start_month: startMonth,
           end_month: endMonth,
-          notes: form.notes || '',
+          notes: notesWithPlannedMethod(form.notes, form.plannedPaymentMethod),
           active: true,
         });
         addPendingEntry({
@@ -445,6 +507,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           description: form.description,
           categoryId: form.categoryId,
           supplierId: form.supplierId || null,
+          customerId: form.customerId || null,
+          plannedPaymentMethod: form.plannedPaymentMethod,
           amount,
           competenceDate: `${startMonth}-01`,
           dueDate: form.dueDate,
@@ -471,7 +535,11 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               categoryId:
                 form.categoryId,
               supplierId:
-                form.supplierId || null,
+                form.type === 'payable' ? form.supplierId || null : null,
+              customerId:
+                form.type === 'receivable' ? form.customerId || null : null,
+              plannedPaymentMethod:
+                form.plannedPaymentMethod,
               amount: parseMoneyInput(form.amount),
               competenceDate:
                 form.competenceDate,
@@ -764,7 +832,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           <SearchBar
             value={search}
             onChangeText={setSearch}
-            placeholder="Buscar por descrição ou categoria"
+            placeholder="Buscar por fornecedor, cliente, descrição, categoria ou forma"
           />
 
           {(data.entries || []).some((row: any) => row.status === 'pending_sync') && (
@@ -779,24 +847,38 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             {filteredEntries.length >
             0 ? (
               filteredEntries.map(
-                (row: any) => (
+                (row: any) => {
+                  const counterparty = counterpartyName(row);
+                  const plannedMethod = plannedPaymentMethod(row);
+                  return (
                   <View
                     key={String(row.id)}
                     style={monthlyStyles.entryRow}
                   >
                     <View style={monthlyStyles.entryMain}>
                       <Text style={monthlyStyles.entryName}>
-                        {row.description}
+                        {counterparty || row.description}
                         {row.recurring_rule_id ? ' 🔁' : ''}
                       </Text>
 
                       <Text style={monthlyStyles.entryMeta}>
+                        {counterparty
+                          ? `${row.description} • `
+                          : `${row.type === 'payable' ? 'Fornecedor' : 'Cliente'} não vinculado • `}
                         {row.category} • vence{' '}
                         {formatDateBR(row.due_date)} •{' '}
                         {row.type ===
                         'payable'
                           ? 'A pagar'
                           : 'A receber'}
+                      </Text>
+
+                      <Text style={monthlyStyles.entryMeta}>
+                        {['paid', 'received'].includes(row.status) && row.payment_method
+                          ? `Realizado por: ${row.payment_method}`
+                          : plannedMethod
+                            ? `Previsto: ${plannedMethod}`
+                            : 'Forma prevista não informada'}
                       </Text>
 
                       {row.status !== 'pending_sync' && (data.accounts || []).length > 0 && (
@@ -878,7 +960,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                       )}
                     </View>
                   </View>
-                )
+                  );
+                }
               )
             ) : (
               <Text style={s.empty}>
@@ -980,9 +1063,12 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             <Choice
               label="Tipo"
               value={form.type || 'payable'}
-              onChange={(value) =>
-                set('type', value)
-              }
+              onChange={(value) => setForm((current: any) => ({
+                ...current,
+                type: value,
+                supplierId: value === 'payable' ? current.supplierId : '',
+                customerId: value === 'receivable' ? current.customerId : '',
+              }))}
               options={[
                 {
                   label:
@@ -998,7 +1084,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             />
 
             <Field
-              label="Descrição *"
+              label={form.type === 'payable' ? 'Descrição da despesa *' : 'Descrição do recebimento *'}
               value={
                 form.description || ''
               }
@@ -1008,6 +1094,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                   value
                 )
               }
+              placeholder={form.type === 'payable' ? 'Ex.: compra de mercadorias' : 'Ex.: venda ou serviço prestado'}
             />
 
             <AccountPicker
@@ -1037,7 +1124,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             {form.type ===
               'payable' && (
               <AccountPicker
-                label="Fornecedor"
+                label="Fornecedor / favorecido *"
                 value={
                   form.supplierId || ''
                 }
@@ -1047,7 +1134,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                     value
                   )
                 }
-                emptyLabel="Sem fornecedor"
+                emptyLabel="Selecione o fornecedor"
                 options={suppliers.map(
                   (supplier) => ({
                     label:
@@ -1059,6 +1146,26 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                 )}
               />
             )}
+
+            {form.type === 'receivable' && (
+              <AccountPicker
+                label="Cliente / pagador *"
+                value={form.customerId || ''}
+                onChange={(value) => set('customerId', value)}
+                emptyLabel="Selecione o cliente"
+                options={customers.map((customer) => ({
+                  label: customer.name,
+                  value: String(customer.id),
+                }))}
+              />
+            )}
+
+            <Choice
+              label="Forma prevista de pagamento *"
+              value={form.plannedPaymentMethod || ''}
+              onChange={(value) => set('plannedPaymentMethod', value)}
+              options={PAYMENT_METHODS.map((value) => ({ label: value, value }))}
+            />
 
             <Field
               label="Valor *"
@@ -1183,6 +1290,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                 'Crédito',
                 'Boleto',
                 'Transferência',
+                'Cheque',
                 'Outros',
               ].map((value) => ({
                 label: value,

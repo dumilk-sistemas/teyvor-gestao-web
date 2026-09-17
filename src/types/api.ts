@@ -88,7 +88,23 @@ export type StockData = {
 
 export type FinanceData = {
   summary: { opening_balance: number; open_payables: number; overdue_payables: number; open_receivables: number; card_forecast: number; card_anticipated: number; realized_payables: number; realized_receivables: number };
-  entries: Array<{ id?: string; type: string; description: string; category: string; amount: number; due_date: string; status: string; settlement_date: string; payment_method: string }>;
+  entries: Array<{
+    id?: string;
+    type: string;
+    description: string;
+    category: string;
+    category_id?: string;
+    supplier_id?: string | null;
+    customer_id?: string | null;
+    amount: number;
+    due_date: string;
+    competence_date?: string;
+    status: string;
+    settlement_date: string;
+    payment_method: string;
+    planned_payment_method?: string;
+    notes?: string;
+  }>;
   card_receivables: Array<{ key: string; sale_number?: number; method: string; installment: number; installments: number; date: string; original_date: string; gross: number; fee: number; net: number; status: string }>;
   cash_flow?: Array<{
     date: string;
