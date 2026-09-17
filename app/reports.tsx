@@ -221,6 +221,8 @@ type PeriodKey =
 
 type DetailMode = 'sales' | 'cash' | 'products' | 'payments' | 'customers' | 'finance' | 'purchases' | 'stock' | null;
 
+type ReportCategory = 'all' | 'sales' | 'finance' | 'operation';
+
 type AbcTier = 'A' | 'B' | 'C';
 
 type CashClosing = {
@@ -276,6 +278,8 @@ export default function Reports() {
   const [financeReportMode, setFinanceReportMode] = useState<
     'category' | 'payable_open' | 'receivable_open' | 'payable_paid' | 'receivable_paid'
   >('category');
+  const [reportCategory, setReportCategory] = useState<ReportCategory>('all');
+  const [reportSearch, setReportSearch] = useState('');
 
   const today = isoFromDate(new Date());
 
@@ -722,6 +726,174 @@ export default function Reports() {
         ).toLocaleString('pt-BR')}`
       : 'Aguardando sincronização';
 
+  const reportCatalog = [
+    {
+      id: 'sales-performance',
+      category: 'sales' as const,
+      group: 'Vendas e clientes',
+      icon: 'bar-chart-2' as const,
+      color: '#3568B8',
+      background: '#EEF4FC',
+      title: 'Desempenho de vendas',
+      description: 'Faturamento, quantidade de vendas, ticket médio e evolução diária.',
+      value: money(salesSummary.total),
+      subtitle: `${salesSummary.sales} venda(s) • ticket ${money(salesSummary.ticket)}`,
+      onPress: () => setDetailMode('sales' as const),
+    },
+    {
+      id: 'products',
+      category: 'sales' as const,
+      group: 'Vendas e clientes',
+      icon: 'award' as const,
+      color: '#6A70A8',
+      background: '#F0F1FA',
+      title: 'Produtos vendidos e Curva ABC',
+      description: 'Ranking por quantidade, receita e relevância comercial dos produtos.',
+      value: data?.top_products?.[0]?.name || 'Sem vendas no período',
+      subtitle: data?.top_products?.[0]
+        ? `${money(data.top_products[0].revenue)} em receita`
+        : periodLabel,
+      onPress: () => setDetailMode('products' as const),
+    },
+    {
+      id: 'payments',
+      category: 'sales' as const,
+      group: 'Vendas e clientes',
+      icon: 'credit-card' as const,
+      color: '#3568B8',
+      background: '#EEF4FC',
+      title: 'Formas de pagamento',
+      description: 'Participação de dinheiro, Pix, débito, crédito e outros meios.',
+      value: paymentBreakdown[0]?.method || 'Sem vendas no período',
+      subtitle: paymentBreakdown[0]
+        ? `${paymentBreakdown[0].percent.toFixed(1)}% do faturamento`
+        : periodLabel,
+      onPress: () => setDetailMode('payments' as const),
+    },
+    {
+      id: 'customers',
+      category: 'sales' as const,
+      group: 'Vendas e clientes',
+      icon: 'users' as const,
+      color: '#25835A',
+      background: '#EAF7F0',
+      title: 'Ranking de clientes',
+      description: 'Clientes com maior volume de compras e participação no período.',
+      value: customerRanking[0]?.name || 'Sem dados no período',
+      subtitle: customerRanking[0]
+        ? `${money(customerRanking[0].total)} em compras`
+        : periodLabel,
+      onPress: () => setDetailMode('customers' as const),
+    },
+    {
+      id: 'payables',
+      category: 'finance' as const,
+      group: 'Financeiro',
+      icon: 'arrow-up-right' as const,
+      color: '#C84E4E',
+      background: '#FFF3F3',
+      title: 'Contas a pagar',
+      description: 'Lançamentos em aberto e vencidos dentro do período selecionado.',
+      value: money(financePosition.payables.total),
+      subtitle: `${financePosition.payables.count} lançamento(s) pendente(s)`,
+      onPress: () => {
+        setFinanceReportMode('payable_open');
+        setDetailMode('finance');
+      },
+    },
+    {
+      id: 'receivables',
+      category: 'finance' as const,
+      group: 'Financeiro',
+      icon: 'arrow-down-left' as const,
+      color: '#25835A',
+      background: '#EAF7F0',
+      title: 'Contas a receber',
+      description: 'Recebimentos em aberto e vencidos no intervalo analisado.',
+      value: money(financePosition.receivables.total),
+      subtitle: `${financePosition.receivables.count} lançamento(s) pendente(s)`,
+      onPress: () => {
+        setFinanceReportMode('receivable_open');
+        setDetailMode('finance');
+      },
+    },
+    {
+      id: 'finance-categories',
+      category: 'finance' as const,
+      group: 'Financeiro',
+      icon: 'pie-chart' as const,
+      color: '#B8862F',
+      background: '#FBF3E0',
+      title: 'Financeiro por categoria',
+      description: 'Composição de receitas e despesas agrupadas por categoria.',
+      value: `${financeByCategory.payables.length + financeByCategory.receivables.length} categoria(s)`,
+      subtitle: periodLabel,
+      onPress: () => {
+        setFinanceReportMode('category');
+        setDetailMode('finance');
+      },
+    },
+    {
+      id: 'cash',
+      category: 'operation' as const,
+      group: 'Operação e estoque',
+      icon: 'briefcase' as const,
+      color: '#66717D',
+      background: '#F2F4F5',
+      title: 'Movimentação de caixa',
+      description: 'Aberturas, fechamentos, suprimentos, retiradas e diferenças.',
+      value: `${cashSummary.closings} fechamento(s)`,
+      subtitle: cash?.current
+        ? `Caixa aberto • ${cash.current.code || ''}`
+        : `Diferença ${money(cashSummary.difference)}`,
+      onPress: () => setDetailMode('cash' as const),
+    },
+    {
+      id: 'purchases',
+      category: 'operation' as const,
+      group: 'Operação e estoque',
+      icon: 'shopping-cart' as const,
+      color: '#B8862F',
+      background: '#FBF3E0',
+      title: 'Compras e recebimentos',
+      description: 'Compras recebidas, valores movimentados e situação financeira.',
+      value: money(purchaseSummary.total),
+      subtitle: `${purchaseSummary.count} compra(s) • ${money(purchaseSummary.open)} a pagar`,
+      onPress: () => setDetailMode('purchases' as const),
+    },
+    {
+      id: 'stock',
+      category: 'operation' as const,
+      group: 'Operação e estoque',
+      icon: 'archive' as const,
+      color: '#C84E4E',
+      background: '#FFF3F3',
+      title: 'Posição e alertas de estoque',
+      description: 'Saldos atuais, produtos abaixo do mínimo e estoques negativos.',
+      value: `${stockAlerts.length} produto(s) em atenção`,
+      subtitle: 'Posição atual do estoque',
+      onPress: () => setDetailMode('stock' as const),
+    },
+  ];
+
+  const normalizedReportSearch = reportSearch.trim().toLocaleLowerCase('pt-BR');
+  const visibleReports = reportCatalog.filter((report) => {
+    const matchesCategory = reportCategory === 'all' || report.category === reportCategory;
+    const matchesSearch = !normalizedReportSearch ||
+      [report.title, report.description, report.group]
+        .join(' ')
+        .toLocaleLowerCase('pt-BR')
+        .includes(normalizedReportSearch);
+    return matchesCategory && matchesSearch;
+  });
+
+  const reportGroups = ['Vendas e clientes', 'Financeiro', 'Operação e estoque']
+    .map((group) => ({
+      group,
+      reports: visibleReports.filter((report) => report.group === group),
+    }))
+    .filter((section) => section.reports.length > 0);
+
   return (
     <AdminShell
       title="Relatórios"
@@ -738,58 +910,49 @@ export default function Reports() {
       )}
 
       <View style={styles.periodCard}>
-        <Text style={styles.periodTitle}>
-          Período
-        </Text>
+        <View style={styles.periodTopRow}>
+          <View style={styles.periodHeading}>
+            <View style={styles.periodIcon}>
+              <Feather name="calendar" size={17} color="#B8862F" />
+            </View>
+            <View>
+              <Text style={styles.periodEyebrow}>PERÍODO DA ANÁLISE</Text>
+              <Text style={styles.periodTitle}>{periodLabel}</Text>
+            </View>
+          </View>
 
-        <View style={styles.periodButtons}>
-          <PeriodButton
-            label="Hoje"
-            active={period === 'today'}
-            onPress={() =>
-              applyQuickPeriod('today')
-            }
-          />
-
-          <PeriodButton
-            label="7 dias"
-            active={period === '7days'}
-            onPress={() =>
-              applyQuickPeriod('7days')
-            }
-          />
-
-          <PeriodButton
-            label="30 dias"
-            active={period === '30days'}
-            onPress={() =>
-              applyQuickPeriod('30days')
-            }
-          />
-
-          <PeriodButton
-            label="Mês"
-            active={period === 'month'}
-            onPress={() =>
-              applyQuickPeriod('month')
-            }
-          />
-
-          <PeriodButton
-            label="Ano"
-            active={period === 'year'}
-            onPress={() =>
-              applyQuickPeriod('year')
-            }
-          />
-
-          <PeriodButton
-            label="Período"
-            active={period === 'custom'}
-            onPress={() =>
-              applyQuickPeriod('custom')
-            }
-          />
+          <View style={styles.periodButtons}>
+            <PeriodButton
+              label="Hoje"
+              active={period === 'today'}
+              onPress={() => applyQuickPeriod('today')}
+            />
+            <PeriodButton
+              label="7 dias"
+              active={period === '7days'}
+              onPress={() => applyQuickPeriod('7days')}
+            />
+            <PeriodButton
+              label="30 dias"
+              active={period === '30days'}
+              onPress={() => applyQuickPeriod('30days')}
+            />
+            <PeriodButton
+              label="Mês"
+              active={period === 'month'}
+              onPress={() => applyQuickPeriod('month')}
+            />
+            <PeriodButton
+              label="Ano"
+              active={period === 'year'}
+              onPress={() => applyQuickPeriod('year')}
+            />
+            <PeriodButton
+              label="Personalizado"
+              active={period === 'custom'}
+              onPress={() => applyQuickPeriod('custom')}
+            />
+          </View>
         </View>
 
         {period === 'custom' && (
@@ -867,202 +1030,107 @@ export default function Reports() {
           </Text>
         )}
 
-        <Text style={styles.selectedPeriod}>
-          {periodLabel}
-        </Text>
       </View>
 
       {!!data && (
         <>
-        <View style={styles.catalogIntro}>
-          <Text style={styles.catalogEyebrow}>CENTRAL DE RELATÓRIOS</Text>
-          <Text style={styles.catalogTitle}>Escolha a análise que deseja emitir</Text>
-          <Text style={styles.catalogSubtitle}>
-            Todos os relatórios respeitam o período selecionado e podem ser impressos, salvos em PDF ou exportados para Excel.
-          </Text>
-        </View>
-        <View style={styles.reportCards}>
-          <ReportCard
-            icon="dollar-sign"
-            color="#25835A"
-            background="#EAF7F0"
-            title="Faturamento"
-            value={money(
-              salesSummary.total
-            )}
-            subtitle={`${salesSummary.sales} venda(s) no período`}
-            onPress={() =>
-              setDetailMode('sales')
-            }
-          />
+          <View style={styles.executiveSection}>
+            <View>
+              <Text style={styles.catalogEyebrow}>RESUMO EXECUTIVO</Text>
+              <Text style={styles.executiveTitle}>Indicadores do período</Text>
+            </View>
+            <View style={styles.executiveGrid}>
+              <ExecutiveMetric
+                label="FATURAMENTO"
+                value={money(salesSummary.total)}
+                note={`${salesSummary.sales} venda(s)`}
+                icon="dollar-sign"
+                color="#25835A"
+                background="#EAF7F0"
+              />
+              <ExecutiveMetric
+                label="VENDAS"
+                value={String(salesSummary.sales)}
+                note="concluídas no período"
+                icon="shopping-bag"
+                color="#3568B8"
+                background="#EEF4FC"
+              />
+              <ExecutiveMetric
+                label="TICKET MÉDIO"
+                value={money(salesSummary.ticket)}
+                note="média por venda"
+                icon="trending-up"
+                color="#B8862F"
+                background="#FBF3E0"
+              />
+              <ExecutiveMetric
+                label="DESCONTOS"
+                value={money(data.summary?.discounts || 0)}
+                note="concedidos no período"
+                icon="percent"
+                color="#C84E4E"
+                background="#FFF3F3"
+              />
+            </View>
+          </View>
 
-          <ReportCard
-            icon="shopping-bag"
-            color="#3568B8"
-            background="#EEF4FC"
-            title="Qtd. de vendas"
-            value={String(
-              salesSummary.sales
-            )}
-            subtitle={`Ticket médio ${money(
-              salesSummary.ticket
-            )}`}
-            onPress={() =>
-              setDetailMode('sales')
-            }
-          />
+          <View style={styles.catalogPanel}>
+            <View style={styles.catalogHeader}>
+              <View style={styles.catalogIntro}>
+                <Text style={styles.catalogEyebrow}>CENTRAL DE RELATÓRIOS</Text>
+                <Text style={styles.catalogTitle}>Escolha a análise que deseja emitir</Text>
+                <Text style={styles.catalogSubtitle}>
+                  Consulte, imprima, salve em PDF ou exporte para Excel sem sair da análise.
+                </Text>
+              </View>
+              <View style={styles.catalogCount}>
+                <Feather name="file-text" size={15} color={theme.colors.muted} />
+                <Text style={styles.catalogCountText}>{visibleReports.length} relatório(s)</Text>
+              </View>
+            </View>
 
-          <ReportCard
-            icon="trending-up"
-            color="#B8862F"
-            background="#FBF3E0"
-            title="Ticket médio"
-            value={money(
-              salesSummary.ticket
-            )}
-            subtitle={`Faturamento ${money(
-              salesSummary.total
-            )}`}
-            onPress={() =>
-              setDetailMode('sales')
-            }
-          />
+            <View style={styles.catalogTools}>
+              <View style={styles.searchBox}>
+                <Feather name="search" size={16} color={theme.colors.muted} />
+                <TextInput
+                  value={reportSearch}
+                  onChangeText={setReportSearch}
+                  placeholder="Buscar relatório por nome ou assunto"
+                  placeholderTextColor="#8A8A8A"
+                  style={styles.searchInput}
+                />
+              </View>
+              <View style={styles.catalogFilters}>
+                <CatalogFilter label="Todos" active={reportCategory === 'all'} onPress={() => setReportCategory('all')} />
+                <CatalogFilter label="Vendas" active={reportCategory === 'sales'} onPress={() => setReportCategory('sales')} />
+                <CatalogFilter label="Financeiro" active={reportCategory === 'finance'} onPress={() => setReportCategory('finance')} />
+                <CatalogFilter label="Operação" active={reportCategory === 'operation'} onPress={() => setReportCategory('operation')} />
+              </View>
+            </View>
+          </View>
 
-          <ReportCard
-            icon="briefcase"
-            color="#66717D"
-            background="#F2F4F5"
-            title="Caixa"
-            value={`${cashSummary.closings} fechamento(s)`}
-            subtitle={
-              cash?.current
-                ? `Caixa atual aberto • ${cash.current.code || ''}`
-                : `Diferença do período ${money(
-                    cashSummary.difference
-                  )}`
-            }
-            onPress={() =>
-              setDetailMode('cash')
-            }
-          />
+          {reportGroups.map((section) => (
+            <View key={section.group} style={styles.reportSection}>
+              <View style={styles.reportSectionHead}>
+                <Text style={styles.reportSectionTitle}>{section.group}</Text>
+                <Text style={styles.reportSectionCount}>{section.reports.length}</Text>
+              </View>
+              <View style={styles.reportCards}>
+                {section.reports.map((report) => (
+                  <ReportCard key={report.id} {...report} />
+                ))}
+              </View>
+            </View>
+          ))}
 
-          <ReportCard
-            icon="award"
-            color="#6A70A8"
-            background="#F0F1FA"
-            title="Produtos mais vendidos"
-            value={
-              data.top_products?.[0]?.name ||
-              'Sem vendas no período'
-            }
-            subtitle={
-              data.top_products?.[0]
-                ? `${money(
-                    data.top_products[0].revenue
-                  )} em receita • ${periodLabel}`
-                : periodLabel
-            }
-            onPress={() =>
-              setDetailMode('products')
-            }
-          />
-
-          <ReportCard
-            icon="credit-card"
-            color="#3568B8"
-            background="#EEF4FC"
-            title="Formas de pagamento"
-            value={
-              paymentBreakdown[0]?.method ||
-              'Sem vendas no período'
-            }
-            subtitle={
-              paymentBreakdown[0]
-                ? `${paymentBreakdown[0].percent.toFixed(
-                    1
-                  )}% do total • ${periodLabel}`
-                : periodLabel
-            }
-            onPress={() =>
-              setDetailMode('payments')
-            }
-          />
-
-          <ReportCard
-            icon="users"
-            color="#25835A"
-            background="#EAF7F0"
-            title="Ranking de clientes"
-            value={
-              customerRanking[0]?.name || 'Sem dados no período'
-            }
-            subtitle={
-              customerRanking[0]
-                ? `${money(customerRanking[0].total)} no período`
-                : periodLabel
-            }
-            onPress={() => setDetailMode('customers')}
-          />
-
-          <ReportCard
-            icon="arrow-up-right"
-            color="#C84E4E"
-            background="#FFF3F3"
-            title="Contas a pagar"
-            value={money(financePosition.payables.total)}
-            subtitle={`${financePosition.payables.count} lançamento(s) em aberto ou vencidos`}
-            onPress={() => {
-              setFinanceReportMode('payable_open');
-              setDetailMode('finance');
-            }}
-          />
-
-          <ReportCard
-            icon="arrow-down-left"
-            color="#25835A"
-            background="#EAF7F0"
-            title="Contas a receber"
-            value={money(financePosition.receivables.total)}
-            subtitle={`${financePosition.receivables.count} lançamento(s) em aberto ou vencidos`}
-            onPress={() => {
-              setFinanceReportMode('receivable_open');
-              setDetailMode('finance');
-            }}
-          />
-
-          <ReportCard
-            icon="shopping-cart"
-            color="#B8862F"
-            background="#FBF3E0"
-            title="Compras / recebimentos"
-            value={money(purchaseSummary.total)}
-            subtitle={`${purchaseSummary.count} compra(s) • ${money(purchaseSummary.open)} a pagar`}
-            onPress={() => setDetailMode('purchases')}
-          />
-
-          <ReportCard
-            icon="pie-chart"
-            color="#66717D"
-            background="#F2F4F5"
-            title="Financeiro por categoria"
-            value={`${
-              financeByCategory.payables.length +
-              financeByCategory.receivables.length
-            } categoria(s)`}
-            subtitle={periodLabel}
-            onPress={() => setDetailMode('finance')}
-          />
-
-          <ReportCard
-            icon="alert-triangle"
-            color="#C84E4E"
-            background="#FFF3F3"
-            title="Alertas de estoque"
-            value={`${stockAlerts.length} produto(s)`}
-            subtitle="Situação atual • não depende do período"
-            onPress={() => setDetailMode('stock')}
-          />
-        </View>
+          {visibleReports.length === 0 && (
+            <View style={styles.catalogEmpty}>
+              <Feather name="search" size={22} color={theme.colors.muted} />
+              <Text style={styles.catalogEmptyTitle}>Nenhum relatório encontrado</Text>
+              <Text style={styles.catalogEmptyText}>Tente outro termo ou selecione uma área diferente.</Text>
+            </View>
+          )}
         </>
       )}
 
@@ -2164,11 +2232,62 @@ function PeriodButton({
   );
 }
 
+function CatalogFilter({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.catalogFilter, active && styles.catalogFilterActive]}
+      onPress={onPress}
+    >
+      <Text style={[styles.catalogFilterText, active && styles.catalogFilterTextActive]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ExecutiveMetric({
+  label,
+  value,
+  note,
+  icon,
+  color,
+  background,
+}: {
+  label: string;
+  value: string;
+  note: string;
+  icon: keyof typeof Feather.glyphMap;
+  color: string;
+  background: string;
+}) {
+  return (
+    <View style={styles.executiveCard}>
+      <View style={[styles.executiveIcon, { backgroundColor: background }]}>
+        <Feather name={icon} size={15} color={color} />
+      </View>
+      <View style={styles.executiveContent}>
+        <Text style={styles.executiveLabel}>{label}</Text>
+        <Text style={styles.executiveValue}>{value}</Text>
+        <Text style={styles.executiveNote}>{note}</Text>
+      </View>
+    </View>
+  );
+}
+
 function ReportCard({
   icon,
   color,
   background,
   title,
+  description,
   value,
   subtitle,
   onPress,
@@ -2177,15 +2296,17 @@ function ReportCard({
   color: string;
   background: string;
   title: string;
+  description: string;
   value: string;
   subtitle: string;
   onPress: () => void;
 }) {
   return (
     <Pressable
-      style={styles.reportCard}
+      style={({ pressed }) => [styles.reportCard, pressed && styles.reportCardPressed]}
       onPress={onPress}
     >
+      <View style={[styles.reportAccent, { backgroundColor: color }]} />
       <View style={[styles.iconCircle, { backgroundColor: background }]}>
         <Feather name={icon} size={22} color={color} />
       </View>
@@ -2194,21 +2315,16 @@ function ReportCard({
         <Text style={styles.reportTitle}>
           {title}
         </Text>
-
-        <Text style={styles.reportValue}>
-          {value}
-        </Text>
-
-        <Text
-          style={styles.reportSubtitle}
-        >
-          {subtitle}
-        </Text>
+        <Text style={styles.reportDescription} numberOfLines={2}>{description}</Text>
+        <View style={styles.reportPreview}>
+          <Text style={styles.reportValue} numberOfLines={1}>{value}</Text>
+          <Text style={styles.reportSubtitle} numberOfLines={1}>{subtitle}</Text>
+        </View>
       </View>
 
-      <Text style={styles.cardArrow}>
-        ›
-      </Text>
+      <View style={[styles.cardArrow, { backgroundColor: background }]}>
+        <Feather name="chevron-right" size={18} color={color} />
+      </View>
     </Pressable>
   );
 }
@@ -2570,15 +2686,46 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: theme.radius.md,
-    padding: 14,
-    gap: 12,
+    borderRadius: 14,
+    padding: 13,
+    gap: 10,
+  },
+
+  periodTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    justifyContent: 'space-between',
+  },
+
+  periodHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  periodIcon: {
+    alignItems: 'center',
+    backgroundColor: '#FBF3E0',
+    borderRadius: 9,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+
+  periodEyebrow: {
+    color: theme.colors.muted,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.7,
   },
 
   periodTitle: {
-    fontSize: 16,
-    fontWeight: '900',
     color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 15,
+    marginTop: 2,
   },
 
   periodButtons: {
@@ -2588,8 +2735,8 @@ const styles = StyleSheet.create({
   },
 
   periodButton: {
-    paddingHorizontal: 13,
-    paddingVertical: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 999,
@@ -2602,7 +2749,7 @@ const styles = StyleSheet.create({
   },
 
   periodButtonText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: theme.colors.text,
   },
@@ -2677,8 +2824,8 @@ const styles = StyleSheet.create({
   },
 
   catalogIntro: {
-    paddingHorizontal: 2,
-    paddingTop: 4,
+    flex: 1,
+    minWidth: 260,
   },
 
   catalogEyebrow: {
@@ -2689,18 +2836,199 @@ const styles = StyleSheet.create({
   },
 
   catalogTitle: {
-    marginTop: 4,
-    fontSize: 20,
-    fontWeight: '900',
+    marginTop: 3,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 18,
     color: theme.colors.text,
   },
 
   catalogSubtitle: {
     marginTop: 5,
-    maxWidth: 760,
-    fontSize: 13,
-    lineHeight: 19,
+    maxWidth: 720,
+    fontSize: 11.5,
+    lineHeight: 17,
     color: theme.colors.muted,
+  },
+
+  executiveSection: {
+    gap: 10,
+  },
+
+  executiveTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 18,
+    marginTop: 3,
+  },
+
+  executiveGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+
+  executiveCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+    minWidth: 210,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+
+  executiveIcon: {
+    alignItems: 'center',
+    borderRadius: 9,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+
+  executiveContent: {
+    flex: 1,
+  },
+
+  executiveLabel: {
+    color: theme.colors.muted,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.55,
+  },
+
+  executiveValue: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 17,
+    marginTop: 2,
+  },
+
+  executiveNote: {
+    color: theme.colors.muted,
+    fontSize: 9.5,
+    marginTop: 1,
+  },
+
+  catalogPanel: {
+    backgroundColor: '#FFF',
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+    padding: 14,
+  },
+
+  catalogHeader: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+
+  catalogCount: {
+    alignItems: 'center',
+    backgroundColor: '#F5F4F0',
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  catalogCountText: {
+    color: theme.colors.muted,
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+
+  catalogTools: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+
+  searchBox: {
+    alignItems: 'center',
+    backgroundColor: '#FAFAF8',
+    borderColor: theme.colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minWidth: 260,
+    paddingHorizontal: 12,
+  },
+
+  searchInput: {
+    color: theme.colors.text,
+    flex: 1,
+    fontSize: 12.5,
+    height: 40,
+    outlineStyle: 'none',
+  } as any,
+
+  catalogFilters: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+
+  catalogFilter: {
+    backgroundColor: '#FFF',
+    borderColor: theme.colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+
+  catalogFilterActive: {
+    backgroundColor: theme.colors.text,
+    borderColor: theme.colors.text,
+  },
+
+  catalogFilterText: {
+    color: theme.colors.text,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  catalogFilterTextActive: {
+    color: '#FFF',
+  },
+
+  reportSection: {
+    gap: 9,
+  },
+
+  reportSectionHead: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  reportSectionTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 15,
+  },
+
+  reportSectionCount: {
+    backgroundColor: '#ECEAE5',
+    borderRadius: 999,
+    color: theme.colors.muted,
+    fontSize: 9.5,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
   },
 
   reportCards: {
@@ -2710,23 +3038,43 @@ const styles = StyleSheet.create({
   },
 
   reportCard: {
-    minWidth: 310,
+    alignItems: 'center',
+    minWidth: 300,
     flexBasis: '47%',
     flexGrow: 1,
     backgroundColor: '#FFF',
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 14,
+    minHeight: 108,
+    overflow: 'hidden',
+    paddingHorizontal: 13,
+    paddingVertical: 12,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
+    gap: 11,
+    shadowColor: '#17202A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+  },
+
+  reportCardPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.995 }],
+  },
+
+  reportAccent: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+    width: 3,
   },
 
   iconCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F1EFE9',
@@ -2737,28 +3085,68 @@ const styles = StyleSheet.create({
   },
 
   reportTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '900',
     color: theme.colors.text,
+  },
+
+  reportDescription: {
+    color: theme.colors.muted,
+    fontSize: 10.5,
+    lineHeight: 15,
+    marginTop: 3,
+  },
+
+  reportPreview: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 7,
   },
 
   reportValue: {
-    marginTop: 2,
-    fontSize: 25,
+    fontSize: 13,
     fontWeight: '900',
     color: theme.colors.text,
+    maxWidth: '58%',
   },
 
   reportSubtitle: {
-    marginTop: 4,
-    fontSize: 13,
+    flex: 1,
+    fontSize: 9.5,
     color: theme.colors.muted,
   },
 
   cardArrow: {
-    fontSize: 34,
-    lineHeight: 36,
+    alignItems: 'center',
+    borderRadius: 15,
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
+  },
+
+  catalogEmpty: {
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    padding: 28,
+  },
+
+  catalogEmptyTitle: {
+    color: theme.colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+    marginTop: 8,
+  },
+
+  catalogEmptyText: {
     color: theme.colors.muted,
+    fontSize: 11,
+    marginTop: 3,
   },
 
   backdrop: {
