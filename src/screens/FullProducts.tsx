@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 import { AdminShell } from '@/components/AdminShell';
+import { AccountPicker } from '@/components/AccountPicker';
 import { MetricCard } from '@/components/MetricCard';
 import { SearchBar } from '@/components/SearchBar';
 import { theme } from '@/constants/theme';
@@ -21,11 +22,15 @@ import {
 } from '@/components/FormKit';
 import {
   commandMessage,
+  createProductCategory,
+  deleteProductCategory,
   enqueue,
   getFull,
+  getProductCategories,
   setProductFiscal,
   setProductImage,
   setProductStockMax,
+  updateProductCategory,
 } from '@/services/fullApi';
 import { useToast } from '@/components/Toast';
 
@@ -71,6 +76,21 @@ export default function FullProducts() {
   const [form, setForm] = useState({ ...blank });
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categorySummary, setCategorySummary] = useState<any>(null);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const [categoryFormOpen, setCategoryFormOpen] = useState(false);
+  const [categoryDeleteOpen, setCategoryDeleteOpen] = useState(false);
+  const [categoryBusy, setCategoryBusy] = useState(false);
+  const [categoryError, setCategoryError] = useState('');
+  const [categoryForm, setCategoryForm] = useState<any>({ id: null, name: '', active: true });
+  const [categoryToDelete, setCategoryToDelete] = useState<any>(null);
+  const [transferToId, setTransferToId] = useState('');
+
+  const activeCategories = useMemo(
+    () => categories.filter((category) => category.active),
+    [categories]
+  );
 
   const filteredRows = useMemo(() => {
     const rows = data?.rows || [];
@@ -96,6 +116,7 @@ export default function FullProducts() {
 
       const result = await getFull('products');
       setData(result);
+      await loadCategories();
     } catch (e) {
       setError(
         e instanceof Error
@@ -104,6 +125,111 @@ export default function FullProducts() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadCategories() {
+    try {
+      setCategoryError('');
+      const result = await getProductCategories();
+      setCategories(result?.rows || []);
+      setCategorySummary(result?.summary || null);
+    } catch (e) {
+      setCategoryError(
+        e instanceof Error ? e.message : 'Falha ao carregar categorias.'
+      );
+    }
+  }
+
+  function startCategory(row?: any) {
+    setCategoryError('');
+    setCategoryManagerOpen(false);
+    setCategoryForm({
+      id: row?.id || null,
+      name: row?.name || '',
+      active: row?.active !== false,
+    });
+    setCategoryFormOpen(true);
+  }
+
+  async function saveCategory() {
+    try {
+      setCategoryBusy(true);
+      setCategoryError('');
+      const name = String(categoryForm.name || '').trim();
+      if (name.length < 2) {
+        setCategoryError('Informe um nome com pelo menos 2 caracteres.');
+        return;
+      }
+      const result = categoryForm.id
+        ? await updateProductCategory(categoryForm.id, {
+            name,
+            active: categoryForm.active,
+          })
+        : await createProductCategory({ name, active: categoryForm.active });
+      setCategoryFormOpen(false);
+      await loadCategories();
+      setCategoryManagerOpen(true);
+      showToast(
+        result?.commands_queued
+          ? `Categoria salva. ${result.commands_queued} produto(s) serão atualizados pelo PDV.`
+          : 'Categoria salva com sucesso.'
+      );
+    } catch (e) {
+      setCategoryError(e instanceof Error ? e.message : 'Falha ao salvar categoria.');
+    } finally {
+      setCategoryBusy(false);
+    }
+  }
+
+  async function toggleCategory(row: any) {
+    try {
+      setCategoryBusy(true);
+      setCategoryError('');
+      await updateProductCategory(row.id, { active: !row.active });
+      await loadCategories();
+      showToast(row.active ? 'Categoria desativada.' : 'Categoria reativada.');
+    } catch (e) {
+      setCategoryError(e instanceof Error ? e.message : 'Falha ao alterar categoria.');
+    } finally {
+      setCategoryBusy(false);
+    }
+  }
+
+  function startDeleteCategory(row: any) {
+    setCategoryError('');
+    setCategoryToDelete(row);
+    setTransferToId('');
+    setCategoryManagerOpen(false);
+    setCategoryDeleteOpen(true);
+  }
+
+  async function removeCategory() {
+    if (!categoryToDelete) return;
+    try {
+      setCategoryBusy(true);
+      setCategoryError('');
+      if (categoryToDelete.product_count > 0 && !transferToId) {
+        setCategoryError('Selecione a categoria que receberá os produtos.');
+        return;
+      }
+      const result = await deleteProductCategory(
+        categoryToDelete.id,
+        transferToId ? Number(transferToId) : null
+      );
+      setCategoryDeleteOpen(false);
+      setCategoryToDelete(null);
+      await loadCategories();
+      setCategoryManagerOpen(true);
+      showToast(
+        result?.pending_sync
+          ? 'Transferência enviada. A categoria será removida após a sincronização do PDV.'
+          : 'Categoria excluída.'
+      );
+    } catch (e) {
+      setCategoryError(e instanceof Error ? e.message : 'Falha ao excluir categoria.');
+    } finally {
+      setCategoryBusy(false);
     }
   }
 
@@ -157,6 +283,11 @@ export default function FullProducts() {
     try {
       setBusy(true);
       setModalError('');
+
+      if (!form.category) {
+        setModalError('Selecione uma categoria.');
+        return;
+      }
 
       const stockValue = Number(
         String(form.initial_stock || '').replace(',', '.')
@@ -287,11 +418,22 @@ export default function FullProducts() {
       onRefresh={load}
       syncNote
       headerActions={
-        <ActionButton
-          label="+ Novo produto"
-          tone="gold"
-          onPress={() => edit()}
-        />
+        <View style={s.toolbar}>
+          <ActionButton
+            label="Gerenciar categorias"
+            tone="plain"
+            onPress={() => {
+              setCategoryError('');
+              setCategoryManagerOpen(true);
+              loadCategories();
+            }}
+          />
+          <ActionButton
+            label="+ Novo produto"
+            tone="gold"
+            onPress={() => edit()}
+          />
+        </View>
       }
     >
       {!!error && (
@@ -317,8 +459,9 @@ export default function FullProducts() {
             <MetricCard
               label="Categorias"
               value={String(
-                data.summary?.categories || 0
+                categorySummary?.categories ?? data.summary?.categories ?? 0
               )}
+              note={categorySummary ? `${categorySummary.active} ativa(s)` : undefined}
               icon="tag"
               color="#B8862F"
               background="#FBF3E0"
@@ -463,13 +606,20 @@ export default function FullProducts() {
           }
         />
 
-        <Field
+        <AccountPicker
           label="Categoria *"
           value={form.category}
-          onChangeText={(value) =>
-            set('category', value)
-          }
-          placeholder="Ex.: Queijos"
+          onChange={(value) => set('category', value)}
+          emptyLabel="Selecione uma categoria"
+          options={[
+            ...activeCategories.map((category) => ({
+              label: category.name,
+              value: category.name,
+            })),
+            ...(form.category && !activeCategories.some((category) => category.name === form.category)
+              ? [{ label: `${form.category} (inativa)`, value: form.category }]
+              : []),
+          ]}
         />
 
         <Field
@@ -697,6 +847,123 @@ export default function FullProducts() {
                 value: 'false',
               },
             ]}
+          />
+        )}
+      </FormModal>
+
+      <FormModal
+        visible={categoryManagerOpen}
+        title="Gerenciador de categorias"
+        onCancel={() => setCategoryManagerOpen(false)}
+        onSave={() => setCategoryManagerOpen(false)}
+        saveLabel="Concluir"
+        busy={categoryBusy}
+        errorText={categoryError}
+        wide
+      >
+        <View style={s.toolbar}>
+          <ActionButton
+            label="+ Nova categoria"
+            tone="gold"
+            onPress={() => startCategory()}
+          />
+        </View>
+
+        <Notice text="Categorias desativadas continuam nos produtos já cadastrados, mas deixam de aparecer para novos cadastros." />
+
+        {categories.length > 0 ? (
+          categories.map((category) => (
+            <View key={String(category.id)} style={s.row}>
+              <View style={s.main}>
+                <Text style={s.name}>{category.name}</Text>
+                <Text style={s.meta}>
+                  {category.product_count} produto(s) • {category.active ? 'Ativa' : 'Inativa'}
+                </Text>
+              </View>
+              <View style={s.right}>
+                <View style={s.toolbar}>
+                  <ActionButton
+                    label="Editar"
+                    tone="plain"
+                    onPress={() => startCategory(category)}
+                  />
+                  <ActionButton
+                    label={category.active ? 'Desativar' : 'Ativar'}
+                    tone="plain"
+                    onPress={() => toggleCategory(category)}
+                  />
+                  <ActionButton
+                    label="Excluir"
+                    tone="danger"
+                    onPress={() => startDeleteCategory(category)}
+                  />
+                </View>
+              </View>
+            </View>
+          ))
+        ) : (
+          <Text style={s.empty}>Nenhuma categoria cadastrada.</Text>
+        )}
+      </FormModal>
+
+      <FormModal
+        visible={categoryFormOpen}
+        title={categoryForm.id ? 'Editar categoria' : 'Nova categoria'}
+        onCancel={() => {
+          setCategoryFormOpen(false);
+          setCategoryManagerOpen(true);
+        }}
+        onSave={saveCategory}
+        busy={categoryBusy}
+        errorText={categoryError}
+      >
+        <Field
+          label="Nome da categoria *"
+          value={categoryForm.name || ''}
+          onChangeText={(value) => setCategoryForm((current: any) => ({ ...current, name: value }))}
+          placeholder="Ex.: Queijos"
+        />
+        <Choice
+          label="Status"
+          value={categoryForm.active ? 'true' : 'false'}
+          onChange={(value) => setCategoryForm((current: any) => ({ ...current, active: value === 'true' }))}
+          options={[
+            { label: 'Ativa', value: 'true' },
+            { label: 'Inativa', value: 'false' },
+          ]}
+        />
+      </FormModal>
+
+      <FormModal
+        visible={categoryDeleteOpen}
+        title="Excluir categoria?"
+        onCancel={() => {
+          setCategoryDeleteOpen(false);
+          setCategoryManagerOpen(true);
+        }}
+        onSave={removeCategory}
+        saveLabel={categoryToDelete?.product_count > 0 ? 'Transferir e excluir' : 'Excluir categoria'}
+        busy={categoryBusy}
+        errorText={categoryError}
+      >
+        <Notice
+          tone="error"
+          text={categoryToDelete?.product_count > 0
+            ? `A categoria ${categoryToDelete?.name} possui ${categoryToDelete?.product_count} produto(s). Para excluí-la, escolha abaixo para onde eles serão transferidos.`
+            : `A categoria ${categoryToDelete?.name || ''} será excluída permanentemente.`}
+        />
+        {categoryToDelete?.product_count > 0 && (
+          <AccountPicker
+            label="Transferir produtos para *"
+            value={transferToId}
+            onChange={setTransferToId}
+            emptyLabel="Selecione a categoria de destino"
+            options={activeCategories
+              .filter((category) => category.id !== categoryToDelete?.id)
+              .map((category) => ({
+                label: category.name,
+                value: String(category.id),
+              }))}
           />
         )}
       </FormModal>

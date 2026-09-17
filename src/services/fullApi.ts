@@ -66,6 +66,34 @@ export async function setProductStockMax(code: string, maxStock: number | null) 
   );
 }
 
+export async function getProductCategories() {
+  return fullRequest<any>('/admin/product-categories');
+}
+
+export async function createProductCategory(payload: { name: string; active: boolean }) {
+  return fullRequest<any>('/admin/product-categories', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProductCategory(
+  id: number,
+  payload: { name?: string; active?: boolean }
+) {
+  return fullRequest<any>(`/admin/product-categories/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProductCategory(id: number, transferToId?: number | null) {
+  return fullRequest<any>(`/admin/product-categories/${id}/delete`, {
+    method: 'POST',
+    body: JSON.stringify({ transfer_to_id: transferToId ?? null }),
+  });
+}
+
 export async function getMonthlyFinanceReport(month: string) {
   return fullRequest<any>(`/admin/finance/monthly-report?month=${encodeURIComponent(month)}`);
 }

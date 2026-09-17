@@ -86,6 +86,11 @@ export type StockData = {
   last_sync_at: string | null;
 };
 
+export type ProductCategoryData = {
+  summary: { categories: number; active: number; inactive: number };
+  rows: Array<{ id: number; name: string; active: boolean; product_count: number }>;
+};
+
 export type FinanceData = {
   summary: { opening_balance: number; open_payables: number; overdue_payables: number; open_receivables: number; card_forecast: number; card_anticipated: number; realized_payables: number; realized_receivables: number };
   entries: Array<{
