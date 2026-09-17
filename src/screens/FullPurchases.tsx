@@ -31,6 +31,22 @@ const money = (value: number) =>
 const today = () =>
   new Date().toISOString().slice(0, 10);
 
+const paymentTermSuggestions = [
+  { label: 'À vista', value: 'À vista', days: 0 },
+  { label: '7 dias', value: '7 dias', days: 7 },
+  { label: '15 dias', value: '15 dias', days: 15 },
+  { label: '30 dias', value: '30 dias', days: 30 },
+  { label: '45 dias', value: '45 dias', days: 45 },
+  { label: '60 dias', value: '60 dias', days: 60 },
+];
+
+function addDaysIso(iso: string, days: number) {
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : today();
+  const date = new Date(`${base}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 type XmlPurchaseItem = {
   key: string;
   supplierCode: string;
@@ -71,6 +87,7 @@ function parseNfeXml(xml: string) {
   const paymentCode = xmlText(xmlElements(documentNode, 'detPag')[0], 'tPag');
   const paymentMap: Record<string, string> = {
     '01': 'Dinheiro',
+    '02': 'Cheque',
     '03': 'Crédito',
     '04': 'Débito',
     '15': 'Boleto',
@@ -161,6 +178,7 @@ export default function FullPurchases() {
     productId: '',
     qty: '1',
     cost: '0,00',
+    price: '',
   });
 
   const [lines, setLines] = useState<any[]>([]);
@@ -225,6 +243,9 @@ export default function FullPurchases() {
       cost: String(
         firstProduct?.cost || 0
       ).replace('.', ','),
+      price: String(
+        firstProduct?.price || 0
+      ).replace('.', ','),
     });
 
     setLines([]);
@@ -258,7 +279,33 @@ export default function FullPurchases() {
       cost: String(
         product?.cost || 0
       ).replace('.', ','),
+      price: String(
+        product?.price || 0
+      ).replace('.', ','),
     }));
+  };
+
+  const applyPaymentTerm = (value: string) => {
+    const suggestion = paymentTermSuggestions.find((item) => item.value === value);
+    if (!suggestion) return;
+    setForm((current) => ({
+      ...current,
+      paymentTerms: suggestion.value,
+      dueDate: addDaysIso(current.date, suggestion.days),
+    }));
+  };
+
+  const changePurchaseDate = (value: string) => {
+    setForm((current) => {
+      const suggestion = paymentTermSuggestions.find(
+        (item) => item.value === current.paymentTerms
+      );
+      return {
+        ...current,
+        date: value,
+        dueDate: suggestion ? addDaysIso(value, suggestion.days) : current.dueDate,
+      };
+    });
   };
 
   const addLine = () => {
@@ -270,13 +317,21 @@ export default function FullPurchases() {
       String(line.cost || '0').replace(',', '.')
     );
 
+    const priceText = String(line.price || '').trim();
+    const price = priceText
+      ? Number(priceText.replace(',', '.'))
+      : null;
+
     if (
       !line.productId ||
+      !Number.isFinite(qty) ||
       qty <= 0 ||
-      cost < 0
+      !Number.isFinite(cost) ||
+      cost < 0 ||
+      (price !== null && (!Number.isFinite(price) || price < 0))
     ) {
       setModalError(
-        'Confira produto, quantidade e custo.'
+        'Confira produto, quantidade, custo e preço de venda.'
       );
       return;
     }
@@ -297,6 +352,7 @@ export default function FullPurchases() {
                 ...item,
                 qty: item.qty + qty,
                 cost,
+                price,
               }
             : item
         );
@@ -308,12 +364,13 @@ export default function FullPurchases() {
           productId: line.productId,
           qty,
           cost,
+          price,
         },
       ];
     });
   };
 
-  const mergeLines = (incoming: Array<{ productId: string; qty: number; cost: number }>) => {
+  const mergeLines = (incoming: Array<{ productId: string; qty: number; cost: number; price?: number | null }>) => {
     setLines((current) => {
       const merged = [...current];
       incoming.forEach((next) => {
@@ -325,6 +382,7 @@ export default function FullPurchases() {
             ...merged[index],
             qty: Number(merged[index].qty || 0) + next.qty,
             cost: next.cost,
+            price: next.price ?? merged[index].price ?? null,
           };
         } else {
           merged.push(next);
@@ -336,7 +394,13 @@ export default function FullPurchases() {
 
   const mapXmlItem = (item: XmlPurchaseItem, productId: string) => {
     if (!productId) return;
-    mergeLines([{ productId, qty: item.qty, cost: item.cost }]);
+    const product = products.find((candidate) => String(candidate.id) === productId);
+    mergeLines([{
+      productId,
+      qty: item.qty,
+      cost: item.cost,
+      price: Number(product?.price || 0),
+    }]);
     setXmlPending((current) => current.filter((candidate) => candidate.key !== item.key));
   };
 
@@ -359,7 +423,7 @@ export default function FullPurchases() {
           (candidate) =>
             onlyDigits(candidate.document) === onlyDigits(parsed.supplierDocument)
         );
-        const matched: Array<{ productId: string; qty: number; cost: number }> = [];
+        const matched: Array<{ productId: string; qty: number; cost: number; price: number }> = [];
         const pending: XmlPurchaseItem[] = [];
 
         parsed.items.forEach((item) => {
@@ -371,7 +435,12 @@ export default function FullPurchases() {
             );
           });
           if (product) {
-            matched.push({ productId: String(product.id), qty: item.qty, cost: item.cost });
+            matched.push({
+              productId: String(product.id),
+              qty: item.qty,
+              cost: item.cost,
+              price: Number(product.price || 0),
+            });
           } else {
             pending.push(item);
           }
@@ -472,8 +541,34 @@ export default function FullPurchases() {
         }
       );
 
+      const priceUpdates = lines.filter((item) => {
+        if (item.price === null || item.price === undefined || !Number.isFinite(Number(item.price))) {
+          return false;
+        }
+        const product = products.find(
+          (candidate) => String(candidate.id) === String(item.productId)
+        );
+        return Number(product?.price || 0) !== Number(item.price);
+      });
+      const priceResults = await Promise.allSettled(
+        priceUpdates.map((item) =>
+          enqueue('products', 'PRODUCT_UPSERT', {
+            product: {
+              id: item.productId,
+              price: Number(item.price),
+            },
+          })
+        )
+      );
+      const priceUpdateFailed = priceResults.some((result) => result.status === 'rejected');
+
       setOpen(false);
-      showToast(commandMessage);
+      showToast(
+        priceUpdateFailed
+          ? 'Compra enviada. Um ou mais preços de venda não puderam ser enviados; revise os produtos.'
+          : commandMessage,
+        priceUpdateFailed ? 'error' : 'success'
+      );
 
       setTimeout(() => {
         load();
@@ -696,26 +791,31 @@ export default function FullPurchases() {
         <DateField
           label="Data do recebimento *"
           value={form.date}
-          onChangeText={(value) =>
-            set('date', value)
-          }
+          onChangeText={changePurchaseDate}
         />
 
         <SearchablePicker
           label="Forma prevista de pagamento"
           value={form.paymentMethod}
           onChange={(value) => set('paymentMethod', value)}
-          options={['Boleto', 'Pix', 'Dinheiro', 'Crédito', 'Débito', 'Transferência', 'Depósito', 'Outros'].map((value) => ({
+          options={['Boleto', 'Cheque', 'Pix', 'Dinheiro', 'Crédito', 'Débito', 'Transferência', 'Depósito', 'Outros'].map((value) => ({
             label: value,
             value,
           }))}
         />
 
+        <Choice
+          label="Condições sugeridas"
+          value={form.paymentTerms}
+          onChange={applyPaymentTerm}
+          options={paymentTermSuggestions.map(({ label, value }) => ({ label, value }))}
+        />
+
         <Field
-          label="Condição de pagamento"
+          label="Condição de pagamento (editável)"
           value={form.paymentTerms}
           onChangeText={(value) => set('paymentTerms', value)}
-          placeholder="Ex.: À vista, 30 dias, 2 parcelas"
+          placeholder="Escolha acima ou escreva outra condição"
         />
 
         <DateField
@@ -745,6 +845,10 @@ export default function FullPurchases() {
               value: 'false',
             },
           ]}
+        />
+
+        <Notice
+          text="A entrada no estoque é automática ao confirmar: cada quantidade é somada ao saldo do produto. A opção acima controla apenas a geração da conta a pagar."
         />
 
         <Text style={s.cardTitle}>
@@ -818,6 +922,19 @@ export default function FullPurchases() {
           keyboardType="decimal-pad"
         />
 
+        <Field
+          label="Novo preço de venda (opcional)"
+          value={line.price}
+          onChangeText={(value) =>
+            setLine((current) => ({
+              ...current,
+              price: value,
+            }))
+          }
+          keyboardType="decimal-pad"
+          placeholder="Se informado, atualiza o cadastro do produto"
+        />
+
         <ActionButton
           label="Adicionar item"
           tone="dark"
@@ -845,6 +962,9 @@ export default function FullPurchases() {
                 <Text style={s.meta}>
                   {item.qty} ×{' '}
                   {money(item.cost)}
+                  {item.price !== null && item.price !== undefined
+                    ? ` • venda ${money(item.price)}`
+                    : ''}
                 </Text>
               </View>
 
