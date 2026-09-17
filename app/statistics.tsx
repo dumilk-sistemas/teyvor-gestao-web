@@ -857,7 +857,7 @@ export default function Statistics() {
   return (
     <AdminShell
       title="Estatísticas"
-      subtitle="Desempenho de vendas por dia, mês, ano ou período"
+      subtitle="Análise de desempenho com evolução e comparação de períodos"
       syncText={
         data?.last_sync_at
           ? `Atualizado em ${new Date(
@@ -1473,13 +1473,20 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   heroCard: {
-    backgroundColor: theme.colors.black,
-    borderRadius: 18,
-    padding: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#0D1117',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
   },
 
   heroLabel: {
-    color: c.gold,
+    color: theme.colors.muted,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.2,
@@ -1487,7 +1494,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   heroValue: {
     marginTop: 5,
-    color: '#FFFFFF',
+    color: theme.colors.text,
     fontSize: 32,
     lineHeight: 38,
     fontWeight: '900',
@@ -1499,40 +1506,43 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    backgroundColor: '#303030',
+    backgroundColor: '#F1F0EC',
   },
 
   comparisonPillPositive: {
-    backgroundColor: '#183D28',
+    backgroundColor: '#E8F6EE',
   },
 
   comparisonPillNegative: {
-    backgroundColor: '#472222',
+    backgroundColor: '#FBEAEA',
   },
 
   comparisonText: {
-    color: '#D7D7D7',
+    color: theme.colors.muted,
     fontSize: 11,
     fontWeight: '800',
   },
 
   comparisonTextPositive: {
-    color: '#BCE4C8',
+    color: theme.colors.success,
   },
 
   comparisonTextNegative: {
-    color: '#F0C2C2',
+    color: theme.colors.danger,
   },
 
   heroDivider: {
     height: 1,
-    backgroundColor: '#343434',
+    backgroundColor: theme.colors.border,
     marginVertical: 16,
   },
 
   heroStats: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    borderRadius: 12,
+    backgroundColor: '#F8F7F4',
+    padding: 14,
   },
 
   heroStat: {
@@ -1542,18 +1552,18 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   heroStatDivider: {
     width: 1,
     marginHorizontal: 16,
-    backgroundColor: '#343434',
+    backgroundColor: theme.colors.border,
   },
 
   heroStatLabel: {
-    color: '#B8B8B8',
+    color: theme.colors.muted,
     fontSize: 11,
     fontWeight: '800',
   },
 
   heroStatValue: {
     marginTop: 4,
-    color: '#FFFFFF',
+    color: theme.colors.text,
     fontSize: 19,
     fontWeight: '900',
   },

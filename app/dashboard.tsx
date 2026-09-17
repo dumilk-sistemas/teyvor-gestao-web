@@ -11,7 +11,6 @@ import {
 import { router } from 'expo-router';
 
 import { AdminShell } from '@/components/AdminShell';
-import { MetricCard } from '@/components/MetricCard';
 import { Skeleton } from '@/components/Skeleton';
 import {
   getDashboard,
@@ -711,8 +710,8 @@ export default function Dashboard() {
 
   return (
     <AdminShell
-      title="Visão geral"
-      subtitle="Indicadores de vendas, caixa, financeiro e estoque"
+      title="Painel de gestão"
+      subtitle="Visão executiva do desempenho e das prioridades da loja"
       syncText={syncText}
       refreshing={loading}
       onRefresh={() => load()}
@@ -793,7 +792,10 @@ export default function Dashboard() {
         </View>
       )}
 
-      {data && data.revenue_last_7d && data.revenue_last_7d.length > 0 && (
+      {data && (
+      <View style={styles.dashboardGrid}>
+      <View style={styles.dashboardChartColumn}>
+      {data.revenue_last_7d && data.revenue_last_7d.length > 0 && (
         <View style={styles.chartCard}>
           <Text style={styles.chartTitle}>Faturamento — últimos 7 dias</Text>
 
@@ -843,63 +845,47 @@ export default function Dashboard() {
         </View>
       )}
 
-      {data && (
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.sectionTitle}>Saúde do negócio</Text>
-            <Text style={styles.sectionSubtitle}>
-              Indicadores consolidados do mês e próximos 30 dias
+      </View>
+      <View style={styles.managementCard}>
+        <Text style={styles.managementEyebrow}>RESUMO DO NEGÓCIO</Text>
+        <Text style={styles.managementTitle}>Prioridades para acompanhar</Text>
+        <View style={styles.managementRows}>
+          <View style={styles.managementRow}>
+            <Text style={styles.managementLabel}>Faturamento no mês</Text>
+            <Text style={styles.managementValue}>{money(data.revenue_month)}</Text>
+          </View>
+          <View style={styles.managementRow}>
+            <Text style={styles.managementLabel}>Resultado bruto</Text>
+            <Text style={styles.managementValue}>{money(data.gross_result_estimated)}</Text>
+          </View>
+          <View style={styles.managementRow}>
+            <Text style={styles.managementLabel}>A receber • 30 dias</Text>
+            <Text style={styles.managementValue}>{money(data.receivables_next_30d)}</Text>
+          </View>
+          <View style={styles.managementRow}>
+            <Text style={styles.managementLabel}>A pagar • 30 dias</Text>
+            <Text style={[
+              styles.managementValue,
+              data.payables_next_30d > data.receivables_next_30d && styles.managementDanger,
+            ]}>
+              {money(data.payables_next_30d)}
             </Text>
           </View>
         </View>
-      )}
-
-      {data && (
-        <View style={styles.summaryRow}>
-          <MetricCard
-            label="Ticket médio"
-            value={money(data.ticket_average)}
-            note="Média por venda no mês"
-          />
-
-          <MetricCard
-            label="Resultado bruto"
-            value={money(data.gross_result_estimated)}
-            note="Faturamento do mês menos custo"
-          />
-
-          <MetricCard
-            label="A receber (30 dias)"
-            value={money(data.receivables_next_30d)}
-            note="Cartão e contas a receber"
-          />
-
-          <MetricCard
-            label="A pagar (30 dias)"
-            value={money(data.payables_next_30d)}
-            note="Contas a pagar em aberto"
-          />
-
-        </View>
-      )}
-
-      {data && data.stock_alerts > 0 && (
-        <Pressable style={styles.attentionCard} onPress={() => router.push('/stock')}>
+        <Pressable style={styles.stockAction} onPress={() => router.push('/stock')}>
           <View>
-            <Text style={styles.attentionEyebrow}>ATENÇÃO OPERACIONAL</Text>
-            <Text style={styles.attentionTitle}>
-              {data.stock_alerts} produto(s) no estoque mínimo ou abaixo
-            </Text>
-            <Text style={styles.attentionText}>
-              Revise os saldos e gere as reposições necessárias.
-            </Text>
+            <Text style={styles.stockActionLabel}>ESTOQUE</Text>
+            <Text style={styles.stockActionValue}>{data.stock_alerts} item(ns) exigem atenção</Text>
           </View>
-          <Text style={styles.attentionLink}>Ver estoque →</Text>
+          <Text style={styles.stockActionArrow}>→</Text>
         </Pressable>
+      </View>
+      </View>
       )}
 
+      <View style={styles.insightsGrid}>
       {recentSales.length > 0 && (
-        <View style={styles.chartCard}>
+        <View style={[styles.chartCard, styles.insightCard]}>
           <Text style={styles.chartTitle}>Vendas recentes de hoje</Text>
 
           {recentSales.map((sale: any) => (
@@ -924,7 +910,7 @@ export default function Dashboard() {
       )}
 
       {topProductsToday.length > 0 && (
-        <View style={styles.chartCard}>
+        <View style={[styles.chartCard, styles.insightCard]}>
           <Text style={styles.chartTitle}>Produtos em destaque hoje</Text>
 
           {(() => {
@@ -960,6 +946,7 @@ export default function Dashboard() {
           })()}
         </View>
       )}
+      </View>
 
       <View style={styles.headerRow}>
         <View>
@@ -1473,6 +1460,116 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     color: theme.colors.muted,
+  },
+
+  dashboardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+
+  dashboardChartColumn: {
+    flex: 2,
+    minWidth: 480,
+  },
+
+  managementCard: {
+    flex: 1,
+    minWidth: 300,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.lg,
+    backgroundColor: '#FFFFFF',
+  },
+
+  managementEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    color: theme.colors.muted,
+  },
+
+  managementTitle: {
+    marginTop: 4,
+    fontSize: 17,
+    fontFamily: 'Sora_700Bold',
+    color: theme.colors.text,
+  },
+
+  managementRows: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+
+  managementRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+
+  managementLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+
+  managementValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: theme.colors.text,
+    textAlign: 'right',
+  },
+
+  managementDanger: {
+    color: theme.colors.danger,
+  },
+
+  stockAction: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#F7F4EC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+
+  stockActionLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    color: theme.colors.muted,
+  },
+
+  stockActionValue: {
+    marginTop: 3,
+    fontSize: 13,
+    fontWeight: '900',
+    color: theme.colors.text,
+  },
+
+  stockActionArrow: {
+    fontSize: 20,
+    color: c.gold,
+  },
+
+  insightsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+
+  insightCard: {
+    flex: 1,
+    minWidth: 340,
   },
 
   attentionCard: {

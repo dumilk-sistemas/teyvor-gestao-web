@@ -265,7 +265,7 @@ export default function FullCash() {
   return (
     <AdminShell
       title="Caixa"
-      subtitle="Abertura, sangria, suprimento e fechamento remoto"
+      subtitle="Controle de sessão, movimentações, conferência e fechamentos"
       syncText={
         data?.last_sync_at
           ? `Atualizado em ${new Date(
@@ -290,10 +290,14 @@ export default function FullCash() {
           {data.current ? (
             <>
               <View style={s.card}>
-                <Text style={s.cardTitle}>
-                  CAIXA ABERTO •{' '}
-                  {data.current.code}
-                </Text>
+                <View style={cashStyles.sessionHeader}>
+                  <View style={cashStyles.openDot} />
+                  <View style={s.main}>
+                    <Text style={cashStyles.sessionEyebrow}>SESSÃO EM ANDAMENTO</Text>
+                    <Text style={cashStyles.sessionTitle}>Caixa {data.current.code}</Text>
+                  </View>
+                  <Text style={cashStyles.openBadge}>Aberto</Text>
+                </View>
 
                 <View
                   style={
@@ -449,18 +453,14 @@ export default function FullCash() {
             </>
           ) : (
             <View style={s.card}>
-              <Text style={s.cardTitle}>
-                CAIXA FECHADO
-              </Text>
-
               <View
                 style={
                   cashStyles.closedArea
                 }
               >
-                <Text style={s.meta}>
-                  Nenhuma sessão aberta.
-                </Text>
+                <Text style={cashStyles.closedEyebrow}>OPERAÇÃO ENCERRADA</Text>
+                <Text style={cashStyles.closedTitle}>Nenhum caixa aberto</Text>
+                <Text style={s.meta}>Abra uma sessão para registrar vendas e movimentações em dinheiro.</Text>
 
                 <View
                   style={
@@ -713,7 +713,7 @@ export default function FullCash() {
                     cashStyles.detailTitle
                   }
                 >
-                  Detalhes do fechamento
+                  Fechamento {selectedClosing?.code || ''}
                 </Text>
 
                 <Text
@@ -721,8 +721,9 @@ export default function FullCash() {
                     cashStyles.detailSubtitle
                   }
                 >
-                  {selectedClosing?.code ||
-                    ''}
+                  {selectedClosing
+                    ? `${formatDateBR(selectedClosing.date)} • ${selectedClosing.operator || 'Operador não informado'}`
+                    : ''}
                 </Text>
               </View>
 
@@ -751,6 +752,26 @@ export default function FullCash() {
             >
               {!!selectedClosing && (
                 <>
+                  <View style={cashStyles.detailKpis}>
+                    <View style={cashStyles.detailKpi}>
+                      <Text style={cashStyles.detailKpiLabel}>VENDAS</Text>
+                      <Text style={cashStyles.detailKpiValue}>{money(selectedClosing.total_sales)}</Text>
+                    </View>
+                    <View style={cashStyles.detailKpi}>
+                      <Text style={cashStyles.detailKpiLabel}>ESPERADO</Text>
+                      <Text style={cashStyles.detailKpiValue}>{money(selectedClosing.expected_total)}</Text>
+                    </View>
+                    <View style={cashStyles.detailKpi}>
+                      <Text style={cashStyles.detailKpiLabel}>DIFERENÇA</Text>
+                      <Text style={[
+                        cashStyles.detailKpiValue,
+                        Math.abs(selectedClosing.difference || 0) > 0.009 && cashStyles.detailDanger,
+                      ]}>
+                        {money(selectedClosing.difference)}
+                      </Text>
+                    </View>
+                  </View>
+
                   <DetailSection title="Sessão">
                     <DetailRow
                       label="Data"
@@ -1072,6 +1093,45 @@ function DetailRow({
 }
 
 const cashStyles = StyleSheet.create({
+  sessionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+
+  openDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#2F7D4A',
+  },
+
+  sessionEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    color: '#6B6B6B',
+  },
+
+  sessionTitle: {
+    marginTop: 3,
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#171717',
+  },
+
+  openBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#E8F6EE',
+    color: '#2F7D4A',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
   sessionInfo: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -1095,6 +1155,19 @@ const cashStyles = StyleSheet.create({
   closedArea: {
     padding: 16,
     gap: 12,
+  },
+
+  closedEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    color: '#6B6B6B',
+  },
+
+  closedTitle: {
+    fontSize: 21,
+    fontWeight: '900',
+    color: '#171717',
   },
 
   openButton: {
@@ -1161,6 +1234,36 @@ const cashStyles = StyleSheet.create({
   detailBody: {
     padding: 16,
     gap: 14,
+  },
+
+  detailKpis: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+
+  detailKpi: {
+    minWidth: 150,
+    flexGrow: 1,
+    borderWidth: 1,
+    borderColor: '#E3E0D8',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#FAFAF8',
+  },
+
+  detailKpiLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    color: '#6B6B6B',
+  },
+
+  detailKpiValue: {
+    marginTop: 5,
+    fontSize: 19,
+    fontWeight: '900',
+    color: '#171717',
   },
 
   detailSection: {

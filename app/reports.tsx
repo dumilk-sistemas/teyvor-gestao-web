@@ -14,7 +14,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { theme } from '@/constants/theme';
 import { getReports } from '@/services/api';
 import { getFull } from '@/services/fullApi';
-import type { CustomersData, FinanceData, ReportsData, StockData } from '@/types/api';
+import type { CustomersData, FinanceData, PurchasesData, ReportsData, StockData } from '@/types/api';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -39,6 +39,7 @@ const statusLabelPt = (status: string) => {
   if (status === 'paid') return 'Pago';
   if (status === 'received') return 'Recebido';
   if (status === 'overdue') return 'Vencido';
+  if (status === 'not_generated') return 'Não gerada';
   return 'Em aberto';
 };
 
@@ -216,7 +217,7 @@ type PeriodKey =
   | 'year'
   | 'custom';
 
-type DetailMode = 'sales' | 'cash' | 'products' | 'payments' | 'customers' | 'finance' | 'stock' | null;
+type DetailMode = 'sales' | 'cash' | 'products' | 'payments' | 'customers' | 'finance' | 'purchases' | 'stock' | null;
 
 type CashClosing = {
   id?: string;
@@ -265,6 +266,7 @@ export default function Reports() {
   const [customers, setCustomers] = useState<CustomersData | null>(null);
   const [finance, setFinance] = useState<FinanceData | null>(null);
   const [stock, setStock] = useState<StockData | null>(null);
+  const [purchases, setPurchases] = useState<PurchasesData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [financeReportMode, setFinanceReportMode] = useState<
@@ -295,20 +297,30 @@ export default function Reports() {
       setLoading(true);
       setError('');
 
-      const reportsResult = await getReports(appliedStart, appliedEnd);
-
-      // Caixa/Clientes/Financeiro só enriquecem relatórios extras;
-      // perfis sem acesso a esses módulos ainda veem o resto normal.
-      const cashResult = await getFull<CashData>('cash').catch(() => null);
-      const customersResult = await getFull<CustomersData>('customers').catch(() => null);
-      const financeResult = await getFull<FinanceData>('finance').catch(() => null);
-      const stockResult = await getFull<StockData>('stock').catch(() => null);
+      // Carrega as fontes em paralelo. Em hospedagens que hibernam, fazer
+      // essas chamadas em sequência deixava a central aparentemente vazia.
+      const [
+        reportsResult,
+        cashResult,
+        customersResult,
+        financeResult,
+        stockResult,
+        purchasesResult,
+      ] = await Promise.all([
+        getReports(appliedStart, appliedEnd),
+        getFull<CashData>('cash').catch(() => null),
+        getFull<CustomersData>('customers').catch(() => null),
+        getFull<FinanceData>('finance').catch(() => null),
+        getFull<StockData>('stock').catch(() => null),
+        getFull<PurchasesData>('purchases').catch(() => null),
+      ]);
 
       setData(reportsResult);
       setCash(cashResult);
       setCustomers(customersResult);
       setFinance(financeResult);
       setStock(stockResult);
+      setPurchases(purchasesResult);
     } catch (e) {
       setError(
         e instanceof Error
@@ -572,6 +584,49 @@ export default function Reports() {
     });
   }, [stock]);
 
+  const purchaseRows = useMemo(
+    () =>
+      (purchases?.rows || []).filter(
+        (row) => row.date >= appliedStart && row.date <= appliedEnd
+      ),
+    [purchases, appliedStart, appliedEnd]
+  );
+
+  const purchaseSummary = useMemo(() => {
+    const total = purchaseRows.reduce(
+      (sum, row) => sum + Number(row.total || 0),
+      0
+    );
+    const open = purchaseRows.reduce(
+      (sum, row) =>
+        ['open', 'overdue'].includes(row.payable_status)
+          ? sum + Number(row.payable_amount || row.total || 0)
+          : sum,
+      0
+    );
+    return { count: purchaseRows.length, total, open };
+  }, [purchaseRows]);
+
+  const financePosition = useMemo(() => {
+    const entries = (finance?.entries || []).filter(
+      (entry) => entry.due_date >= appliedStart && entry.due_date <= appliedEnd
+    );
+    const summarize = (type: string) => {
+      const rows = entries.filter(
+        (entry) =>
+          entry.type === type && ['open', 'overdue'].includes(entry.status)
+      );
+      return {
+        count: rows.length,
+        total: rows.reduce((sum, entry) => sum + Number(entry.amount || 0), 0),
+      };
+    };
+    return {
+      payables: summarize('payable'),
+      receivables: summarize('receivable'),
+    };
+  }, [finance, appliedStart, appliedEnd]);
+
   const cashSummary = useMemo(() => {
     return cashClosings.reduce(
       (acc, closing) => {
@@ -793,6 +848,14 @@ export default function Reports() {
       </View>
 
       {!!data && (
+        <>
+        <View style={styles.catalogIntro}>
+          <Text style={styles.catalogEyebrow}>CENTRAL DE RELATÓRIOS</Text>
+          <Text style={styles.catalogTitle}>Escolha a análise que deseja emitir</Text>
+          <Text style={styles.catalogSubtitle}>
+            Todos os relatórios respeitam o período selecionado e podem ser impressos, salvos em PDF ou exportados para Excel.
+          </Text>
+        </View>
         <View style={styles.reportCards}>
           <ReportCard
             icon="$"
@@ -903,6 +966,36 @@ export default function Reports() {
           />
 
           <ReportCard
+            icon="↓"
+            title="Contas a pagar"
+            value={money(financePosition.payables.total)}
+            subtitle={`${financePosition.payables.count} lançamento(s) em aberto ou vencidos`}
+            onPress={() => {
+              setFinanceReportMode('payable_open');
+              setDetailMode('finance');
+            }}
+          />
+
+          <ReportCard
+            icon="↑"
+            title="Contas a receber"
+            value={money(financePosition.receivables.total)}
+            subtitle={`${financePosition.receivables.count} lançamento(s) em aberto ou vencidos`}
+            onPress={() => {
+              setFinanceReportMode('receivable_open');
+              setDetailMode('finance');
+            }}
+          />
+
+          <ReportCard
+            icon="N"
+            title="Compras / recebimentos"
+            value={money(purchaseSummary.total)}
+            subtitle={`${purchaseSummary.count} compra(s) • ${money(purchaseSummary.open)} a pagar`}
+            onPress={() => setDetailMode('purchases')}
+          />
+
+          <ReportCard
             icon="$"
             title="Financeiro por categoria"
             value={`${
@@ -921,6 +1014,7 @@ export default function Reports() {
             onPress={() => setDetailMode('stock')}
           />
         </View>
+        </>
       )}
 
       <Modal
@@ -1804,6 +1898,80 @@ export default function Reports() {
       </Modal>
 
       <Modal
+        visible={detailMode === 'purchases'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDetailMode(null)}
+      >
+        <View style={styles.backdrop}>
+          <View style={styles.modal}>
+            <ModalHeader
+              title="Compras e recebimentos"
+              subtitle={periodLabel}
+              onClose={() => setDetailMode(null)}
+              onPrint={() =>
+                printRows(
+                  'Relatório de compras e recebimentos',
+                  periodLabel,
+                  ['Data', 'Fornecedor', 'Documento', 'Itens', 'Total', 'Conta a pagar'],
+                  purchaseRows.map((row) => [
+                    dateBR(row.date),
+                    row.supplier,
+                    row.document || '—',
+                    row.items,
+                    money(row.total),
+                    statusLabelPt(row.payable_status),
+                  ])
+                )
+              }
+              onExcel={() =>
+                downloadCsv(
+                  `relatorio_compras_${appliedStart}_${appliedEnd}.csv`,
+                  ['Data', 'Fornecedor', 'Documento', 'Itens', 'Total', 'Conta a pagar'],
+                  purchaseRows.map((row) => [
+                    row.date,
+                    row.supplier,
+                    row.document || '',
+                    row.items,
+                    row.total,
+                    row.payable_status,
+                  ])
+                )
+              }
+            />
+
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalBody}
+            >
+              <SummaryRow label="Compras no período" value={String(purchaseSummary.count)} />
+              <SummaryRow label="Total comprado" value={money(purchaseSummary.total)} />
+              <SummaryRow label="A pagar vinculado" value={money(purchaseSummary.open)} />
+
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>Lançamentos</Text>
+                {purchaseRows.length > 0 ? (
+                  purchaseRows.map((row, index) => (
+                    <View key={String(row.id || index)} style={styles.dayRow}>
+                      <View style={styles.dayMain}>
+                        <Text style={styles.dayTitle}>{row.supplier}</Text>
+                        <Text style={styles.dayMeta}>
+                          {dateBR(row.date)} • {row.document || 'Sem documento'} • {row.items} item(ns) • {statusLabelPt(row.payable_status)}
+                        </Text>
+                      </View>
+                      <Text style={styles.dayAmount}>{money(row.total)}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptyText}>Nenhuma compra registrada no período.</Text>
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={detailMode === 'stock'}
         transparent
         animationType="fade"
@@ -2421,11 +2589,43 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  catalogIntro: {
+    paddingHorizontal: 2,
+    paddingTop: 4,
+  },
+
+  catalogEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    color: theme.colors.muted,
+  },
+
+  catalogTitle: {
+    marginTop: 4,
+    fontSize: 20,
+    fontWeight: '900',
+    color: theme.colors.text,
+  },
+
+  catalogSubtitle: {
+    marginTop: 5,
+    maxWidth: 760,
+    fontSize: 13,
+    lineHeight: 19,
+    color: theme.colors.muted,
+  },
+
   reportCards: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
 
   reportCard: {
+    minWidth: 310,
+    flexBasis: '47%',
+    flexGrow: 1,
     backgroundColor: '#FFF',
     borderWidth: 1,
     borderColor: theme.colors.border,
