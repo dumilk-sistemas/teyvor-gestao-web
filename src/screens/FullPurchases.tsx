@@ -11,6 +11,7 @@ import {
   Field,
   FormModal,
   Notice,
+  SearchablePicker,
   formStyles as s,
 } from '@/components/FormKit';
 import {
@@ -397,7 +398,7 @@ export default function FullPurchases() {
         busy={busy}
         wide
       >
-        <Choice
+        <SearchablePicker
           label="Fornecedor *"
           value={form.supplierId}
           onChange={(value) =>
@@ -413,7 +414,10 @@ export default function FullPurchases() {
               value: String(
                 supplier.id
               ),
+              description: supplier.document || supplier.phone || 'Fornecedor ativo',
             }))}
+          placeholder="Selecione o fornecedor"
+          searchPlaceholder="Buscar fornecedor"
         />
 
         <Field
@@ -465,7 +469,7 @@ export default function FullPurchases() {
           Adicionar produto
         </Text>
 
-        <Choice
+        <SearchablePicker
           label="Produto"
           value={line.productId}
           onChange={changeProduct}
@@ -473,8 +477,11 @@ export default function FullPurchases() {
             (product) => ({
               label: product.name,
               value: String(product.id),
+              description: `${product.code || 'Sem código'} • saldo ${product.stock || 0} ${product.unit || 'un'}`,
             })
           )}
+          placeholder="Selecione o produto"
+          searchPlaceholder="Buscar por nome ou código"
         />
 
         <Field

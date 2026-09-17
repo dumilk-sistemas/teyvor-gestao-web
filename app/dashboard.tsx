@@ -534,6 +534,7 @@ export default function Dashboard() {
   const [selectedSale, setSelectedSale] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showAllActivity, setShowAllActivity] = useState(false);
 
   async function load(silent = false) {
     try {
@@ -622,14 +623,25 @@ export default function Dashboard() {
   }, [todaySalesRows]);
 
   const filteredEvents = useMemo(() => {
+    const seen = new Set<string>();
     return events
       .filter((event) => isToday(event.created_at))
       .sort(
         (a, b) =>
-          new Date(a.created_at || 0).getTime() -
-          new Date(b.created_at || 0).getTime()
-      );
+          new Date(b.created_at || 0).getTime() -
+          new Date(a.created_at || 0).getTime()
+      )
+      .filter((event) => {
+        const key = `${event.event_type}|${event.title || ''}`.toLocaleLowerCase('pt-BR');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
   }, [events]);
+
+  const displayedEvents = showAllActivity
+    ? filteredEvents
+    : filteredEvents.slice(0, 8);
 
   async function readEvent(event: NotificationEvent) {
     if (event.read) {
@@ -699,18 +711,12 @@ export default function Dashboard() {
 
   return (
     <AdminShell
-      title="Eventos"
-      subtitle="Acompanhe as movimentações da loja em tempo real"
+      title="Visão geral"
+      subtitle="Indicadores de vendas, caixa, financeiro e estoque"
       syncText={syncText}
       refreshing={loading}
       onRefresh={() => load()}
-      headerActions={
-        unreadCount > 0 ? (
-          <Pressable style={styles.readAllButton} onPress={readAll}>
-            <Text style={styles.readAllText}>Marcar todos como lidos</Text>
-          </Pressable>
-        ) : null
-      }
+      headerActions={null}
     >
       {!!error && <Text style={styles.error}>{error}</Text>}
 
@@ -755,8 +761,22 @@ export default function Dashboard() {
               {money(data.revenue_today)}
             </Text>
             <Text style={styles.summaryNote}>
-              {data.sales_today} venda(s) • ontem {money(data.revenue_yesterday)}
+              Ontem: {money(data.revenue_yesterday)}
             </Text>
+          </View>
+
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Vendas hoje</Text>
+            <Text style={styles.summaryValue}>{data.sales_today}</Text>
+            <Text style={styles.summaryNote}>Operações concluídas</Text>
+          </View>
+
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Ticket médio hoje</Text>
+            <Text style={styles.summaryValue}>
+              {money(data.sales_today ? data.revenue_today / data.sales_today : 0)}
+            </Text>
+            <Text style={styles.summaryNote}>Valor médio por venda</Text>
           </View>
 
           <View style={styles.summaryCard}>
@@ -826,9 +846,9 @@ export default function Dashboard() {
       {data && (
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.sectionTitle}>Resumo do mês</Text>
+            <Text style={styles.sectionTitle}>Saúde do negócio</Text>
             <Text style={styles.sectionSubtitle}>
-              Indicadores adicionais de gestão
+              Indicadores consolidados do mês e próximos 30 dias
             </Text>
           </View>
         </View>
@@ -860,17 +880,22 @@ export default function Dashboard() {
             note="Contas a pagar em aberto"
           />
 
-          <MetricCard
-            label="Alertas de estoque"
-            value={String(data.stock_alerts)}
-            note={
-              data.stock_alerts > 0
-                ? 'Produto(s) no mínimo ou abaixo'
-                : 'Tudo certo'
-            }
-            tone={data.stock_alerts > 0 ? 'warning' : 'default'}
-          />
         </View>
+      )}
+
+      {data && data.stock_alerts > 0 && (
+        <Pressable style={styles.attentionCard} onPress={() => router.push('/stock')}>
+          <View>
+            <Text style={styles.attentionEyebrow}>ATENÇÃO OPERACIONAL</Text>
+            <Text style={styles.attentionTitle}>
+              {data.stock_alerts} produto(s) no estoque mínimo ou abaixo
+            </Text>
+            <Text style={styles.attentionText}>
+              Revise os saldos e gere as reposições necessárias.
+            </Text>
+          </View>
+          <Text style={styles.attentionLink}>Ver estoque →</Text>
+        </Pressable>
       )}
 
       {recentSales.length > 0 && (
@@ -938,18 +963,35 @@ export default function Dashboard() {
 
       <View style={styles.headerRow}>
         <View>
-          <Text style={styles.sectionTitle}>Eventos de hoje</Text>
+          <Text style={styles.sectionTitle}>Atividade recente</Text>
           <Text style={styles.sectionSubtitle}>
             {unreadCount > 0
               ? `${unreadCount} não lido(s)`
-              : 'Todos os eventos estão lidos'}
+              : 'Resumo das principais movimentações de hoje'}
           </Text>
+        </View>
+        <View style={styles.activityActions}>
+          {filteredEvents.length > 8 && (
+            <Pressable
+              style={styles.readAllButton}
+              onPress={() => setShowAllActivity((current) => !current)}
+            >
+              <Text style={styles.readAllText}>
+                {showAllActivity ? 'Mostrar menos' : 'Ver todas'}
+              </Text>
+            </Pressable>
+          )}
+          {unreadCount > 0 && (
+            <Pressable style={styles.readAllButton} onPress={readAll}>
+              <Text style={styles.readAllText}>Marcar como lidas</Text>
+            </Pressable>
+          )}
         </View>
       </View>
 
-      {filteredEvents.length > 0 ? (
+      {displayedEvents.length > 0 ? (
         <View style={styles.timeline}>
-          {filteredEvents.map((event, index) => {
+          {displayedEvents.map((event, index) => {
             const category = eventCategory(event.event_type);
 
             return (
@@ -974,7 +1016,7 @@ export default function Dashboard() {
                     </Text>
                   </View>
 
-                  {index < filteredEvents.length - 1 && (
+                  {index < displayedEvents.length - 1 && (
                     <View style={styles.timelineLine} />
                   )}
                 </View>
@@ -1004,11 +1046,6 @@ export default function Dashboard() {
                     </Text>
                   )}
 
-                  {!!event.terminal_id && (
-                    <Text style={styles.eventTerminal}>
-                      Terminal: {event.terminal_id}
-                    </Text>
-                  )}
                 </View>
               </Pressable>
             );
@@ -1438,6 +1475,44 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     color: theme.colors.muted,
   },
 
+  attentionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E7C9C9',
+    borderRadius: theme.radius.lg,
+    backgroundColor: '#FFF8F7',
+  },
+
+  attentionEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    color: theme.colors.danger,
+  },
+
+  attentionTitle: {
+    marginTop: 4,
+    fontSize: 16,
+    fontFamily: 'Sora_700Bold',
+    color: theme.colors.text,
+  },
+
+  attentionText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+
+  attentionLink: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: theme.colors.danger,
+  },
+
   chartCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: theme.radius.lg,
@@ -1605,6 +1680,13 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: '#FFFFFF',
+  },
+
+  activityActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 7,
   },
 
   readAllText: {

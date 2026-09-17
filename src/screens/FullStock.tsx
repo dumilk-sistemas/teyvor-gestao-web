@@ -6,10 +6,10 @@ import { MetricCard } from '@/components/MetricCard';
 import { SearchBar } from '@/components/SearchBar';
 import {
   ActionButton,
-  Choice,
   Field,
   FormModal,
   Notice,
+  SearchablePicker,
   formStyles as s,
 } from '@/components/FormKit';
 import {
@@ -30,6 +30,7 @@ export default function FullStock() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [modalError, setModalError] = useState('');
   const { showToast } = useToast();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -60,6 +61,14 @@ export default function FullStock() {
     cost: '',
     reason: '',
   });
+
+  const selectedProduct = useMemo(
+    () =>
+      (data?.rows || []).find(
+        (row: any) => String(row.id) === form.productId
+      ),
+    [data, form.productId]
+  );
 
   async function load() {
     try {
@@ -97,6 +106,7 @@ export default function FullStock() {
     type: string,
     row?: any
   ) => {
+    setModalError('');
     setForm({
       type,
       productId: String(
@@ -118,7 +128,30 @@ export default function FullStock() {
   async function save() {
     try {
       setBusy(true);
-      setError('');
+      setModalError('');
+
+      if (!form.productId) {
+        setModalError('Selecione o produto.');
+        return;
+      }
+
+      const parsedQty = Number(String(form.qty || '').replace(',', '.'));
+      const parsedStock = Number(String(form.newStock || '').replace(',', '.'));
+
+      if (form.type === 'STOCK_ADJUST' && !Number.isFinite(parsedStock)) {
+        setModalError('Informe um saldo físico válido.');
+        return;
+      }
+
+      if (form.type !== 'STOCK_ADJUST' && (!Number.isFinite(parsedQty) || parsedQty <= 0)) {
+        setModalError('A quantidade deve ser maior que zero.');
+        return;
+      }
+
+      if (form.reason.trim().length < 3) {
+        setModalError('Informe o motivo ou a referência da movimentação.');
+        return;
+      }
 
       const payload: any = {
         productId: form.productId,
@@ -126,19 +159,9 @@ export default function FullStock() {
       };
 
       if (form.type === 'STOCK_ADJUST') {
-        payload.newStock = Number(
-          String(form.newStock || '0').replace(
-            ',',
-            '.'
-          )
-        );
+        payload.newStock = parsedStock;
       } else {
-        payload.qty = Number(
-          String(form.qty || '0').replace(
-            ',',
-            '.'
-          )
-        );
+        payload.qty = parsedQty;
 
         if (form.cost) {
           payload.cost = Number(
@@ -163,7 +186,7 @@ export default function FullStock() {
         load();
       }, 1200);
     } catch (e) {
-      setError(
+      setModalError(
         e instanceof Error
           ? e.message
           : 'Falha ao enviar movimento.'
@@ -188,31 +211,11 @@ export default function FullStock() {
       onRefresh={load}
       syncNote
       headerActions={
-        <>
-          <ActionButton
-            label="+ Entrada"
-            tone="gold"
-            onPress={() =>
-              start('STOCK_ENTRY')
-            }
-          />
-
-          <ActionButton
-            label="− Saída"
-            tone="dark"
-            onPress={() =>
-              start('STOCK_EXIT')
-            }
-          />
-
-          <ActionButton
-            label="Ajustar saldo"
-            tone="danger"
-            onPress={() =>
-              start('STOCK_ADJUST')
-            }
-          />
-        </>
+        <ActionButton
+          label="+ Nova movimentação"
+          tone="gold"
+          onPress={() => start('STOCK_ENTRY')}
+        />
       }
     >
       {!!error && (
@@ -334,6 +337,12 @@ export default function FullStock() {
                     >
                       {row.status}
                     </Text>
+
+                    <ActionButton
+                      label="Movimentar"
+                      tone="plain"
+                      onPress={() => start('STOCK_ENTRY', row)}
+                    />
                   </View>
                 </View>
               )
@@ -385,31 +394,59 @@ export default function FullStock() {
 
       <FormModal
         visible={open}
-        title={
-          form.type === 'STOCK_ENTRY'
-            ? 'Entrada de estoque'
-            : form.type === 'STOCK_EXIT'
-              ? 'Saída de estoque'
-              : 'Ajuste de inventário'
-        }
+        title="Movimentação de estoque"
         onCancel={() =>
           setOpen(false)
         }
         onSave={save}
         busy={busy}
+        errorText={modalError}
       >
-        <Choice
-          label="Produto"
+        <SearchablePicker
+          label="Produto *"
           value={form.productId}
           onChange={(value) =>
             set('productId', value)
           }
           options={(data?.rows || []).map(
             (row: any) => ({
-              label: `${row.name} (${row.stock})`,
+              label: row.name,
               value: String(row.id),
+              description: `${row.code || 'Sem código'} • saldo ${row.stock} ${row.unit}`,
             })
           )}
+          placeholder="Busque o produto"
+          searchPlaceholder="Buscar por nome ou código"
+        />
+
+        {!!selectedProduct && (
+          <Notice
+            text={`Saldo atual: ${selectedProduct.stock} ${selectedProduct.unit} • mínimo: ${selectedProduct.minimum} ${selectedProduct.unit}`}
+          />
+        )}
+
+        <SearchablePicker
+          label="Tipo de movimentação *"
+          value={form.type}
+          onChange={(value) => set('type', value)}
+          options={[
+            {
+              label: 'Entrada',
+              value: 'STOCK_ENTRY',
+              description: 'Soma a quantidade ao saldo atual',
+            },
+            {
+              label: 'Saída',
+              value: 'STOCK_EXIT',
+              description: 'Subtrai a quantidade do saldo atual',
+            },
+            {
+              label: 'Balanço / inventário',
+              value: 'STOCK_ADJUST',
+              description: 'Define o saldo físico exato contado',
+            },
+          ]}
+          searchPlaceholder="Buscar tipo de movimentação"
         />
 
         {form.type ===

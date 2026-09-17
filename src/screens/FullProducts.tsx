@@ -51,6 +51,7 @@ const blank = {
   scale_mode: 'weight',
   active: 'true',
   initial_stock: '0',
+  original_stock: '0',
   image_url: '',
   max_stock: '',
   ncm: '',
@@ -64,6 +65,7 @@ export default function FullProducts() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [modalError, setModalError] = useState('');
   const { showToast } = useToast();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...blank });
@@ -110,6 +112,7 @@ export default function FullProducts() {
   }, []);
 
   const edit = (row?: any) => {
+    setModalError('');
     if (row) {
       setForm({
         ...blank,
@@ -120,6 +123,8 @@ export default function FullProducts() {
         favorite: String(row.favorite),
         scale_enabled: String(row.scale_enabled),
         active: String(row.active),
+        initial_stock: String(row.stock ?? 0).replace('.', ','),
+        original_stock: String(row.stock ?? 0).replace('.', ','),
         image_url: row.image_url || '',
         max_stock:
           row.max_stock === null || row.max_stock === undefined
@@ -151,12 +156,19 @@ export default function FullProducts() {
   async function save() {
     try {
       setBusy(true);
-      setError('');
+      setModalError('');
+
+      const stockValue = Number(
+        String(form.initial_stock || '').replace(',', '.')
+      );
+      if (!Number.isFinite(stockValue)) {
+        setModalError('Informe uma quantidade de estoque válida.');
+        return;
+      }
 
       const imageUrl = form.image_url.trim();
       if (imageUrl && !/^https?:\/\//.test(imageUrl)) {
-        setError('URL da foto deve começar com http:// ou https://.');
-        setBusy(false);
+        setModalError('URL da foto deve começar com http:// ou https://.');
         return;
       }
 
@@ -165,8 +177,7 @@ export default function FullProducts() {
         ? Number(maxStockText.replace(',', '.'))
         : null;
       if (maxStockText && (Number.isNaN(maxStock) || (maxStock as number) < 0)) {
-        setError('Estoque máximo inválido.');
-        setBusy(false);
+        setModalError('Estoque máximo inválido.');
         return;
       }
 
@@ -195,12 +206,7 @@ export default function FullProducts() {
         scalePlu: form.scale_plu,
         scaleMode: form.scale_mode,
         active: form.active === 'true',
-        initialStock: Number(
-          String(form.initial_stock || '0').replace(
-            ',',
-            '.'
-          )
-        ),
+        initialStock: stockValue,
       };
 
       await enqueue(
@@ -210,6 +216,21 @@ export default function FullProducts() {
           product,
         }
       );
+
+      const originalStock = Number(
+        String(form.original_stock || '0').replace(',', '.')
+      );
+      if (
+        form.id &&
+        Number.isFinite(originalStock) &&
+        stockValue !== originalStock
+      ) {
+        await enqueue('stock', 'STOCK_ADJUST', {
+          productId: String(form.id),
+          newStock: stockValue,
+          reason: 'Ajuste realizado no cadastro do produto',
+        });
+      }
 
       if (form.code) {
         // Foto e estoque máximo são dados só da nuvem (não mudam a
@@ -241,7 +262,7 @@ export default function FullProducts() {
         load();
       }, 1200);
     } catch (e) {
-      setError(
+      setModalError(
         e instanceof Error
           ? e.message
           : 'Falha ao enviar produto.'
@@ -409,6 +430,7 @@ export default function FullProducts() {
         onSave={save}
         busy={busy}
         wide
+        errorText={modalError}
       >
         <Field
           label="Código *"
@@ -518,15 +540,17 @@ export default function FullProducts() {
           keyboardType="decimal-pad"
         />
 
-        {!form.id && (
-          <Field
-            label="Saldo inicial"
-            value={form.initial_stock}
-            onChangeText={(value) =>
-              set('initial_stock', value)
-            }
-            keyboardType="decimal-pad"
-          />
+        <Field
+          label={form.id ? 'Quantidade atual em estoque *' : 'Quantidade inicial em estoque *'}
+          value={form.initial_stock}
+          onChangeText={(value) =>
+            set('initial_stock', value)
+          }
+          keyboardType="decimal-pad"
+        />
+
+        {!!form.id && (
+          <Notice text="Se a quantidade for alterada, o sistema registrará um ajuste de inventário no histórico do estoque." />
         )}
 
         <Text style={thumbStyles.fiscalSectionTitle}>

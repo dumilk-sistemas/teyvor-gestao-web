@@ -3,12 +3,14 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { AdminShell } from '@/components/AdminShell';
 import { MetricCard } from '@/components/MetricCard';
+import { SearchBar } from '@/components/SearchBar';
 import {
   ActionButton,
   Choice,
   Field,
   FormModal,
   Notice,
+  SearchablePicker,
   formStyles as s,
 } from '@/components/FormKit';
 import {
@@ -64,6 +66,7 @@ export default function FullSales() {
   const [items, setItems] = useState<any[]>([]);
   const [addProduct, setAddProduct] = useState('');
   const [period, setPeriod] = useState<PeriodKey>('today');
+  const [search, setSearch] = useState('');
 
   const range = useMemo(() => {
     const today = todayDateString();
@@ -73,11 +76,29 @@ export default function FullSales() {
     return null;
   }, [period]);
 
-  const visibleRows = useMemo(() => {
+  const periodRows = useMemo(() => {
     const rows = data?.rows || [];
     if (!range) return rows;
     return rows.filter((row: any) => row.date >= range.start && row.date <= range.end);
   }, [data, range]);
+
+  const visibleRows = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase('pt-BR');
+    return periodRows
+      .filter((row: any) => {
+        if (!term) return true;
+        return [row.number, row.customer, row.summary, row.payment, row.status]
+          .filter(Boolean)
+          .some((value) =>
+            String(value).toLocaleLowerCase('pt-BR').includes(term)
+          );
+      })
+      .sort((a: any, b: any) =>
+        `${b.date || ''} ${b.time || ''}`.localeCompare(
+          `${a.date || ''} ${a.time || ''}`
+        )
+      );
+  }, [periodRows, search]);
 
   const visibleSummary = useMemo(() => {
     const valid = visibleRows.filter((row: any) => row.status === 'Concluída');
@@ -319,7 +340,7 @@ export default function FullSales() {
   return (
     <AdminShell
       title="Vendas"
-      subtitle="Consulta, correção e cancelamento com ajuste automático do estoque"
+      subtitle="Desempenho comercial, pagamentos e histórico de vendas"
       syncText={
         data?.last_sync_at
           ? `Atualizado em ${new Date(
@@ -342,6 +363,15 @@ export default function FullSales() {
       {!!data && (
         <>
           <View style={s.card}>
+            <View style={salesStyles.filterHeader}>
+              <View>
+                <Text style={salesStyles.eyebrow}>ANÁLISE DE VENDAS</Text>
+                <Text style={salesStyles.filterTitle}>Visão do período</Text>
+              </View>
+              <Text style={salesStyles.filterHint}>
+                Os indicadores acompanham os filtros abaixo
+              </Text>
+            </View>
             <Choice
               label="Período"
               value={period}
@@ -353,27 +383,38 @@ export default function FullSales() {
                 { label: 'Tudo', value: 'all' },
               ]}
             />
+            <View style={salesStyles.searchWrap}>
+              <SearchBar
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Buscar por venda, cliente, produto ou pagamento"
+              />
+            </View>
           </View>
 
           <View style={s.grid}>
             <MetricCard
-              label="Total vendido"
+              label={`Faturamento — ${PERIOD_LABELS[period]}`}
               value={money(visibleSummary.total)}
+              note="Somente vendas concluídas"
             />
 
             <MetricCard
               label="Vendas válidas"
               value={String(visibleSummary.valid_sales)}
+              note="Operações concluídas"
             />
 
             <MetricCard
               label="Ticket médio"
               value={money(visibleSummary.ticket)}
+              note="Valor médio por venda"
             />
 
             <MetricCard
               label="Canceladas"
               value={String(visibleSummary.excluded_sales)}
+              note="Operações não concluídas"
             />
           </View>
 
@@ -421,9 +462,22 @@ export default function FullSales() {
           )}
 
           <View style={s.card}>
-            <Text style={s.cardTitle}>
-              Vendas — {PERIOD_LABELS[period]}
-            </Text>
+            <View style={salesStyles.listHeading}>
+              <View>
+                <Text style={salesStyles.listTitle}>Histórico de vendas</Text>
+                <Text style={salesStyles.listSubtitle}>
+                  {visibleRows.length} resultado(s) — {PERIOD_LABELS[period]}
+                </Text>
+              </View>
+            </View>
+
+            {visibleRows.length > 0 && (
+              <View style={salesStyles.tableHeader}>
+                <Text style={[salesStyles.tableHeaderText, salesStyles.saleColumn]}>VENDA / DATA</Text>
+                <Text style={[salesStyles.tableHeaderText, salesStyles.detailColumn]}>CLIENTE / PAGAMENTO</Text>
+                <Text style={[salesStyles.tableHeaderText, salesStyles.totalColumn]}>TOTAL / STATUS</Text>
+              </View>
+            )}
 
             {visibleRows.length === 0 && (
               <Text style={s.empty}>
@@ -437,16 +491,13 @@ export default function FullSales() {
                 style={s.row}
               >
                 <View style={s.main}>
-                  <Text style={s.name}>
-                    Venda #{row.number} • {formatDateBR(row.date)}{' '}
-                    {row.time}
-                  </Text>
+                  <Text style={s.name}>Venda #{row.number}</Text>
 
                   <Text style={s.meta}>
-                    {row.summary} • {row.payment}
-                    {row.customer
-                      ? ` • ${row.customer}`
-                      : ''}
+                    {formatDateBR(row.date)} às {row.time} • {row.summary}
+                  </Text>
+                  <Text style={salesStyles.customerMeta}>
+                    {row.customer || 'Cliente não identificado'} • {row.payment}
                   </Text>
                 </View>
 
@@ -575,14 +626,17 @@ export default function FullSales() {
               </View>
             ))}
 
-            <Choice
+            <SearchablePicker
               label="Adicionar produto"
               value={addProduct}
               onChange={setAddProduct}
               options={products.map((product) => ({
                 label: product.name,
                 value: String(product.id),
+                description: `${product.code || 'Sem código'} • ${money(product.price)}`,
               }))}
+              placeholder="Selecione o produto"
+              searchPlaceholder="Buscar por nome ou código"
             />
 
             <ActionButton
@@ -619,7 +673,7 @@ export default function FullSales() {
               }))}
             />
 
-            <Choice
+            <SearchablePicker
               label="Cliente"
               value={form.customerId || ''}
               onChange={(value) =>
@@ -629,6 +683,7 @@ export default function FullSales() {
                 {
                   label: 'Não identificado',
                   value: '',
+                  description: 'Venda sem cliente vinculado',
                 },
                 ...customers
                   .filter(
@@ -638,8 +693,11 @@ export default function FullSales() {
                   .map((customer) => ({
                     label: customer.name,
                     value: String(customer.id),
+                    description: customer.document || customer.phone || 'Cliente ativo',
                   })),
               ]}
+              placeholder="Selecione o cliente"
+              searchPlaceholder="Buscar cliente"
             />
 
             <Field
@@ -687,5 +745,76 @@ const paymentChartStyles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: theme.colors.text,
+  },
+});
+
+const salesStyles = StyleSheet.create({
+  filterHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    gap: 12,
+  },
+  eyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: theme.colors.muted,
+  },
+  filterTitle: {
+    marginTop: 3,
+    fontSize: 18,
+    fontWeight: '900',
+    color: theme.colors.text,
+  },
+  filterHint: {
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+  searchWrap: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  listHeading: {
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  listTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: theme.colors.text,
+  },
+  listSubtitle: {
+    marginTop: 3,
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
+    backgroundColor: '#F7F6F2',
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  tableHeaderText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    color: theme.colors.muted,
+  },
+  saleColumn: { flex: 1.4 },
+  detailColumn: { flex: 1.2 },
+  totalColumn: { width: 150, textAlign: 'right' },
+  customerMeta: {
+    marginTop: 5,
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: theme.colors.text,
   },
 });
