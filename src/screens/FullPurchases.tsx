@@ -634,6 +634,9 @@ export default function FullPurchases() {
               value={String(
                 data.summary?.receipts || 0
               )}
+              icon="inbox"
+              color="#3568B8"
+              background="#EEF4FC"
             />
 
             <MetricCard
@@ -641,6 +644,9 @@ export default function FullPurchases() {
               value={money(
                 data.summary?.month_total || 0
               )}
+              icon="shopping-cart"
+              color="#B8862F"
+              background="#FBF3E0"
             />
 
             <MetricCard
@@ -648,6 +654,9 @@ export default function FullPurchases() {
               value={money(
                 data.summary?.historic_total || 0
               )}
+              icon="archive"
+              color="#66717D"
+              background="#F2F4F5"
             />
 
             <MetricCard
@@ -655,6 +664,9 @@ export default function FullPurchases() {
               value={String(
                 data.summary?.active_suppliers || 0
               )}
+              icon="truck"
+              color="#25835A"
+              background="#EAF7F0"
             />
           </View>
 
