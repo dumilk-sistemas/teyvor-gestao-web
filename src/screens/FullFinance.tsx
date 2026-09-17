@@ -1064,10 +1064,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
 
             <DateField
               label="Competência"
-              value={
-                form.competenceDate ||
-                today()
-              }
+              value={form.competenceDate || ''}
               onChangeText={(value) =>
                 set(
                   'competenceDate',
@@ -1078,9 +1075,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
 
             <DateField
               label="Vencimento *"
-              value={
-                form.dueDate || today()
-              }
+              value={form.dueDate || ''}
               onChangeText={(value) =>
                 set(
                   'dueDate',
@@ -1162,7 +1157,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
 
             <DateField
               label="Data da baixa *"
-              value={form.date || today()}
+              value={form.date || ''}
               onChangeText={(value) =>
                 set('date', value)
               }
@@ -1205,7 +1200,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
 
             <DateField
               label="Data da antecipação"
-              value={form.date || today()}
+              value={form.date || ''}
               onChangeText={(value) =>
                 set('date', value)
               }

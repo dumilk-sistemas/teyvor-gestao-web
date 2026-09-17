@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { theme, useThemeColors } from '@/constants/theme';
 import { brDateToISO, formatDateBR, maskDateBR } from '@/utils/date';
@@ -16,11 +16,22 @@ export function Field({label,value,onChangeText,placeholder='',keyboardType='def
 
 export function DateField({label,value,onChangeText}:{label:string;value:string;onChangeText:(v:string)=>void}){
   const [displayValue, setDisplayValue] = useState(formatDateBR(value));
-  useEffect(() => setDisplayValue(formatDateBR(value)), [value]);
+  const lastEmittedValue = useRef<string | null>(null);
+  useEffect(() => {
+    // Nao reposiciona o texto enquanto o proprio campo esta emitindo uma
+    // data parcial. Isso permite apagar e redigitar sem a data anterior voltar.
+    if (lastEmittedValue.current === value) {
+      lastEmittedValue.current = null;
+      return;
+    }
+    setDisplayValue(formatDateBR(value));
+  }, [value]);
   function change(rawValue: string) {
     const masked = maskDateBR(rawValue);
+    const nextValue = brDateToISO(masked) || masked;
     setDisplayValue(masked);
-    onChangeText(brDateToISO(masked) || masked);
+    lastEmittedValue.current = nextValue;
+    onChangeText(nextValue);
   }
   return <Field label={label} value={displayValue} onChangeText={change} placeholder="DD/MM/AAAA" keyboardType="number-pad" />;
 }
