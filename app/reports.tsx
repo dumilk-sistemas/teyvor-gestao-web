@@ -9,8 +9,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
+import { Notice } from '@/components/FormKit';
 import { theme } from '@/constants/theme';
 import { getReports } from '@/services/api';
 import { getFull } from '@/services/fullApi';
@@ -218,6 +220,8 @@ type PeriodKey =
   | 'custom';
 
 type DetailMode = 'sales' | 'cash' | 'products' | 'payments' | 'customers' | 'finance' | 'purchases' | 'stock' | null;
+
+type AbcTier = 'A' | 'B' | 'C';
 
 type CashClosing = {
   id?: string;
@@ -493,13 +497,34 @@ export default function Reports() {
 
     ranked.sort((a, b) => b.total - a.total);
 
+    // Curva ABC: classifica pelo acumulado do valor comprado sobre o
+    // total de TODOS os clientes com compra no período (nao so os 15
+    // exibidos), igual a convencao classica (A ate 80%, B ate 95%, C o resto).
     const grandTotal = ranked.reduce((sum, c) => sum + c.total, 0);
+    let cumulative = 0;
 
-    return ranked.slice(0, 15).map((c) => ({
-      ...c,
-      percent: grandTotal > 0 ? (c.total / grandTotal) * 100 : 0,
-    }));
+    const withAbc = ranked.map((c) => {
+      const percent = grandTotal > 0 ? (c.total / grandTotal) * 100 : 0;
+      cumulative += percent;
+      const tier: AbcTier = cumulative <= 80 ? 'A' : cumulative <= 95 ? 'B' : 'C';
+      return { ...c, percent, cumulativePercent: cumulative, tier };
+    });
+
+    return withAbc.slice(0, 15);
   }, [customers, appliedStart, appliedEnd]);
+
+  const productsAbc = useMemo(() => {
+    const rows = data?.top_products || [];
+    const total = rows.reduce((sum, p) => sum + Number(p.revenue || 0), 0);
+    let cumulative = 0;
+
+    return rows.map((p) => {
+      const percent = total > 0 ? (Number(p.revenue || 0) / total) * 100 : 0;
+      cumulative += percent;
+      const tier: AbcTier = cumulative <= 80 ? 'A' : cumulative <= 95 ? 'B' : 'C';
+      return { ...p, percent, cumulativePercent: cumulative, tier };
+    });
+  }, [data]);
 
   const financeByCategory = useMemo(() => {
     const entries = (finance?.entries || []).filter(
@@ -858,7 +883,9 @@ export default function Reports() {
         </View>
         <View style={styles.reportCards}>
           <ReportCard
-            icon="$"
+            icon="dollar-sign"
+            color="#25835A"
+            background="#EAF7F0"
             title="Faturamento"
             value={money(
               salesSummary.total
@@ -870,7 +897,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="V"
+            icon="shopping-bag"
+            color="#3568B8"
+            background="#EEF4FC"
             title="Qtd. de vendas"
             value={String(
               salesSummary.sales
@@ -884,7 +913,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="T"
+            icon="trending-up"
+            color="#B8862F"
+            background="#FBF3E0"
             title="Ticket médio"
             value={money(
               salesSummary.ticket
@@ -898,7 +929,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="C"
+            icon="briefcase"
+            color="#66717D"
+            background="#F2F4F5"
             title="Caixa"
             value={`${cashSummary.closings} fechamento(s)`}
             subtitle={
@@ -914,7 +947,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="P"
+            icon="award"
+            color="#6A70A8"
+            background="#F0F1FA"
             title="Produtos mais vendidos"
             value={
               data.top_products?.[0]?.name ||
@@ -933,7 +968,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="$"
+            icon="credit-card"
+            color="#3568B8"
+            background="#EEF4FC"
             title="Formas de pagamento"
             value={
               paymentBreakdown[0]?.method ||
@@ -952,7 +989,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="C"
+            icon="users"
+            color="#25835A"
+            background="#EAF7F0"
             title="Ranking de clientes"
             value={
               customerRanking[0]?.name || 'Sem dados no período'
@@ -966,7 +1005,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="↓"
+            icon="arrow-up-right"
+            color="#C84E4E"
+            background="#FFF3F3"
             title="Contas a pagar"
             value={money(financePosition.payables.total)}
             subtitle={`${financePosition.payables.count} lançamento(s) em aberto ou vencidos`}
@@ -977,7 +1018,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="↑"
+            icon="arrow-down-left"
+            color="#25835A"
+            background="#EAF7F0"
             title="Contas a receber"
             value={money(financePosition.receivables.total)}
             subtitle={`${financePosition.receivables.count} lançamento(s) em aberto ou vencidos`}
@@ -988,7 +1031,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="N"
+            icon="shopping-cart"
+            color="#B8862F"
+            background="#FBF3E0"
             title="Compras / recebimentos"
             value={money(purchaseSummary.total)}
             subtitle={`${purchaseSummary.count} compra(s) • ${money(purchaseSummary.open)} a pagar`}
@@ -996,7 +1041,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="$"
+            icon="pie-chart"
+            color="#66717D"
+            background="#F2F4F5"
             title="Financeiro por categoria"
             value={`${
               financeByCategory.payables.length +
@@ -1007,7 +1054,9 @@ export default function Reports() {
           />
 
           <ReportCard
-            icon="E"
+            icon="alert-triangle"
+            color="#C84E4E"
+            background="#FFF3F3"
             title="Alertas de estoque"
             value={`${stockAlerts.length} produto(s)`}
             subtitle="Situação atual • não depende do período"
@@ -1474,28 +1523,34 @@ export default function Reports() {
           <View style={styles.modal}>
             <ModalHeader
               title="Produtos mais vendidos"
-              subtitle={`${periodLabel} • por receita (top 10)`}
+              subtitle={`${periodLabel} • Curva ABC por receita (top 10)`}
               onClose={() => setDetailMode(null)}
               onPrint={() =>
                 printRows(
-                  'Produtos mais vendidos',
+                  'Produtos mais vendidos — Curva ABC',
                   periodLabel,
-                  ['Produto', 'Quantidade', 'Faturamento'],
-                  (data?.top_products || []).map((p) => [
+                  ['Produto', 'Quantidade', 'Faturamento', '% individual', '% acumulado', 'Curva'],
+                  productsAbc.map((p) => [
                     p.name,
                     qtyLabel(p.qty),
                     money(p.revenue),
+                    `${p.percent.toFixed(1)}%`,
+                    `${p.cumulativePercent.toFixed(1)}%`,
+                    p.tier,
                   ])
                 )
               }
               onExcel={() =>
                 downloadCsv(
                   `relatorio_produtos_${appliedStart}_${appliedEnd}.csv`,
-                  ['Produto', 'Quantidade', 'Faturamento'],
-                  (data?.top_products || []).map((p) => [
+                  ['Produto', 'Quantidade', 'Faturamento', '% individual', '% acumulado', 'Curva'],
+                  productsAbc.map((p) => [
                     p.name,
                     p.qty,
                     p.revenue,
+                    p.percent.toFixed(1),
+                    p.cumulativePercent.toFixed(1),
+                    p.tier,
                   ])
                 )
               }
@@ -1505,20 +1560,26 @@ export default function Reports() {
               style={styles.modalScroll}
               contentContainerStyle={styles.modalBody}
             >
+              <Notice
+                text="Curva ABC: produtos A concentram até 80% da receita, B até 95% e C o restante — priorize a reposição dos A."
+              />
+
               <View style={styles.detailSection}>
-                {(data?.top_products || []).length > 0 ? (
-                  (data?.top_products || []).map((product, index) => (
+                {productsAbc.length > 0 ? (
+                  productsAbc.map((product, index) => (
                     <View
                       key={`${product.name}-${index}`}
                       style={styles.dayRow}
                     >
+                      <AbcBadge tier={product.tier} />
+
                       <View style={styles.dayMain}>
                         <Text style={styles.dayTitle}>
                           {index + 1}. {product.name}
                         </Text>
 
                         <Text style={styles.dayMeta}>
-                          {qtyLabel(product.qty)} vendido(s)
+                          {qtyLabel(product.qty)} vendido(s) • {product.percent.toFixed(1)}% do período • acumulado {product.cumulativePercent.toFixed(1)}%
                         </Text>
                       </View>
 
@@ -1607,32 +1668,36 @@ export default function Reports() {
           <View style={styles.modal}>
             <ModalHeader
               title="Ranking de clientes"
-              subtitle={periodLabel}
+              subtitle={`${periodLabel} • Curva ABC (top 15)`}
               onClose={() => setDetailMode(null)}
               onPrint={() =>
                 printRows(
-                  'Ranking de clientes',
+                  'Ranking de clientes — Curva ABC',
                   periodLabel,
-                  ['Cliente', 'Compras', 'Total gasto', 'Ticket médio', '% do período'],
+                  ['Cliente', 'Compras', 'Total gasto', 'Ticket médio', '% individual', '% acumulado', 'Curva'],
                   customerRanking.map((c) => [
                     c.name,
                     c.purchases,
                     money(c.total),
                     money(c.ticket),
                     `${c.percent.toFixed(1)}%`,
+                    `${c.cumulativePercent.toFixed(1)}%`,
+                    c.tier,
                   ])
                 )
               }
               onExcel={() =>
                 downloadCsv(
                   `relatorio_clientes_${appliedStart}_${appliedEnd}.csv`,
-                  ['Cliente', 'Compras', 'Total gasto', 'Ticket médio', '% do período'],
+                  ['Cliente', 'Compras', 'Total gasto', 'Ticket médio', '% individual', '% acumulado', 'Curva'],
                   customerRanking.map((c) => [
                     c.name,
                     c.purchases,
                     c.total,
                     c.ticket,
                     c.percent.toFixed(1),
+                    c.cumulativePercent.toFixed(1),
+                    c.tier,
                   ])
                 )
               }
@@ -1642,12 +1707,18 @@ export default function Reports() {
               style={styles.modalScroll}
               contentContainerStyle={styles.modalBody}
             >
+              <Notice
+                text="Curva ABC: clientes A concentram até 80% do faturamento do período, B até 95% e C o restante."
+              />
+
               {customerRanking.length > 0 ? (
                 customerRanking.map((customer, index) => (
                   <View
                     key={`${customer.name}-${index}`}
                     style={styles.dayRow}
                   >
+                    <AbcBadge tier={customer.tier} />
+
                     <View style={styles.dayMain}>
                       <Text style={styles.dayTitle}>
                         {index + 1}. {customer.name}
@@ -1656,7 +1727,7 @@ export default function Reports() {
                       <Text style={styles.dayMeta}>
                         {customer.purchases} compra(s) • ticket médio{' '}
                         {money(customer.ticket)} •{' '}
-                        {customer.percent.toFixed(1)}% do período
+                        {customer.percent.toFixed(1)}% do período • acumulado {customer.cumulativePercent.toFixed(1)}%
                       </Text>
                     </View>
 
@@ -2095,12 +2166,16 @@ function PeriodButton({
 
 function ReportCard({
   icon,
+  color,
+  background,
   title,
   value,
   subtitle,
   onPress,
 }: {
-  icon: string;
+  icon: keyof typeof Feather.glyphMap;
+  color: string;
+  background: string;
   title: string;
   value: string;
   subtitle: string;
@@ -2111,10 +2186,8 @@ function ReportCard({
       style={styles.reportCard}
       onPress={onPress}
     >
-      <View style={styles.iconCircle}>
-        <Text style={styles.iconText}>
-          {icon}
-        </Text>
+      <View style={[styles.iconCircle, { backgroundColor: background }]}>
+        <Feather name={icon} size={22} color={color} />
       </View>
 
       <View style={styles.reportMain}>
@@ -2215,6 +2288,20 @@ function SummaryRow({
       >
         {value}
       </Text>
+    </View>
+  );
+}
+
+function AbcBadge({ tier }: { tier: AbcTier }) {
+  const tone = {
+    A: { color: '#25835A', background: '#EAF7F0' },
+    B: { color: '#B8862F', background: '#FBF3E0' },
+    C: { color: '#66717D', background: '#F2F4F5' },
+  }[tier];
+
+  return (
+    <View style={[styles.abcBadge, { backgroundColor: tone.background }]}>
+      <Text style={[styles.abcBadgeText, { color: tone.color }]}>{tier}</Text>
     </View>
   );
 }
@@ -2645,12 +2732,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1EFE9',
   },
 
-  iconText: {
-    fontSize: 23,
-    fontWeight: '900',
-    color: theme.colors.text,
-  },
-
   reportMain: {
     flex: 1,
   },
@@ -2817,6 +2898,19 @@ const styles = StyleSheet.create({
 
   dayMain: {
     flex: 1,
+  },
+
+  abcBadge: {
+    alignItems: 'center',
+    borderRadius: 9,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+
+  abcBadgeText: {
+    fontSize: 13,
+    fontWeight: '900',
   },
 
   dayTitle: {
