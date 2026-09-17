@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 import { AccountPicker } from '@/components/AccountPicker';
 import { ActionButton, Choice, DateField, Field, Notice, formStyles as s } from '@/components/FormKit';
@@ -44,7 +45,17 @@ const toNumber = (value: string) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const PAYMENT_METHODS = ['Dinheiro', 'Pix', 'Débito', 'Crédito', 'Outros'];
+const PAYMENT_METHODS = [
+  'Dinheiro',
+  'Pix',
+  'Débito',
+  'Crédito',
+  'Boleto',
+  'Cheque',
+  'Transferência',
+  'Depósito',
+  'Outros',
+];
 
 const ACCOUNT_TYPES = [
   { label: 'Caixa', value: 'caixa' },
@@ -90,6 +101,7 @@ export function AccountsModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [activeSection, setActiveSection] = useState<'accounts' | 'mapping' | 'transfers'>('accounts');
 
   function showError(message: string) {
     setSuccess('');
@@ -140,7 +152,10 @@ export function AccountsModal({
   }
 
   useEffect(() => {
-    if (visible) load();
+    if (visible) {
+      setActiveSection('accounts');
+      load();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
@@ -328,13 +343,23 @@ export function AccountsModal({
     .filter((a) => a.active)
     .map((a) => ({ label: a.name, value: String(a.id) }));
 
+  const activeAccounts = accounts.filter((account) => account.active);
+  const totalBalance = activeAccounts.reduce(
+    (total, account) => total + Number(account.current_balance || 0),
+    0
+  );
+  const defaultAccount = accounts.find((account) => account.is_default);
+
   return (
     <>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.modal}>
           <View style={styles.header}>
-            <Text style={styles.title}>Contas</Text>
+            <View style={styles.headerText}>
+              <Text style={styles.title}>Contas e bancos</Text>
+              <Text style={styles.subtitle}>Saldos, destinos de recebimento e transferências</Text>
+            </View>
 
             <Pressable onPress={onClose}>
               <Text style={styles.close}>×</Text>
@@ -345,9 +370,54 @@ export function AccountsModal({
             {!!error && <Notice text={error} tone="error" />}
             {!!success && <Notice text={success} tone="ok" />}
 
-            <View style={s.card}>
+            <View style={styles.accountOverview}>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>SALDO TOTAL</Text>
+                <Text style={[styles.overviewValue, totalBalance < 0 && styles.negativeValue]}>
+                  {money(totalBalance)}
+                </Text>
+              </View>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>CONTAS ATIVAS</Text>
+                <Text style={styles.overviewValue}>{activeAccounts.length}</Text>
+              </View>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>CONTA PADRÃO</Text>
+                <Text style={styles.overviewAccount} numberOfLines={1}>
+                  {defaultAccount?.name || 'Não definida'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.tabs}>
+              {[
+                { key: 'accounts', label: 'Contas', icon: 'credit-card' },
+                { key: 'mapping', label: 'Destinos de recebimento', icon: 'corner-down-right' },
+                { key: 'transfers', label: 'Transferências', icon: 'repeat' },
+              ].map((tab) => (
+                <Pressable
+                  key={tab.key}
+                  style={[styles.tab, activeSection === tab.key && styles.tabActive]}
+                  onPress={() => setActiveSection(tab.key as typeof activeSection)}
+                >
+                  <Feather
+                    name={tab.icon as any}
+                    size={14}
+                    color={activeSection === tab.key ? '#FFFFFF' : theme.colors.muted}
+                  />
+                  <Text style={[styles.tabText, activeSection === tab.key && styles.tabTextActive]}>
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {activeSection === 'accounts' && <View style={styles.sectionCard}>
               <View style={styles.cardHeadRow}>
-                <Text style={s.cardTitle}>Suas contas</Text>
+                <View>
+                  <Text style={styles.sectionTitle}>Suas contas</Text>
+                  <Text style={styles.sectionDescription}>Caixas, bancos e contas de recebimento</Text>
+                </View>
 
                 <View style={styles.headBtn}>
                   <ActionButton
@@ -408,22 +478,22 @@ export function AccountsModal({
                 <Text style={s.empty}>Nenhuma conta cadastrada ainda.</Text>
               ) : (
                 accounts.map((acc) => (
-                  <View key={acc.id} style={s.row}>
-                    <View style={s.main}>
-                      <Text style={s.name}>
-                        {acc.name}
-                        {acc.is_default ? ' • padrão' : ''}
-                        {!acc.active ? ' • inativa' : ''}
-                      </Text>
+                  <View key={acc.id} style={styles.accountRow}>
+                    <View style={styles.accountMain}>
+                      <View style={styles.accountNameLine}>
+                        <Text style={styles.accountName}>{acc.name}</Text>
+                        {acc.is_default && <Text style={styles.defaultBadge}>PADRÃO</Text>}
+                        {!acc.active && <Text style={styles.inactiveBadge}>INATIVA</Text>}
+                      </View>
 
-                      <Text style={s.meta}>
-                        Saldo em {isoToBR(acc.opening_date)}: {money(acc.initial_balance)}
+                      <Text style={styles.accountMeta}>
+                        {ACCOUNT_TYPES.find((type) => type.value === acc.account_type)?.label || 'Conta'} • saldo inicial em {isoToBR(acc.opening_date)}: {money(acc.initial_balance)}
                       </Text>
 
                       <View style={styles.rowActions}>
                         {!acc.is_default && (
                           <Pressable onPress={() => toggleDefault(acc.id)}>
-                            <Text style={styles.linkAction}>Tornar padrão</Text>
+                            <Text style={styles.linkAction}>Definir como padrão</Text>
                           </Pressable>
                         )}
 
@@ -478,21 +548,22 @@ export function AccountsModal({
                       )}
                     </View>
 
-                    <Text
-                      style={[s.amount, acc.current_balance < 0 && { color: theme.colors.danger }]}
-                    >
-                      {money(acc.current_balance)}
-                    </Text>
+                    <View style={styles.balanceArea}>
+                      <Text style={styles.balanceLabel}>SALDO ATUAL</Text>
+                      <Text style={[styles.balanceValue, acc.current_balance < 0 && styles.negativeValue]}>
+                        {money(acc.current_balance)}
+                      </Text>
+                    </View>
                   </View>
                 ))
               )}
-            </View>
+            </View>}
 
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Para onde vai cada forma de pagamento</Text>
+            {activeSection === 'mapping' && <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitlePadded}>Destino das formas de pagamento</Text>
 
               <Text style={styles.cardNote}>
-                Vendas do PDV entram automaticamente na conta escolhida aqui.
+                Defina em qual conta cada recebimento do PDV será registrado automaticamente.
               </Text>
 
               <View style={styles.mappingList}>
@@ -506,10 +577,11 @@ export function AccountsModal({
                   />
                 ))}
               </View>
-            </View>
+            </View>}
 
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Transferência entre contas</Text>
+            {activeSection === 'transfers' && <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitlePadded}>Nova transferência</Text>
+              <Text style={styles.cardNote}>Movimente valores entre contas sem alterar receitas ou despesas.</Text>
 
               {!!transferError && <Notice text={transferError} tone="error" />}
 
@@ -560,24 +632,24 @@ export function AccountsModal({
                   <Text style={styles.cardNote}>Últimas transferências</Text>
 
                   {transfers.slice(0, 10).map((t) => (
-                    <View key={t.id} style={s.row}>
-                      <View style={s.main}>
-                        <Text style={s.name}>
+                    <View key={t.id} style={styles.transferRow}>
+                      <View style={styles.accountMain}>
+                        <Text style={styles.accountName}>
                           {accountName(accounts, t.from_account_id)} → {accountName(accounts, t.to_account_id)}
                         </Text>
 
-                        <Text style={s.meta}>
+                        <Text style={styles.accountMeta}>
                           {isoToBR(t.transfer_date)}
                           {t.description ? ` • ${t.description}` : ''}
                         </Text>
                       </View>
 
-                      <Text style={s.amount}>{money(t.amount)}</Text>
+                      <Text style={styles.transferAmount}>{money(t.amount)}</Text>
                     </View>
                   ))}
                 </View>
               )}
-            </View>
+            </View>}
           </ScrollView>
         </View>
       </View>
@@ -754,7 +826,7 @@ const styles = StyleSheet.create({
   },
   modal: {
     width: '100%',
-    maxWidth: 640,
+    maxWidth: 860,
     maxHeight: '92%',
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -765,12 +837,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
+  headerText: { flex: 1 },
   title: {
     fontSize: 19,
     fontWeight: '900',
     color: theme.colors.text,
     flex: 1,
   },
+  subtitle: { color: theme.colors.muted, fontSize: 11.5, marginTop: 3 },
   close: {
     fontSize: 28,
     lineHeight: 28,
@@ -783,12 +857,56 @@ const styles = StyleSheet.create({
     gap: 14,
     paddingBottom: 10,
   },
+  accountOverview: {
+    backgroundColor: '#F7F9FC',
+    borderColor: '#DDE5EF',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    padding: 12,
+  },
+  overviewItem: { flex: 1, minWidth: 170, paddingHorizontal: 4 },
+  overviewLabel: { color: theme.colors.muted, fontSize: 8.5, fontWeight: '900', letterSpacing: 0.6 },
+  overviewValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 3 },
+  overviewAccount: { color: theme.colors.text, fontSize: 13, fontWeight: '900', marginTop: 5 },
+  negativeValue: { color: theme.colors.danger },
+  tabs: {
+    backgroundColor: '#F2F3F5',
+    borderRadius: 11,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    padding: 4,
+  },
+  tab: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  tabActive: { backgroundColor: '#263748' },
+  tabText: { color: theme.colors.muted, fontSize: 11, fontWeight: '800' },
+  tabTextActive: { color: '#FFFFFF' },
+  sectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: theme.colors.border,
+    borderRadius: 13,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  sectionTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 15 },
+  sectionTitlePadded: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 15, paddingHorizontal: 16, paddingTop: 15 },
+  sectionDescription: { color: theme.colors.muted, fontSize: 10.5, marginTop: 2 },
   cardHeadRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    paddingBottom: 0,
+    paddingBottom: 12,
   },
   headBtn: {
     flexDirection: 'row',
@@ -800,17 +918,23 @@ const styles = StyleSheet.create({
   },
   rowActions: {
     flexDirection: 'row',
-    gap: 14,
-    marginTop: 6,
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
   },
   linkAction: {
-    fontSize: 12,
-    fontWeight: '800',
+    backgroundColor: '#F3F4F5',
+    borderRadius: 7,
     color: theme.colors.text,
-    textDecorationLine: 'underline',
+    fontSize: 9.5,
+    fontWeight: '800',
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
   },
   linkActionDanger: {
     color: theme.colors.danger,
+    backgroundColor: '#FFF0F0',
   },
   cardNote: {
     fontSize: 12,
@@ -826,4 +950,25 @@ const styles = StyleSheet.create({
   transferList: {
     marginTop: 6,
   },
+  accountRow: {
+    alignItems: 'center',
+    borderTopColor: theme.colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  accountMain: { flex: 1, minWidth: 260 },
+  accountNameLine: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  accountName: { color: theme.colors.text, fontSize: 12.5, fontWeight: '900' },
+  accountMeta: { color: theme.colors.muted, fontSize: 10.5, marginTop: 3 },
+  defaultBadge: { backgroundColor: '#EAF7EF', borderRadius: 7, color: theme.colors.success, fontSize: 8, fontWeight: '900', overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 3 },
+  inactiveBadge: { backgroundColor: '#EEEFF1', borderRadius: 7, color: theme.colors.muted, fontSize: 8, fontWeight: '900', overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 3 },
+  balanceArea: { alignItems: 'flex-end', minWidth: 135 },
+  balanceLabel: { color: theme.colors.muted, fontSize: 8.5, fontWeight: '900', letterSpacing: 0.4 },
+  balanceValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 15, marginTop: 3 },
+  transferRow: { alignItems: 'center', borderTopColor: theme.colors.border, borderTopWidth: 1, flexDirection: 'row', gap: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  transferAmount: { color: theme.colors.text, fontSize: 12.5, fontWeight: '900' },
 });

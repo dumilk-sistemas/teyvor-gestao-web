@@ -5,7 +5,6 @@ import { router } from 'expo-router';
 
 import { AccountsModal } from '@/components/AccountsModal';
 import { AdminShell } from '@/components/AdminShell';
-import { MetricCard } from '@/components/MetricCard';
 import { Notice, formStyles as s } from '@/components/FormKit';
 import { getFull } from '@/services/fullApi';
 import { theme, useThemeColors } from '@/constants/theme';
@@ -136,8 +135,8 @@ export default function FinanceHome() {
       background: `${colors.primary}1A`,
     },
     {
-      title: 'Contas financeiras',
-      description: 'Caixa, bancos, saldos, formas de pagamento e transferências.',
+      title: 'Contas e bancos',
+      description: 'Saldos, destinos de recebimento e transferências.',
       icon: 'credit-card',
       action: 'accounts',
       color: colors.primary,
@@ -178,28 +177,54 @@ export default function FinanceHome() {
 
       {!!data && (
         <>
-          <View style={s.grid}>
-            <MetricCard
-              label="A pagar neste mês"
-              value={money(summary.payablesTotal)}
-              note={`${summary.payablesMonth.length} lançamento${summary.payablesMonth.length === 1 ? '' : 's'} no período`}
-            />
-            <MetricCard
-              label="Vencido"
-              value={money(summary.overdueTotal)}
-              note={`${summary.overdueCount} lançamento${summary.overdueCount === 1 ? '' : 's'} pendente${summary.overdueCount === 1 ? '' : 's'}`}
-              tone={summary.overdueTotal > 0 ? 'warning' : 'default'}
-            />
-            <MetricCard
-              label="A receber neste mês"
-              value={money(summary.receivablesTotal)}
-              note="Recebimentos em aberto no período"
-            />
-            <MetricCard
-              label="Compromissos futuros"
-              value={money(summary.futureTotal)}
-              note={`${summary.futureCount} lançamento${summary.futureCount === 1 ? '' : 's'} após este mês`}
-            />
+          <View style={styles.summaryGrid}>
+            {[
+              {
+                label: 'A PAGAR NO MÊS',
+                value: summary.payablesTotal,
+                note: `${summary.payablesMonth.length} lançamento${summary.payablesMonth.length === 1 ? '' : 's'}`,
+                icon: 'arrow-up-right',
+                color: '#C84E4E',
+                background: '#FFF3F3',
+              },
+              {
+                label: 'VENCIDO',
+                value: summary.overdueTotal,
+                note: `${summary.overdueCount} pendente${summary.overdueCount === 1 ? '' : 's'}`,
+                icon: 'alert-circle',
+                color: '#B63D42',
+                background: '#FDEBEC',
+              },
+              {
+                label: 'A RECEBER NO MÊS',
+                value: summary.receivablesTotal,
+                note: 'Em aberto no período',
+                icon: 'arrow-down-left',
+                color: '#25835A',
+                background: '#EAF7F0',
+              },
+              {
+                label: 'COMPROMISSOS FUTUROS',
+                value: summary.futureTotal,
+                note: `${summary.futureCount} após este mês`,
+                icon: 'calendar',
+                color: '#3568B8',
+                background: '#EEF4FC',
+              },
+            ].map((item) => (
+              <View key={item.label} style={styles.summaryCard}>
+                <View style={[styles.summaryIcon, { backgroundColor: item.background }]}>
+                  <Feather name={item.icon as any} size={15} color={item.color} />
+                </View>
+                <View style={styles.summaryContent}>
+                  <Text style={styles.summaryLabel}>{item.label}</Text>
+                  <Text style={[styles.summaryValue, item.label === 'VENCIDO' && summary.overdueTotal > 0 && { color: item.color }]}>
+                    {money(item.value)}
+                  </Text>
+                  <Text style={styles.summaryNote}>{item.note}</Text>
+                </View>
+              </View>
+            ))}
           </View>
 
           <View>
@@ -210,7 +235,11 @@ export default function FinanceHome() {
             {modules.map((module) => (
               <Pressable
                 key={module.title}
-                style={styles.moduleCard}
+                style={({ pressed }) => [
+                  styles.moduleCard,
+                  { borderLeftColor: module.color },
+                  pressed && styles.moduleCardPressed,
+                ]}
                 onPress={() => module.action === 'accounts'
                   ? setAccountsOpen(true)
                   : router.push(module.route as never)}
@@ -222,7 +251,9 @@ export default function FinanceHome() {
                   <Text style={styles.moduleTitle}>{module.title}</Text>
                   <Text style={styles.moduleDescription}>{module.description}</Text>
                 </View>
-                <Feather name="chevron-right" size={20} color={theme.colors.muted} />
+                <View style={[styles.moduleArrow, { backgroundColor: module.background }]}>
+                  <Feather name="chevron-right" size={18} color={module.color} />
+                </View>
               </Pressable>
             ))}
           </View>
@@ -277,31 +308,57 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
     justifyContent: 'space-between',
-    padding: 16,
+    padding: 13,
   },
   eyebrow: { color: theme.colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   periodTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 3 },
   periodNote: { color: theme.colors.muted, fontSize: 12 },
   sectionTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 18 },
   sectionSubtitle: { color: theme.colors.muted, fontSize: 12.5, marginTop: 3 },
+  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  summaryCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+    minWidth: 220,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+  summaryIcon: { alignItems: 'center', borderRadius: 9, height: 34, justifyContent: 'center', width: 34 },
+  summaryContent: { flex: 1 },
+  summaryLabel: { color: theme.colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 0.55 },
+  summaryValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 2 },
+  summaryNote: { color: theme.colors.muted, fontSize: 9.5, marginTop: 1 },
   moduleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   moduleCard: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderColor: theme.colors.border,
     borderRadius: 14,
+    borderLeftWidth: 3,
     borderWidth: 1,
     flexBasis: 280,
     flexDirection: 'row',
     flexGrow: 1,
     gap: 12,
-    minHeight: 94,
-    padding: 16,
+    minHeight: 82,
+    padding: 13,
+    shadowColor: '#17202A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.035,
+    shadowRadius: 7,
   },
+  moduleCardPressed: { opacity: 0.82, transform: [{ scale: 0.995 }] },
   moduleIcon: { alignItems: 'center', borderRadius: 10, height: 42, justifyContent: 'center', width: 42 },
   moduleContent: { flex: 1 },
   moduleTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
   moduleDescription: { color: theme.colors.muted, fontSize: 11.5, lineHeight: 16, marginTop: 4 },
+  moduleArrow: { alignItems: 'center', borderRadius: 16, height: 30, justifyContent: 'center', width: 30 },
   panel: { backgroundColor: '#FFFFFF', borderColor: theme.colors.border, borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
   panelHead: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'space-between', padding: 16 },
   panelTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 16 },

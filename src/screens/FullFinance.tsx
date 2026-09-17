@@ -676,42 +676,46 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             </View>
           )}
 
-          <View style={s.grid}>
+          <View style={monthlyStyles.compactSummaryGrid}>
             {view !== 'all' ? (
               <>
-                <MetricCard
+                <CompactFinanceMetric
                   label={view === 'payable' ? 'A pagar no mês' : 'A receber no mês'}
                   value={money(periodSummary.open)}
                   note="Somente lançamentos do período selecionado"
+                  tone={view === 'payable' ? 'out' : 'in'}
                 />
-                <MetricCard
+                <CompactFinanceMetric
                   label="Vencido no mês"
                   value={money(periodSummary.overdue)}
-                  tone={periodSummary.overdue > 0 ? 'warning' : 'default'}
+                  tone={periodSummary.overdue > 0 ? 'danger' : 'neutral'}
                 />
-                <MetricCard
+                <CompactFinanceMetric
                   label={view === 'payable' ? 'Pago no mês' : 'Recebido no mês'}
                   value={money(periodSummary.settled)}
+                  tone="settled"
                 />
                 {view === 'payable' && (
-                  <MetricCard
+                  <CompactFinanceMetric
                     label="Recorrentes do mês"
                     value={money(periodSummary.recurring)}
                     note="Cada recorrência é contada apenas uma vez no mês"
+                    tone="neutral"
                   />
                 )}
               </>
             ) : (
               <>
-            <MetricCard
+            <CompactFinanceMetric
               label="A pagar"
               value={money(
                 data.summary
                   ?.open_payables || 0
               )}
+              tone="out"
             />
 
-            <MetricCard
+            <CompactFinanceMetric
               label="Vencido"
               value={money(
                 data.summary
@@ -719,36 +723,39 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               )}
               tone={
                 (data.summary?.overdue_payables || 0) > 0
-                  ? 'warning'
-                  : 'default'
+                  ? 'danger'
+                  : 'neutral'
               }
             />
 
-            <MetricCard
+            <CompactFinanceMetric
               label="Vence hoje"
               value={money(nearTerm.dueToday)}
-              tone={nearTerm.dueToday > 0 ? 'warning' : 'default'}
+              tone={nearTerm.dueToday > 0 ? 'danger' : 'neutral'}
             />
 
-            <MetricCard
+            <CompactFinanceMetric
               label="Próximos 7 dias"
               value={money(nearTerm.due7Days)}
+              tone="neutral"
             />
 
-            <MetricCard
+            <CompactFinanceMetric
               label="A receber"
               value={money(
                 data.summary
                   ?.open_receivables || 0
               )}
+              tone="in"
             />
 
-            <MetricCard
+            <CompactFinanceMetric
               label="Cartões previstos"
               value={money(
                 data.summary
                   ?.card_forecast || 0
               )}
+              tone="forecast"
             />
               </>
             )}
@@ -764,8 +771,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             <Notice text="Lançamento salvo e aguardando o PDV concluir a sincronização. Esta tela será atualizada automaticamente." />
           )}
 
-          <View style={s.card}>
-            <Text style={s.cardTitle}>
+          <View style={monthlyStyles.entriesCard}>
+            <Text style={monthlyStyles.entriesTitle}>
               {view === 'payable' ? `Contas a pagar — ${monthLabel(listMonth)}` : view === 'receivable' ? `Contas a receber — ${monthLabel(listMonth)}` : 'Lançamentos'}
             </Text>
 
@@ -775,15 +782,15 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                 (row: any) => (
                   <View
                     key={String(row.id)}
-                    style={s.row}
+                    style={monthlyStyles.entryRow}
                   >
-                    <View style={s.main}>
-                      <Text style={s.name}>
+                    <View style={monthlyStyles.entryMain}>
+                      <Text style={monthlyStyles.entryName}>
                         {row.description}
                         {row.recurring_rule_id ? ' 🔁' : ''}
                       </Text>
 
-                      <Text style={s.meta}>
+                      <Text style={monthlyStyles.entryMeta}>
                         {row.category} • vence{' '}
                         {formatDateBR(row.due_date)} •{' '}
                         {row.type ===
@@ -814,17 +821,17 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                       )}
                     </View>
 
-                    <View style={s.right}>
-                      <Text style={s.amount}>
+                    <View style={monthlyStyles.entryRight}>
+                      <Text style={monthlyStyles.entryAmount}>
                         {money(row.amount)}
                       </Text>
 
                       <Text
                         style={[
-                          s.badge,
+                          monthlyStyles.entryStatus,
                           row.status ===
                             'overdue' &&
-                            s.badBadge,
+                            monthlyStyles.entryStatusDanger,
                         ]}
                       >
                         {statusLabel(row.status)}
@@ -1453,6 +1460,40 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   );
 }
 
+function CompactFinanceMetric({
+  label,
+  value,
+  note,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: string;
+  note?: string;
+  tone?: 'in' | 'out' | 'danger' | 'settled' | 'forecast' | 'neutral';
+}) {
+  const toneColors = {
+    in: { accent: '#25835A', soft: '#EAF7F0' },
+    out: { accent: '#C84E4E', soft: '#FFF3F3' },
+    danger: { accent: '#B63D42', soft: '#FDEBEC' },
+    settled: { accent: '#3568B8', soft: '#EEF4FC' },
+    forecast: { accent: '#6A70A8', soft: '#F0F1FA' },
+    neutral: { accent: '#66717D', soft: '#F2F4F5' },
+  }[tone];
+
+  return (
+    <View style={monthlyStyles.compactMetricCard}>
+      <View style={[monthlyStyles.compactMetricMark, { backgroundColor: toneColors.soft }]}>
+        <View style={[monthlyStyles.compactMetricDot, { backgroundColor: toneColors.accent }]} />
+      </View>
+      <View style={monthlyStyles.compactMetricContent}>
+        <Text style={monthlyStyles.compactMetricLabel}>{label}</Text>
+        <Text style={[monthlyStyles.compactMetricValue, tone === 'danger' && { color: toneColors.accent }]}>{value}</Text>
+        {!!note && <Text style={monthlyStyles.compactMetricNote}>{note}</Text>}
+      </View>
+    </View>
+  );
+}
+
 function SummaryLine({
   label,
   value,
@@ -1481,6 +1522,76 @@ function SummaryLine({
 }
 
 const monthlyStyles = StyleSheet.create({
+  compactSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  compactMetricCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+    minWidth: 220,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+  compactMetricMark: {
+    alignItems: 'center',
+    borderRadius: 9,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  compactMetricDot: { borderRadius: 5, height: 9, width: 9 },
+  compactMetricContent: { flex: 1 },
+  compactMetricLabel: { color: theme.colors.muted, fontSize: 9.5, fontWeight: '900', textTransform: 'uppercase' },
+  compactMetricValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 2 },
+  compactMetricNote: { color: theme.colors.muted, fontSize: 9.5, marginTop: 2 },
+  entriesCard: {
+    backgroundColor: '#FFFFFF',
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  entriesTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 15,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+  },
+  entryRow: {
+    alignItems: 'center',
+    borderTopColor: theme.colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  entryMain: { flex: 1, minWidth: 260 },
+  entryName: { color: theme.colors.text, fontSize: 12.5, fontWeight: '900' },
+  entryMeta: { color: theme.colors.muted, fontSize: 10.5, marginTop: 3 },
+  entryRight: { alignItems: 'flex-end', gap: 5 },
+  entryAmount: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 14 },
+  entryStatus: {
+    backgroundColor: '#EAF7EF',
+    borderRadius: 9,
+    color: theme.colors.success,
+    fontSize: 9,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  entryStatusDanger: { backgroundColor: '#FDECEC', color: theme.colors.danger },
   periodBar: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',

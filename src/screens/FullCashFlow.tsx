@@ -21,6 +21,15 @@ const money = (value: number) =>
     currency: 'BRL',
   }).format(value || 0);
 
+const flowColors = {
+  realizedIn: '#25835A',
+  forecastIn: '#8CCFB0',
+  realizedOut: '#C84E4E',
+  forecastOut: '#E8A2A5',
+  balance: '#3568B8',
+  category: '#B8862F',
+};
+
 const isoFromDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -469,10 +478,10 @@ export default function FullCashFlow() {
               ].map((metric) => {
                 const isIn = metric.tone === 'in' || metric.tone === 'forecastIn';
                 const isForecast = metric.tone === 'forecastIn' || metric.tone === 'forecastOut';
-                const iconColor = isIn ? theme.colors.success : theme.colors.danger;
+                const iconColor = isIn ? flowColors.realizedIn : flowColors.realizedOut;
                 return (
                   <View key={metric.label} style={[styles.metricCard, mobile && styles.metricCardMobile]}>
-                    <View style={[styles.metricIcon, { backgroundColor: isIn ? '#EAF7EF' : '#FDECEC' }]}>
+                    <View style={[styles.metricIcon, { backgroundColor: isIn ? '#EAF7F0' : '#FDEBEC' }]}>
                       <Feather name={metric.icon as any} size={16} color={iconColor} />
                     </View>
                     <Text style={styles.metricLabel}>{metric.label}</Text>
@@ -506,9 +515,10 @@ export default function FullCashFlow() {
                   <Text style={styles.panelSubtitle}>Movimentação total, incluindo valores previstos</Text>
                 </View>
                 <View style={styles.legend}>
-                  <View style={styles.legendItem}><View style={[styles.legendDot, styles.legendIn]} /><Text style={styles.legendText}>Entradas</Text></View>
-                  <View style={styles.legendItem}><View style={[styles.legendDot, styles.legendOut]} /><Text style={styles.legendText}>Saídas</Text></View>
-                  <View style={styles.legendItem}><View style={[styles.legendDot, styles.legendForecast]} /><Text style={styles.legendText}>Previsto</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: flowColors.realizedIn }]} /><Text style={styles.legendText}>Recebido</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: flowColors.forecastIn }]} /><Text style={styles.legendText}>A receber</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: flowColors.realizedOut }]} /><Text style={styles.legendText}>Pago</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: flowColors.forecastOut }]} /><Text style={styles.legendText}>A pagar</Text></View>
                 </View>
               </View>
 
@@ -516,24 +526,28 @@ export default function FullCashFlow() {
                 <Text style={s.empty}>Sem movimentação no período.</Text>
               ) : (
                 <View style={styles.chartArea}>
-                  <View style={styles.chartBaseline} />
+                  <View style={[styles.chartGridLine, { bottom: 24 }]} />
+                  <View style={[styles.chartGridLine, { bottom: 76 }]} />
+                  <View style={[styles.chartGridLine, { bottom: 128 }]} />
                   {chartRows.map((day, index) => {
                     const dayIn = day.realized_in + day.forecast_in;
                     const dayOut = day.realized_out + day.forecast_out;
                     const inHeight = dayIn > 0 ? Math.max(5, (dayIn / maxChartMovement) * 104) : 0;
                     const outHeight = dayOut > 0 ? Math.max(5, (dayOut / maxChartMovement) * 104) : 0;
+                    const realizedInHeight = dayIn > 0 ? (day.realized_in / dayIn) * inHeight : 0;
+                    const forecastInHeight = dayIn > 0 ? (day.forecast_in / dayIn) * inHeight : 0;
+                    const realizedOutHeight = dayOut > 0 ? (day.realized_out / dayOut) * outHeight : 0;
+                    const forecastOutHeight = dayOut > 0 ? (day.forecast_out / dayOut) * outHeight : 0;
                     return (
                       <View key={day.date} style={styles.chartColumn}>
                         <View style={styles.bars}>
-                          <View style={[styles.chartBar, { height: inHeight, backgroundColor: theme.colors.success }]}>
-                            {day.forecast_in > 0 && dayIn > 0 && (
-                              <View style={[styles.forecastCap, { height: Math.max(3, (day.forecast_in / dayIn) * inHeight) }]} />
-                            )}
+                          <View style={[styles.chartBarStack, { height: inHeight }]}>
+                            {forecastInHeight > 0 && <View style={{ height: Math.max(3, forecastInHeight), backgroundColor: flowColors.forecastIn }} />}
+                            {realizedInHeight > 0 && <View style={{ height: Math.max(3, realizedInHeight), backgroundColor: flowColors.realizedIn }} />}
                           </View>
-                          <View style={[styles.chartBar, { height: outHeight, backgroundColor: theme.colors.danger }]}>
-                            {day.forecast_out > 0 && dayOut > 0 && (
-                              <View style={[styles.forecastCap, { height: Math.max(3, (day.forecast_out / dayOut) * outHeight) }]} />
-                            )}
+                          <View style={[styles.chartBarStack, { height: outHeight }]}>
+                            {forecastOutHeight > 0 && <View style={{ height: Math.max(3, forecastOutHeight), backgroundColor: flowColors.forecastOut }} />}
+                            {realizedOutHeight > 0 && <View style={{ height: Math.max(3, realizedOutHeight), backgroundColor: flowColors.realizedOut }} />}
                           </View>
                         </View>
                         <Text style={styles.chartDate}>{index % 2 === 0 || chartRows.length < 10 ? day.date.slice(8) : ''}</Text>
@@ -586,7 +600,7 @@ export default function FullCashFlow() {
                       <Text style={styles.categoryValue}>{money(category.totalOut)}</Text>
                     </View>
                     <View style={styles.categoryTrack}>
-                      <View style={[styles.categoryFill, { width: `${Math.max(4, (category.totalOut / maxExpenseCategory) * 100)}%`, backgroundColor: colors.primary }]} />
+                      <View style={[styles.categoryFill, { width: `${Math.max(4, (category.totalOut / maxExpenseCategory) * 100)}%`, backgroundColor: flowColors.category }]} />
                     </View>
                     {category.outForecast > 0 && <Text style={styles.categoryForecast}>{money(category.outForecast)} previsto</Text>}
                   </View>
@@ -770,13 +784,13 @@ const styles = StyleSheet.create({
   executiveGrid: { alignItems: 'stretch', flexDirection: 'row', gap: 12 },
   executiveGridCompact: { flexDirection: 'column' },
   balanceHero: {
-    backgroundColor: '#18212B',
+    backgroundColor: '#243447',
     borderRadius: theme.radius.md,
     flex: 0.95,
     justifyContent: 'space-between',
-    minHeight: 244,
+    minHeight: 214,
     minWidth: 330,
-    padding: 22,
+    padding: 18,
   },
   balanceHeroCompact: { minWidth: 0 },
   heroTop: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
@@ -794,7 +808,7 @@ const styles = StyleSheet.create({
   healthDot: { borderRadius: 4, height: 7, width: 7 },
   healthBadgeText: { color: '#FFFFFF', fontSize: 11.5, fontWeight: '800' },
   heroLabel: { color: '#AEB9C3', fontSize: 12.5, fontWeight: '700', marginTop: 22 },
-  heroValue: { color: '#FFFFFF', fontFamily: 'Sora_800ExtraBold', fontSize: 33, marginTop: 5 },
+  heroValue: { color: '#FFFFFF', fontFamily: 'Sora_800ExtraBold', fontSize: 28, marginTop: 5 },
   heroValueDanger: { color: '#FFB2B4' },
   heroDivider: { backgroundColor: 'rgba(255,255,255,0.12)', height: 1, marginVertical: 19 },
   heroFooter: { flexDirection: 'row', justifyContent: 'space-between', gap: 16 },
@@ -809,15 +823,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexBasis: '47%',
     flexGrow: 1,
-    minHeight: 116,
+    minHeight: 96,
     minWidth: 205,
-    padding: 16,
+    padding: 13,
   },
   metricCardMobile: { minWidth: '100%' },
   metricIcon: { alignItems: 'center', borderRadius: 8, height: 30, justifyContent: 'center', width: 30 },
-  metricLabel: { color: theme.colors.muted, fontSize: 11.5, fontWeight: '800', marginTop: 11 },
-  metricValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 20, marginTop: 4 },
-  metricNote: { color: '#929292', fontSize: 10.5, marginTop: 4 },
+  metricLabel: { color: theme.colors.muted, fontSize: 10.5, fontWeight: '800', marginTop: 8 },
+  metricValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 3 },
+  metricNote: { color: '#929292', fontSize: 9.5, marginTop: 3 },
 
   riskBanner: {
     alignItems: 'center',
@@ -845,7 +859,7 @@ const styles = StyleSheet.create({
   },
   insightPanel: { flex: 0.9, minWidth: 275, padding: 18 },
   panelHead: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', gap: 14, padding: 18 },
-  chartPanel: { flex: 2.1, minHeight: 300, padding: 18 },
+  chartPanel: { flex: 2.1, minHeight: 286, padding: 18 },
   chartPanelHead: { padding: 0 },
   panelHeadMobile: { flexDirection: 'column' },
   panelTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 16 },
@@ -854,16 +868,12 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   legendItem: { alignItems: 'center', flexDirection: 'row', gap: 5 },
   legendDot: { borderRadius: 3, height: 7, width: 7 },
-  legendIn: { backgroundColor: theme.colors.success },
-  legendOut: { backgroundColor: theme.colors.danger },
-  legendForecast: { backgroundColor: '#C8CDD1' },
   legendText: { color: theme.colors.muted, fontSize: 10.5, fontWeight: '700' },
   chartArea: { alignItems: 'flex-end', flexDirection: 'row', height: 155, marginTop: 24, paddingBottom: 25, position: 'relative' },
-  chartBaseline: { backgroundColor: '#E9E7E1', bottom: 24, height: 1, left: 0, position: 'absolute', right: 0 },
+  chartGridLine: { backgroundColor: '#ECEFF2', height: 1, left: 0, position: 'absolute', right: 0 },
   chartColumn: { alignItems: 'center', flex: 1, height: 130, justifyContent: 'flex-end', minWidth: 16 },
-  bars: { alignItems: 'flex-end', flexDirection: 'row', gap: 2, height: 106 },
-  chartBar: { borderRadius: 3, justifyContent: 'flex-end', minWidth: 4, overflow: 'hidden', width: 7 },
-  forecastCap: { backgroundColor: 'rgba(255,255,255,0.55)', position: 'absolute', top: 0, width: '100%' },
+  bars: { alignItems: 'flex-end', flexDirection: 'row', gap: 3, height: 106 },
+  chartBarStack: { borderRadius: 4, justifyContent: 'flex-end', minWidth: 5, overflow: 'hidden', width: 9 },
   chartDate: { color: '#8B8B8B', fontSize: 9.5, height: 16, marginTop: 5 },
   chartSummary: { borderTopColor: '#EEECE7', borderTopWidth: 1, flexDirection: 'row', gap: 8, paddingTop: 12 },
   chartSummaryText: { color: theme.colors.muted, fontSize: 11.5, fontWeight: '700' },
