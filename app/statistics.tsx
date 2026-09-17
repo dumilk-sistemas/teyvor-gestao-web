@@ -333,6 +333,8 @@ export default function Statistics() {
         summary: { total: 0, sales: 0, ticket: 0 },
         previous: { total: 0, sales: 0, ticket: 0 },
         bars: [] as BarItem[],
+        start: '',
+        end: '',
       };
     }
 
@@ -410,6 +412,8 @@ export default function Statistics() {
         summary,
         previous,
         bars,
+        start: selectedIso,
+        end: selectedIso,
       };
     }
 
@@ -481,6 +485,8 @@ export default function Statistics() {
         summary,
         previous,
         bars,
+        start: startIso,
+        end: endIso,
       };
     }
 
@@ -559,6 +565,8 @@ export default function Statistics() {
         summary,
         previous,
         bars,
+        start: startIso,
+        end: endIso,
       };
     }
 
@@ -690,6 +698,8 @@ export default function Statistics() {
       summary,
       previous,
       bars,
+      start: periodStart,
+      end: periodEnd,
     };
   }, [
     data,
@@ -720,6 +730,53 @@ export default function Statistics() {
       item.value > best.value ? item : best
     );
   }, [view.bars]);
+
+  // Complementa o gráfico de evolução com um retrato do MESMO período:
+  // pra onde o dinheiro entrou (formas de pagamento) e o que mais vendeu,
+  // no mesmo espírito do "painel integrado" dos concorrentes.
+  const periodInsights = useMemo(() => {
+    if (!view.start || !view.end) {
+      return { payments: [] as Array<{ method: string; total: number; percent: number }>, products: [] as Array<{ name: string; qty: number; revenue: number }> };
+    }
+
+    const rows = salesRows.filter(
+      (row) => validSale(row) &&
+        String(row.date || '') >= view.start &&
+        String(row.date || '') <= view.end
+    );
+
+    const paymentTotals = new Map<string, number>();
+    const productTotals = new Map<string, { name: string; qty: number; revenue: number }>();
+
+    rows.forEach((row) => {
+      const method = row.payment || 'Outros';
+      paymentTotals.set(method, (paymentTotals.get(method) || 0) + Number(row.total || 0));
+
+      (row.items_detail || []).forEach((item: any) => {
+        const key = item.name || item.code || 'Produto';
+        const current = productTotals.get(key) || { name: key, qty: 0, revenue: 0 };
+        current.qty += Number(item.qty || 0);
+        current.revenue += Number(item.qty || 0) * Number(item.price || 0);
+        productTotals.set(key, current);
+      });
+    });
+
+    const paymentSum = Array.from(paymentTotals.values()).reduce((sum, value) => sum + value, 0);
+
+    const payments = Array.from(paymentTotals.entries())
+      .map(([method, total]) => ({
+        method,
+        total,
+        percent: paymentSum > 0 ? (total / paymentSum) * 100 : 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    const products = Array.from(productTotals.values())
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    return { payments, products };
+  }, [salesRows, view.start, view.end]);
 
   const canGoNext = useMemo(() => {
     const now = new Date();
@@ -1180,6 +1237,59 @@ export default function Statistics() {
                 </Text>
               </View>
             ))}
+        </View>
+      )}
+
+      {(periodInsights.payments.length > 0 || periodInsights.products.length > 0) && (
+        <View style={styles.insightsGrid}>
+          {periodInsights.payments.length > 0 && (
+            <View style={styles.insightCard}>
+              <Text style={styles.detailTitle}>Formas de pagamento</Text>
+              <Text style={styles.insightSubtitle}>{view.title}</Text>
+
+              {periodInsights.payments.map((row) => (
+                <View key={row.method} style={styles.paymentRow}>
+                  <View style={styles.paymentRowHead}>
+                    <Text style={styles.paymentMethod}>{row.method}</Text>
+                    <Text style={styles.paymentValue}>
+                      {money(row.total)} • {row.percent.toFixed(1)}%
+                    </Text>
+                  </View>
+                  <View style={styles.paymentTrack}>
+                    <View
+                      style={[
+                        styles.paymentFill,
+                        { width: `${Math.max(4, row.percent)}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {periodInsights.products.length > 0 && (
+            <View style={styles.insightCard}>
+              <Text style={styles.detailTitle}>Produtos mais vendidos</Text>
+              <Text style={styles.insightSubtitle}>{view.title}</Text>
+
+              {periodInsights.products.map((product, index) => (
+                <View key={product.name} style={styles.detailRow}>
+                  <View style={styles.detailMain}>
+                    <Text style={styles.detailName}>
+                      {index + 1}. {product.name}
+                    </Text>
+                    <Text style={styles.detailMeta}>
+                      {product.qty} vendido(s)
+                    </Text>
+                  </View>
+                  <Text style={styles.detailAmount}>
+                    {money(product.revenue)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       )}
     </AdminShell>
@@ -1743,5 +1853,70 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     color: theme.colors.text,
+  },
+
+  insightsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+  },
+
+  insightCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    flexBasis: 320,
+    flexGrow: 1,
+    minWidth: 280,
+    overflow: 'hidden',
+    paddingBottom: 6,
+  },
+
+  insightSubtitle: {
+    color: theme.colors.muted,
+    fontSize: 11,
+    marginTop: -8,
+    paddingHorizontal: 15,
+    paddingBottom: 10,
+  },
+
+  paymentRow: {
+    borderTopColor: theme.colors.border,
+    borderTopWidth: 1,
+    gap: 7,
+    paddingHorizontal: 15,
+    paddingVertical: 11,
+  },
+
+  paymentRowHead: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  paymentMethod: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  paymentValue: {
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  paymentTrack: {
+    backgroundColor: '#EEEDE8',
+    borderRadius: 4,
+    height: 6,
+    overflow: 'hidden',
+  },
+
+  paymentFill: {
+    backgroundColor: c.gold,
+    borderRadius: 4,
+    height: '100%',
   },
 });
