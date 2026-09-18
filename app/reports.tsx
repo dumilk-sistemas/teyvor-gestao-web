@@ -1063,7 +1063,17 @@ export default function Reports() {
     if (selectedReportId === 'payables') return financeEntries.filter((row: any) => row.type === 'payable' && ['open', 'overdue'].includes(row.status)).map((row: any) => ({ id: String(row.id), primary: row.description || row.supplier || 'Conta a pagar', secondary: `${row.category || 'Sem categoria'} • vence ${dateBR(row.due_date)}`, value: money(row.amount) }));
     if (selectedReportId === 'receivables') return financeEntries.filter((row: any) => row.type === 'receivable' && ['open', 'overdue'].includes(row.status)).map((row: any) => ({ id: String(row.id), primary: row.description || row.customer || 'Conta a receber', secondary: `${row.category || 'Sem categoria'} • vence ${dateBR(row.due_date)}`, value: money(row.amount) }));
     if (selectedReportId === 'finance-categories') return financeCategoryRows.map((row: any) => ({ id: row.selectionKey, primary: row.category, secondary: `${row.reportType} • ${row.count} lançamento(s)`, value: money(row.total) }));
-    if (selectedReportId === 'managerial-dre') return (dre?.rows || []).map((row: any) => ({ id: row.key, primary: row.label, secondary: row.kind === 'result' ? 'Resultado do período' : 'Regime de competência', value: money(row.value) }));
+    if (selectedReportId === 'managerial-dre') return (dre?.rows || []).map((row: any) => ({
+      id: row.key,
+      primary: row.label,
+      secondary: row.key === 'gross_profit'
+        ? `Margem bruta ${dre?.quality?.gross_margin_percent == null ? 'indisponível' : `${Number(dre.quality.gross_margin_percent).toFixed(1).replace('.', ',')}%`}`
+        : row.kind === 'result' ? 'Resultado líquido do período' : row.kind === 'subtotal' ? 'Subtotal gerencial' : 'Regime de competência',
+      value: money(row.value),
+      kind: row.kind,
+      statementKey: row.key,
+      tone: Number(row.value) < 0 && ['subtotal', 'result'].includes(row.kind) ? 'danger' : row.kind === 'result' ? 'success' : 'default',
+    }));
     if (selectedReportId === 'cash') return cashClosings.map((row: any, index) => ({ id: String(row.id || `${row.code}-${index}`), primary: `Caixa ${row.code || ''}`, secondary: `${dateBR(row.date)} • ${row.sales || 0} venda(s)`, value: money(row.difference), tone: Number(row.difference || 0) < 0 ? 'danger' : 'default' }));
     if (selectedReportId === 'purchases') return purchaseRows.map((row: any) => ({ id: String(row.id), primary: row.supplier || row.description || `Compra #${row.number || row.id}`, secondary: `${dateBR(row.date)} • ${row.status || 'Recebida'}`, value: money(row.total) }));
     return stockAlerts.map((row: any) => ({ id: String(row.id || row.code), primary: row.name, secondary: `${row.category || 'Sem categoria'} • mínimo ${row.minimum || 0}`, value: `${row.stock || 0} em estoque`, tone: row.status === 'Negativo' ? 'danger' : 'default' }));
@@ -1147,13 +1157,40 @@ export default function Reports() {
               <View style={styles.selectionActions}><Text style={styles.selectionCount}>{selectedInlineRows.length} de {inlineRows.length} selecionado(s)</Text><Pressable onPress={() => setReportSelected(Object.fromEntries(inlineRows.map((row: any) => [String(row.id), true])))}><Text style={styles.selectionLink}>Selecionar todos</Text></Pressable><Pressable onPress={() => setReportSelected({})}><Text style={styles.selectionLink}>Limpar</Text></Pressable></View>
             </View>
 
+            {selectedReportId === 'managerial-dre' && (
+              <View style={styles.dreInlineContext}>
+                <View style={styles.dreInlineQuality}>
+                  <Feather
+                    name={Number(dre?.quality?.categories_to_review || 0) + Number(dre?.quality?.unmapped_entries || 0) > 0 ? 'alert-triangle' : 'info'}
+                    size={17}
+                    color={Number(dre?.quality?.categories_to_review || 0) + Number(dre?.quality?.unmapped_entries || 0) > 0 ? '#9A6A12' : '#3568B8'}
+                  />
+                  <View style={styles.inlineRowMain}>
+                    <Text style={styles.dreInlineTitle}>
+                      {Number(dre?.quality?.categories_to_review || 0) + Number(dre?.quality?.unmapped_entries || 0) > 0
+                        ? 'Resultado sujeito a revisão'
+                        : 'DRE gerencial por competência'}
+                    </Text>
+                    <Text style={styles.dreInlineText}>
+                      {Number(dre?.quality?.categories_to_review || 0)} categoria(s) para revisar • {Number(dre?.quality?.unmapped_entries || 0)} lançamento(s) sem mapeamento • CMV histórico ainda não disponível
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             <ScrollView style={styles.inlineRows} nestedScrollEnabled>
               {inlineRows.map((row: any) => {
                 const checked = !!reportSelected[String(row.id)];
-                return <Pressable key={String(row.id)} onPress={() => setReportSelected((current) => ({ ...current, [String(row.id)]: !checked }))} style={styles.inlineRow}>
+                return <Pressable key={String(row.id)} onPress={() => setReportSelected((current) => ({ ...current, [String(row.id)]: !checked }))} style={[
+                  styles.inlineRow,
+                  row.kind === 'subtotal' && styles.inlineRowSubtotal,
+                  row.kind === 'result' && styles.inlineRowResult,
+                  row.kind === 'result' && row.tone === 'danger' && styles.inlineRowResultDanger,
+                ]}>
                   <View style={[styles.inlineCheckbox, checked && { backgroundColor: selectedReport.color, borderColor: selectedReport.color }]}>{checked && <Feather name="check" size={13} color="#FFF" />}</View>
                   <View style={styles.inlineRowMain}><Text style={styles.inlineRowTitle}>{row.primary}</Text><Text style={styles.inlineRowDetail}>{row.secondary}</Text></View>
-                  <Text style={[styles.inlineRowValue, row.tone === 'danger' && styles.inlineRowDanger]}>{row.value}</Text>
+                  <Text style={[styles.inlineRowValue, row.tone === 'danger' && styles.inlineRowDanger, row.tone === 'success' && styles.inlineRowSuccess]}>{row.value}</Text>
                 </Pressable>;
               })}
               {inlineRows.length === 0 && <View style={styles.inlineEmpty}><Feather name="inbox" size={24} color={theme.colors.muted} /><Text style={styles.inlineEmptyTitle}>Nenhum dado neste período</Text><Text style={styles.inlineEmptyText}>Altere o período para consultar outros resultados.</Text></View>}
@@ -2131,7 +2168,13 @@ export default function Reports() {
 
               <View style={styles.dreTable}>
                 {(dre?.rows || []).map((row: any, index: number) => (
-                  <View key={row.key} style={[styles.dreRow, ['subtotal', 'result'].includes(row.kind) && styles.dreRowStrong]}>
+                  <View key={row.key} style={[
+                    styles.dreRow,
+                    row.kind === 'subtotal' && styles.dreRowStrong,
+                    row.key === 'gross_profit' && styles.dreRowGrossProfit,
+                    row.kind === 'result' && styles.dreRowResult,
+                    row.kind === 'result' && Number(row.value) < 0 && styles.dreRowResultDanger,
+                  ]}>
                     <ReportCheckbox selected={!!reportSelected[reportRowKey('dre', row, index)]} onPress={() => toggleReportSelection(row, index)} />
                     <Text style={[styles.dreLabel, ['subtotal', 'result'].includes(row.kind) && styles.dreLabelStrong]}>{row.label}</Text>
                     <Text style={[
@@ -2838,8 +2881,15 @@ const styles = StyleSheet.create({
   inlineExportButton: { minHeight: 42, paddingHorizontal: 11, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 6 }, inlineExportButtonText: { fontFamily: 'Inter_700Bold', fontSize: 12, color: theme.colors.text },
   inlineSummary: { padding: 15, backgroundColor: '#F8F8F6', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   inlineSummaryLabel: { fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .6, color: theme.colors.muted }, inlineSummaryValue: { marginTop: 4, fontFamily: 'Sora_700Bold', fontSize: 21, color: theme.colors.text }, inlineSummaryDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
+  dreInlineContext: { paddingHorizontal: 15, paddingTop: 12 },
+  dreInlineQuality: { alignItems: 'flex-start', backgroundColor: '#FFF8E8', borderColor: '#E8D3A4', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 9, padding: 11 },
+  dreInlineTitle: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
+  dreInlineText: { color: theme.colors.muted, fontFamily: 'Inter_400Regular', fontSize: 11.5, lineHeight: 17, marginTop: 2 },
   selectionCount: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.muted }, inlineRows: { maxHeight: 590 }, inlineRow: { minHeight: 66, paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  inlineCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' }, inlineRowMain: { flex: 1, minWidth: 0 }, inlineRowTitle: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text }, inlineRowDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12, color: theme.colors.muted }, inlineRowValue: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text, textAlign: 'right' }, inlineRowDanger: { color: theme.colors.danger },
+  inlineRowSubtotal: { backgroundColor: '#F3F6F8' },
+  inlineRowResult: { backgroundColor: '#EAF2FC', borderTopColor: '#AFC7E8', borderTopWidth: 2 },
+  inlineRowResultDanger: { backgroundColor: '#FFF0F0', borderTopColor: '#E5B5B7' },
+  inlineCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' }, inlineRowMain: { flex: 1, minWidth: 0 }, inlineRowTitle: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text }, inlineRowDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12, color: theme.colors.muted }, inlineRowValue: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text, textAlign: 'right' }, inlineRowDanger: { color: theme.colors.danger }, inlineRowSuccess: { color: theme.colors.success },
   inlineEmpty: { minHeight: 230, padding: 30, alignItems: 'center', justifyContent: 'center' }, inlineEmptyTitle: { marginTop: 9, fontFamily: 'Sora_700Bold', fontSize: 15, color: theme.colors.text }, inlineEmptyText: { marginTop: 4, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
   error: {
     color: theme.colors.danger,
@@ -3668,6 +3718,23 @@ const styles = StyleSheet.create({
 
   dreRowStrong: {
     backgroundColor: '#F3F6F8',
+  },
+
+  dreRowGrossProfit: {
+    backgroundColor: '#EDF8F2',
+    borderTopColor: '#B9DEC9',
+  },
+
+  dreRowResult: {
+    backgroundColor: '#EAF2FC',
+    borderTopColor: '#AFC7E8',
+    borderTopWidth: 2,
+    minHeight: 56,
+  },
+
+  dreRowResultDanger: {
+    backgroundColor: '#FFF0F0',
+    borderTopColor: '#E5B5B7',
   },
 
   dreLabel: {
