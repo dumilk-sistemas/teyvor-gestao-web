@@ -68,11 +68,13 @@ function presetForRange(start: string, end: string): PeriodPreset {
   return match?.value || 'custom';
 }
 
-function NativeDateInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function NativeDateInput({ value, onChange, min, max }: { value: string; onChange: (value: string) => void; min?: string; max?: string }) {
   if (Platform.OS === 'web') {
     return createElement('input', {
       type: 'date',
       value,
+      min,
+      max,
       onChange: (event: any) => onChange(event.target.value),
       style: {
         width: '100%', height: 48, boxSizing: 'border-box', border: `1px solid ${theme.colors.border}`,
@@ -115,6 +117,10 @@ export function PeriodCalendar({
   }, [open, start, end]);
 
   const display = useMemo(() => formatPeriodLabel(start, end), [start, end]);
+  const selectedPresetLabel = useMemo(() => {
+    const selected = presetForRange(start, end);
+    return PRESETS.find((option) => option.value === selected)?.label || 'Período personalizado';
+  }, [start, end]);
 
   function choose(next: string) {
     const selected = next as PeriodPreset;
@@ -143,7 +149,7 @@ export function PeriodCalendar({
         </View>
         <View style={styles.triggerText}>
           <Text style={styles.triggerLabel}>{label}</Text>
-          <Text style={styles.triggerValue}>{display}</Text>
+          <Text numberOfLines={1} style={styles.triggerValue}>{selectedPresetLabel} · {display}</Text>
         </View>
         <Feather name="chevron-down" size={18} color={theme.colors.muted} />
       </Pressable>
@@ -172,11 +178,20 @@ export function PeriodCalendar({
               <View style={styles.dateArea}>
                 <View style={styles.dateColumn}>
                   <Text style={styles.dateLabel}>Data inicial</Text>
-                  <NativeDateInput value={draftStart} onChange={(value) => { setDraftStart(value); setPreset('custom'); }} />
+                  <NativeDateInput
+                    value={draftStart}
+                    max={draftEnd && maxDate ? (draftEnd < maxDate ? draftEnd : maxDate) : draftEnd || maxDate}
+                    onChange={(value) => { setDraftStart(value); setPreset('custom'); }}
+                  />
                 </View>
                 <View style={styles.dateColumn}>
                   <Text style={styles.dateLabel}>Data final</Text>
-                  <NativeDateInput value={draftEnd} onChange={(value) => { setDraftEnd(value); setPreset('custom'); }} />
+                  <NativeDateInput
+                    value={draftEnd}
+                    min={draftStart}
+                    max={maxDate}
+                    onChange={(value) => { setDraftEnd(value); setPreset('custom'); }}
+                  />
                 </View>
               </View>
               {!!error && <Text style={styles.error}>{error}</Text>}
