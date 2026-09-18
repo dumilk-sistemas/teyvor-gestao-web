@@ -614,7 +614,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   sidebarBrandSub: {
     color: c.gold,
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '800',
     letterSpacing: 1.6,
     marginTop: 2,
@@ -901,7 +901,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   mobileEyebrow: {
     color: c.gold,
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '900',
     letterSpacing: 1.8,
   },
@@ -1031,7 +1031,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   bottomLabel: {
     marginTop: 3,
-    fontSize: 10,
+    fontSize: 11.5,
     lineHeight: 13,
     fontWeight: '700',
     color: '#777777',

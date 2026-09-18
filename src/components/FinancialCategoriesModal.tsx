@@ -27,6 +27,22 @@ const TYPES: Array<{ label: string; value: CategoryType; description: string }> 
 
 const typeLabel = (value: string) => TYPES.find((item) => item.value === value)?.label || value;
 
+const DRE_GROUPS = [
+  { label: 'Receita bruta', value: 'gross_revenue', types: ['revenue'], description: 'Vendas, serviços e outras receitas operacionais' },
+  { label: 'Deduções da receita', value: 'revenue_deduction', types: ['expense'], description: 'Descontos, devoluções e tributos sobre vendas' },
+  { label: 'Custos diretos', value: 'cost_of_goods', types: ['expense'], description: 'Custos diretamente ligados à mercadoria ou serviço' },
+  { label: 'Despesa operacional', value: 'operating_expense', types: ['expense'], description: 'Aluguel, energia, pessoal, manutenção e administração' },
+  { label: 'Receita financeira', value: 'financial_revenue', types: ['revenue', 'non_operating'], description: 'Rendimentos, juros recebidos e descontos obtidos' },
+  { label: 'Despesa financeira', value: 'financial_expense', types: ['expense'], description: 'Juros, tarifas bancárias e encargos financeiros' },
+  { label: 'Tributos sobre o resultado', value: 'taxes', types: ['expense'], description: 'Impostos calculados sobre o resultado' },
+  { label: 'Outra receita', value: 'other_revenue', types: ['revenue', 'non_operating'], description: 'Receita que não pertence à operação principal' },
+  { label: 'Outra despesa', value: 'other_expense', types: ['expense'], description: 'Despesa não pertencente à operação principal' },
+  { label: 'Não considerar na DRE', value: 'excluded', types: ['expense', 'revenue', 'non_operating'], description: 'Aportes, empréstimos, transferências e movimentos patrimoniais' },
+];
+
+const defaultDreGroup = (type: CategoryType) => type === 'revenue' ? 'gross_revenue' : type === 'non_operating' ? 'excluded' : 'operating_expense';
+const dreLabel = (value: string) => DRE_GROUPS.find((item) => item.value === value)?.label || 'Revisar classificação';
+
 export function FinancialCategoriesModal({
   visible,
   onClose,
@@ -41,7 +57,7 @@ export function FinancialCategoriesModal({
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | CategoryType>('all');
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState<any>({ name: '', category_type: 'expense', parent_id: '', active: true });
+  const [form, setForm] = useState<any>({ name: '', category_type: 'expense', dre_group: 'operating_expense', parent_id: '', active: true });
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
@@ -77,8 +93,12 @@ export function FinancialCategoriesModal({
     .filter((row) => row.active && row.category_type === deleteTarget?.category_type && row.id !== deleteTarget?.id)
     .map((row) => ({ label: row.name, value: String(row.id), description: row.parent_name || typeLabel(row.category_type) }));
 
+  const dreOptions = DRE_GROUPS
+    .filter((item) => item.types.includes(form.category_type))
+    .map(({ label, value, description }) => ({ label, value, description }));
+
   function startCreate(type: CategoryType = 'expense') {
-    setForm({ name: '', category_type: type, parent_id: '', active: true });
+    setForm({ name: '', category_type: type, dre_group: defaultDreGroup(type), parent_id: '', active: true });
     setFormError('');
     setFormOpen(true);
   }
@@ -99,6 +119,7 @@ export function FinancialCategoriesModal({
       setFormError('');
       const payload = {
         name: String(form.name).trim(),
+        dre_group: form.dre_group || defaultDreGroup(form.category_type),
         parent_id: form.parent_id ? Number(form.parent_id) : null,
         active: Boolean(form.active),
       };
@@ -181,7 +202,8 @@ export function FinancialCategoriesModal({
                       <Text style={styles.name}>{row.name}</Text>
                       <Text style={[styles.badge, !row.active && styles.badgeInactive]}>{row.active ? typeLabel(row.category_type) : 'Inativa'}</Text>
                     </View>
-                    <Text style={styles.meta}>{row.parent_name ? `${row.parent_name} • ` : ''}{row.entry_count} lançamento(s) vinculado(s)</Text>
+                    <Text style={styles.meta}>{row.parent_name ? `${row.parent_name} • ` : ''}{row.entry_count} lançamento(s) • DRE: {dreLabel(row.dre_group)}</Text>
+                    {!row.dre_configured && <Text style={styles.review}>Revisar classificação antes de usar a DRE</Text>}
                   </View>
                   <View style={styles.actions}>
                     <ActionButton label="Editar" tone="plain" onPress={() => startEdit(row)} />
@@ -196,8 +218,10 @@ export function FinancialCategoriesModal({
       </Modal>
 
       <FormModal visible={formOpen} title={form.id ? 'Editar categoria financeira' : 'Nova categoria financeira'} onCancel={() => setFormOpen(false)} onSave={save} busy={busy} errorText={formError}>
-        {!form.id && <SearchablePicker label="Tipo *" value={form.category_type} onChange={(value) => setForm((current: any) => ({ ...current, category_type: value, parent_id: '' }))} options={TYPES} />}
+        {!form.id && <SearchablePicker label="Tipo *" value={form.category_type} onChange={(value) => setForm((current: any) => ({ ...current, category_type: value, dre_group: defaultDreGroup(value as CategoryType), parent_id: '' }))} options={TYPES} />}
         <Field label="Nome da categoria *" value={form.name || ''} onChangeText={(value) => setForm((current: any) => ({ ...current, name: value }))} placeholder={form.category_type === 'revenue' ? 'Ex.: Venda de mercadorias' : 'Ex.: Energia elétrica'} />
+        <SearchablePicker label="Grupo na DRE *" value={form.dre_group || defaultDreGroup(form.category_type)} onChange={(value) => setForm((current: any) => ({ ...current, dre_group: value }))} options={dreOptions} />
+        <Notice text="Esta classificação define em qual linha a categoria será somada na DRE gerencial. Aportes, empréstimos e transferências não devem compor o resultado." />
         <SearchablePicker label="Categoria superior (opcional)" value={form.parent_id || ''} onChange={(value) => setForm((current: any) => ({ ...current, parent_id: value }))} options={[{ label: 'Sem categoria superior', value: '' }, ...parentOptions]} />
       </FormModal>
 
@@ -211,5 +235,5 @@ export function FinancialCategoriesModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop:{flex:1,backgroundColor:'rgba(0,0,0,.55)',alignItems:'center',justifyContent:'center',padding:18},modal:{width:'100%',maxWidth:900,maxHeight:'92%',backgroundColor:'#FFF',borderRadius:18,overflow:'hidden'},header:{padding:20,borderBottomWidth:1,borderBottomColor:theme.colors.border,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},title:{fontSize:22,fontWeight:'900',color:theme.colors.text},subtitle:{fontSize:13,color:theme.colors.muted,marginTop:4},close:{fontSize:30,color:theme.colors.muted},toolbar:{padding:14,flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'},filters:{flexDirection:'row',gap:7,flexWrap:'wrap'},filter:{borderWidth:1,borderColor:theme.colors.border,borderRadius:999,paddingHorizontal:11,paddingVertical:7},filterActive:{backgroundColor:theme.colors.black,borderColor:theme.colors.black},filterText:{fontSize:12,fontWeight:'700',color:theme.colors.text},filterTextActive:{color:'#FFF'},notice:{paddingHorizontal:14},list:{padding:14,gap:9},row:{borderWidth:1,borderColor:theme.colors.border,borderRadius:12,padding:14,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:14,flexWrap:'wrap'},rowMain:{flex:1,minWidth:240},nameLine:{flexDirection:'row',alignItems:'center',gap:8,flexWrap:'wrap'},name:{fontSize:15,fontWeight:'900',color:theme.colors.text},meta:{fontSize:12,color:theme.colors.muted,marginTop:5},badge:{fontSize:10,fontWeight:'900',paddingHorizontal:8,paddingVertical:4,borderRadius:999,backgroundColor:'#EAF7EF',color:theme.colors.success},badgeInactive:{backgroundColor:'#F2F3F4',color:theme.colors.muted},actions:{flexDirection:'row',gap:7,flexWrap:'wrap'},empty:{padding:26,textAlign:'center',color:theme.colors.muted},deleteText:{fontSize:14,color:theme.colors.text},
+  backdrop:{flex:1,backgroundColor:'rgba(0,0,0,.55)',alignItems:'center',justifyContent:'center',padding:18},modal:{width:'100%',maxWidth:900,maxHeight:'92%',backgroundColor:'#FFF',borderRadius:18,overflow:'hidden'},header:{padding:20,borderBottomWidth:1,borderBottomColor:theme.colors.border,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},title:{fontFamily:'Sora_700Bold',fontSize:20,color:theme.colors.text},subtitle:{fontFamily:'Inter_400Regular',fontSize:13,color:theme.colors.muted,marginTop:4},close:{fontSize:30,color:theme.colors.muted},toolbar:{padding:14,flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'},filters:{flexDirection:'row',gap:7,flexWrap:'wrap'},filter:{borderWidth:1,borderColor:theme.colors.border,borderRadius:999,paddingHorizontal:11,paddingVertical:7},filterActive:{backgroundColor:theme.colors.black,borderColor:theme.colors.black},filterText:{fontFamily:'Inter_600SemiBold',fontSize:12,color:theme.colors.text},filterTextActive:{color:'#FFF'},notice:{paddingHorizontal:14},list:{padding:14,gap:9},row:{borderWidth:1,borderColor:theme.colors.border,borderRadius:12,padding:14,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:14,flexWrap:'wrap'},rowMain:{flex:1,minWidth:240},nameLine:{flexDirection:'row',alignItems:'center',gap:8,flexWrap:'wrap'},name:{fontFamily:'Inter_700Bold',fontSize:14,color:theme.colors.text},meta:{fontFamily:'Inter_400Regular',fontSize:12.5,color:theme.colors.muted,marginTop:5},review:{fontFamily:'Inter_600SemiBold',fontSize:11.5,color:'#9A6A12',marginTop:4},badge:{fontFamily:'Inter_700Bold',fontSize:10.5,paddingHorizontal:8,paddingVertical:4,borderRadius:999,backgroundColor:'#EAF7EF',color:theme.colors.success},badgeInactive:{backgroundColor:'#F2F3F4',color:theme.colors.muted},actions:{flexDirection:'row',gap:7,flexWrap:'wrap'},empty:{padding:26,textAlign:'center',color:theme.colors.muted},deleteText:{fontSize:14,color:theme.colors.text},
 });

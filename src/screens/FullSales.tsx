@@ -770,7 +770,7 @@ const salesStyles = StyleSheet.create({
     gap: 12,
   },
   eyebrow: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '800',
     letterSpacing: 1,
     color: theme.colors.muted,
@@ -815,7 +815,7 @@ const salesStyles = StyleSheet.create({
     borderTopColor: theme.colors.border,
   },
   tableHeaderText: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '800',
     letterSpacing: 0.5,
     color: theme.colors.muted,

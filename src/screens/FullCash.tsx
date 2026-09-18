@@ -1121,7 +1121,7 @@ const cashStyles = StyleSheet.create({
   },
 
   sessionEyebrow: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '900',
     letterSpacing: 0.8,
     color: '#6B6B6B',
@@ -1170,7 +1170,7 @@ const cashStyles = StyleSheet.create({
   },
 
   closedEyebrow: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '900',
     letterSpacing: 0.8,
     color: '#6B6B6B',
@@ -1265,7 +1265,7 @@ const cashStyles = StyleSheet.create({
   },
 
   detailKpiLabel: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '900',
     letterSpacing: 0.6,
     color: '#6B6B6B',

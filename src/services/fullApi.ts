@@ -105,6 +105,7 @@ export async function getFinancialCategories() {
 export async function createFinancialCategory(payload: {
   name: string;
   category_type: 'expense' | 'revenue' | 'non_operating';
+  dre_group?: string;
   parent_id?: number | null;
   active: boolean;
 }) {
@@ -142,6 +143,12 @@ export async function getCashFlow(start: string, end: string, accountId?: number
   const accountParam = accountId ? `&account_id=${accountId}` : '';
   return fullRequest<any>(
     `/admin/finance/cashflow?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${accountParam}`
+  );
+}
+
+export async function getManagerialDre(start: string, end: string) {
+  return fullRequest<any>(
+    `/admin/finance-management/dre?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
   );
 }
 

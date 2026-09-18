@@ -269,10 +269,12 @@ export default function FinanceHome() {
                 <Text style={styles.panelSubtitle}>Entradas e saídas previstas em {monthName(month)}</Text>
               </View>
               <View style={styles.panelLinks}>
-                <Pressable onPress={() => router.push('/payables')}>
+                <Pressable style={styles.panelLink} onPress={() => router.push('/payables')}>
+                  <Feather name="arrow-up-right" size={14} color={theme.colors.danger} />
                   <Text style={[styles.seeAll, { color: theme.colors.danger }]}>A pagar</Text>
                 </Pressable>
-                <Pressable onPress={() => router.push('/receivables')}>
+                <Pressable style={styles.panelLink} onPress={() => router.push('/receivables')}>
+                  <Feather name="arrow-down-left" size={14} color={theme.colors.success} />
                   <Text style={[styles.seeAll, { color: theme.colors.success }]}>A receber</Text>
                 </Pressable>
               </View>
@@ -296,7 +298,10 @@ export default function FinanceHome() {
                     {entry.type === 'receivable' ? 'Entrada' : 'Saída'} • {entry.category} • vence {dateLabel(entry.due_date)}{entry.recurring_rule_id ? ' • recorrente' : ''}
                   </Text>
                 </View>
-                <Text style={[styles.payableAmount, entry.type === 'receivable' && styles.receivableAmount]}>{money(entry.amount)}</Text>
+                <Text style={[
+                  styles.payableAmount,
+                  entry.type === 'receivable' ? styles.receivableAmount : styles.payableAmountOut,
+                ]}>{money(entry.amount)}</Text>
               </View>
             )) : (
               <Text style={s.empty}>Nenhuma entrada ou saída pendente com vencimento neste mês.</Text>
@@ -327,9 +332,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 13,
   },
-  eyebrow: { color: theme.colors.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  eyebrow: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.5 },
   periodTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 3 },
-  periodNote: { color: theme.colors.muted, fontSize: 12 },
+  periodNote: { color: theme.colors.muted, fontSize: 13 },
   sectionTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 18 },
   sectionSubtitle: { color: theme.colors.muted, fontSize: 12.5, marginTop: 3 },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -348,9 +353,9 @@ const styles = StyleSheet.create({
   },
   summaryIcon: { alignItems: 'center', borderRadius: 9, height: 34, justifyContent: 'center', width: 34 },
   summaryContent: { flex: 1 },
-  summaryLabel: { color: theme.colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 0.55 },
-  summaryValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 2 },
-  summaryNote: { color: theme.colors.muted, fontSize: 9.5, marginTop: 1 },
+  summaryLabel: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11.5, letterSpacing: 0.25 },
+  summaryValue: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 18, marginTop: 3 },
+  summaryNote: { color: theme.colors.muted, fontSize: 12, marginTop: 2 },
   moduleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   moduleCard: {
     alignItems: 'center',
@@ -373,22 +378,24 @@ const styles = StyleSheet.create({
   moduleCardPressed: { opacity: 0.82, transform: [{ scale: 0.995 }] },
   moduleIcon: { alignItems: 'center', borderRadius: 10, height: 42, justifyContent: 'center', width: 42 },
   moduleContent: { flex: 1 },
-  moduleTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
-  moduleDescription: { color: theme.colors.muted, fontSize: 11.5, lineHeight: 16, marginTop: 4 },
+  moduleTitle: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 15 },
+  moduleDescription: { color: theme.colors.muted, fontSize: 13, lineHeight: 18, marginTop: 4 },
   moduleArrow: { alignItems: 'center', borderRadius: 16, height: 30, justifyContent: 'center', width: 30 },
   panel: { backgroundColor: '#FFFFFF', borderColor: theme.colors.border, borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
   panelHead: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'space-between', padding: 16 },
   panelTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 16 },
-  panelSubtitle: { color: theme.colors.muted, fontSize: 11.5, marginTop: 3 },
+  panelSubtitle: { color: theme.colors.muted, fontSize: 13, marginTop: 3 },
   panelLinks: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  seeAll: { fontSize: 12, fontWeight: '900' },
+  panelLink: { alignItems: 'center', flexDirection: 'row', gap: 5 },
+  seeAll: { fontFamily: 'Inter_700Bold', fontSize: 13 },
   payableRow: { alignItems: 'center', borderTopColor: '#ECEAE5', borderTopWidth: 1, flexDirection: 'row', gap: 11, padding: 14 },
   dueIcon: { alignItems: 'center', backgroundColor: '#F1F0EC', borderRadius: 8, height: 32, justifyContent: 'center', width: 32 },
   dueIconReceivable: { backgroundColor: '#EAF7EF' },
   dueIconDanger: { backgroundColor: '#FDECEC' },
   payableMain: { flex: 1 },
-  payableName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  payableMeta: { color: theme.colors.muted, fontSize: 10.5, marginTop: 3 },
-  payableAmount: { color: theme.colors.text, fontSize: 13, fontWeight: '900' },
+  payableName: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  payableMeta: { color: theme.colors.muted, fontSize: 12.5, marginTop: 3 },
+  payableAmount: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  payableAmountOut: { color: theme.colors.danger },
   receivableAmount: { color: theme.colors.success },
 });

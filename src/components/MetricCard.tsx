@@ -75,7 +75,7 @@ const compactStyles = StyleSheet.create({
   },
   icon: { alignItems: 'center', borderRadius: 9, height: 34, justifyContent: 'center', width: 34 },
   content: { flex: 1 },
-  label: { color: theme.colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 0.55 },
+  label: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11.5, letterSpacing: 0.3 },
   value: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 2 },
-  note: { color: theme.colors.muted, fontSize: 9.5, marginTop: 1 },
+  note: { color: theme.colors.muted, fontFamily: 'Inter_400Regular', fontSize: 11.5, marginTop: 2 },
 });

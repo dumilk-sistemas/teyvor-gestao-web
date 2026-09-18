@@ -16,7 +16,7 @@ import { DateField, Notice } from '@/components/FormKit';
 import { theme } from '@/constants/theme';
 import { useBranding } from '@/contexts/BrandingContext';
 import { getReports } from '@/services/api';
-import { getFull } from '@/services/fullApi';
+import { getFull, getManagerialDre } from '@/services/fullApi';
 import type { Branding, CustomersData, FinanceData, PurchasesData, ReportsData, StockData } from '@/types/api';
 
 const money = (value: number) =>
@@ -286,9 +286,9 @@ type PeriodKey =
   | 'year'
   | 'custom';
 
-type DetailMode = 'sales' | 'cash' | 'products' | 'payments' | 'customers' | 'finance' | 'purchases' | 'stock' | null;
+type DetailMode = 'sales' | 'cash' | 'products' | 'payments' | 'customers' | 'finance' | 'dre' | 'purchases' | 'stock' | null;
 
-type ReportCategory = 'all' | 'sales' | 'finance' | 'operation';
+type ReportCategory = 'all' | 'sales' | 'finance' | 'cash' | 'purchases' | 'stock';
 
 function reportRowKey(mode: DetailMode, row: any, index: number) {
   if (mode === 'sales') return `sales:${row.date || index}`;
@@ -298,6 +298,7 @@ function reportRowKey(mode: DetailMode, row: any, index: number) {
   if (mode === 'customers') return `customers:${row.id || row.name || 'cliente'}:${index}`;
   if (mode === 'purchases') return `purchases:${row.id || row.document || row.date || index}`;
   if (mode === 'stock') return `stock:${row.code || row.id || row.name || index}`;
+  if (mode === 'dre') return `dre:${row.key || index}`;
   return `${mode || 'report'}:${index}`;
 }
 
@@ -352,6 +353,7 @@ export default function Reports() {
   const [finance, setFinance] = useState<FinanceData | null>(null);
   const [stock, setStock] = useState<StockData | null>(null);
   const [purchases, setPurchases] = useState<PurchasesData | null>(null);
+  const [dre, setDre] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [financeReportMode, setFinanceReportMode] = useState<
@@ -402,6 +404,7 @@ export default function Reports() {
         financeResult,
         stockResult,
         purchasesResult,
+        dreResult,
       ] = await Promise.all([
         getReports(appliedStart, appliedEnd),
         getFull<CashData>('cash').catch(() => null),
@@ -409,6 +412,7 @@ export default function Reports() {
         getFull<FinanceData>('finance').catch(() => null),
         getFull<StockData>('stock').catch(() => null),
         getFull<PurchasesData>('purchases').catch(() => null),
+        getManagerialDre(appliedStart, appliedEnd).catch(() => null),
       ]);
 
       setData(reportsResult);
@@ -417,6 +421,7 @@ export default function Reports() {
       setFinance(financeResult);
       setStock(stockResult);
       setPurchases(purchasesResult);
+      setDre(dreResult);
     } catch (e) {
       setError(
         e instanceof Error
@@ -836,8 +841,9 @@ export default function Reports() {
     if (detailMode === 'customers') return customerRanking;
     if (detailMode === 'purchases') return purchaseRows;
     if (detailMode === 'stock') return stockAlerts;
+    if (detailMode === 'dre') return dre?.rows || [];
     return [];
-  }, [detailMode, periodDays, cashClosings, productsAbc, paymentBreakdown, customerRanking, purchaseRows, stockAlerts]);
+  }, [detailMode, periodDays, cashClosings, productsAbc, paymentBreakdown, customerRanking, purchaseRows, stockAlerts, dre]);
 
   const selectableKeys = useMemo(
     () => selectableRows.map((row, index) => reportRowKey(detailMode, row, index)),
@@ -984,9 +990,24 @@ export default function Reports() {
       },
     },
     {
+      id: 'managerial-dre',
+      category: 'finance' as const,
+      group: 'Financeiro',
+      icon: 'layers' as const,
+      color: '#3568B8',
+      background: '#EEF4FC',
+      title: 'DRE gerencial',
+      description: 'Receitas, custos, despesas e resultado pelo regime de competência.',
+      value: money(dre?.rows?.find((row: any) => row.key === 'net_result')?.value || 0),
+      subtitle: Number(dre?.quality?.categories_to_review || 0) > 0
+        ? `${dre.quality.categories_to_review} categoria(s) para revisar`
+        : periodLabel,
+      onPress: () => setDetailMode('dre' as const),
+    },
+    {
       id: 'cash',
-      category: 'operation' as const,
-      group: 'Operação e estoque',
+      category: 'cash' as const,
+      group: 'Caixa',
       icon: 'briefcase' as const,
       color: '#66717D',
       background: '#F2F4F5',
@@ -1000,8 +1021,8 @@ export default function Reports() {
     },
     {
       id: 'purchases',
-      category: 'operation' as const,
-      group: 'Operação e estoque',
+      category: 'purchases' as const,
+      group: 'Compras',
       icon: 'shopping-cart' as const,
       color: '#B8862F',
       background: '#FBF3E0',
@@ -1013,8 +1034,8 @@ export default function Reports() {
     },
     {
       id: 'stock',
-      category: 'operation' as const,
-      group: 'Operação e estoque',
+      category: 'stock' as const,
+      group: 'Estoque',
       icon: 'archive' as const,
       color: '#C84E4E',
       background: '#FFF3F3',
@@ -1037,7 +1058,7 @@ export default function Reports() {
     return matchesCategory && matchesSearch;
   });
 
-  const reportGroups = ['Vendas e clientes', 'Financeiro', 'Operação e estoque']
+  const reportGroups = ['Vendas e clientes', 'Financeiro', 'Caixa', 'Compras', 'Estoque']
     .map((group) => ({
       group,
       reports: visibleReports.filter((report) => report.group === group),
@@ -1162,54 +1183,13 @@ export default function Reports() {
 
       {!!data && (
         <>
-          <View style={styles.executiveSection}>
-            <View>
-              <Text style={styles.catalogEyebrow}>RESUMO EXECUTIVO</Text>
-              <Text style={styles.executiveTitle}>Indicadores do período</Text>
-            </View>
-            <View style={styles.executiveGrid}>
-              <ExecutiveMetric
-                label="FATURAMENTO"
-                value={money(salesSummary.total)}
-                note={`${salesSummary.sales} venda(s)`}
-                icon="dollar-sign"
-                color="#25835A"
-                background="#EAF7F0"
-              />
-              <ExecutiveMetric
-                label="VENDAS"
-                value={String(salesSummary.sales)}
-                note="concluídas no período"
-                icon="shopping-bag"
-                color="#3568B8"
-                background="#EEF4FC"
-              />
-              <ExecutiveMetric
-                label="TICKET MÉDIO"
-                value={money(salesSummary.ticket)}
-                note="média por venda"
-                icon="trending-up"
-                color="#B8862F"
-                background="#FBF3E0"
-              />
-              <ExecutiveMetric
-                label="DESCONTOS"
-                value={money(data.summary?.discounts || 0)}
-                note="concedidos no período"
-                icon="percent"
-                color="#C84E4E"
-                background="#FFF3F3"
-              />
-            </View>
-          </View>
-
           <View style={styles.catalogPanel}>
             <View style={styles.catalogHeader}>
               <View style={styles.catalogIntro}>
                 <Text style={styles.catalogEyebrow}>CENTRAL DE RELATÓRIOS</Text>
-                <Text style={styles.catalogTitle}>Escolha a análise que deseja emitir</Text>
+                <Text style={styles.catalogTitle}>Qual relatório você precisa?</Text>
                 <Text style={styles.catalogSubtitle}>
-                  Consulte, imprima, salve em PDF ou exporte para Excel sem sair da análise.
+                  1. Escolha uma área · 2. Abra o relatório · 3. Selecione os itens e exporte.
                 </Text>
               </View>
               <View style={styles.catalogCount}>
@@ -1233,7 +1213,9 @@ export default function Reports() {
                 <CatalogFilter label="Todos" active={reportCategory === 'all'} onPress={() => setReportCategory('all')} />
                 <CatalogFilter label="Vendas" active={reportCategory === 'sales'} onPress={() => setReportCategory('sales')} />
                 <CatalogFilter label="Financeiro" active={reportCategory === 'finance'} onPress={() => setReportCategory('finance')} />
-                <CatalogFilter label="Operação" active={reportCategory === 'operation'} onPress={() => setReportCategory('operation')} />
+                <CatalogFilter label="Caixa" active={reportCategory === 'cash'} onPress={() => setReportCategory('cash')} />
+                <CatalogFilter label="Compras" active={reportCategory === 'purchases'} onPress={() => setReportCategory('purchases')} />
+                <CatalogFilter label="Estoque" active={reportCategory === 'stock'} onPress={() => setReportCategory('stock')} />
               </View>
             </View>
           </View>
@@ -2185,6 +2167,74 @@ export default function Reports() {
       </Modal>
 
       <Modal
+        visible={detailMode === 'dre'}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDetailMode(null)}
+      >
+        <View style={styles.backdrop}>
+          <View style={styles.modal}>
+            <ModalHeader
+              title="DRE gerencial"
+              subtitle={`${periodLabel} • regime de competência`}
+              onClose={() => setDetailMode(null)}
+              onPrint={() => printReport(
+                'DRE gerencial',
+                `${periodLabel} • regime de competência`,
+                ['Linha', 'Valor'],
+                selectedReportRows.map((row) => [row.label, money(row.value)])
+              )}
+              onExcel={() => downloadCsv(
+                `dre_gerencial_${appliedStart}_${appliedEnd}.csv`,
+                ['Linha', 'Valor'],
+                selectedReportRows.map((row) => [row.label, row.value])
+              )}
+            />
+
+            <ReportSelectionBar
+              selected={selectedReportRows.length}
+              total={(dre?.rows || []).length}
+              onSelectAll={() => selectAllReportRows(true)}
+              onClear={() => selectAllReportRows(false)}
+            />
+
+            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalBody}>
+              {(Number(dre?.quality?.categories_to_review || 0) > 0 || Number(dre?.quality?.unmapped_entries || 0) > 0) && (
+                <View style={styles.dreNotice}>
+                  <Feather name="alert-circle" size={18} color="#9A6A12" />
+                  <View style={styles.dayMain}>
+                    <Text style={styles.dreNoticeTitle}>Revise a base antes de usar o resultado como definitivo</Text>
+                    <Text style={styles.dreNoticeText}>
+                      {Number(dre?.quality?.categories_to_review || 0)} categoria(s) ainda usam classificação automática e {Number(dre?.quality?.unmapped_entries || 0)} lançamento(s) estão sem categoria mapeada.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.dreTable}>
+                {(dre?.rows || []).map((row: any, index: number) => (
+                  <View key={row.key} style={[styles.dreRow, ['subtotal', 'result'].includes(row.kind) && styles.dreRowStrong]}>
+                    <ReportCheckbox selected={!!reportSelected[reportRowKey('dre', row, index)]} onPress={() => toggleReportSelection(row, index)} />
+                    <Text style={[styles.dreLabel, ['subtotal', 'result'].includes(row.kind) && styles.dreLabelStrong]}>{row.label}</Text>
+                    <Text style={[
+                      styles.dreValue,
+                      Number(row.value) < 0 && styles.danger,
+                      row.kind === 'result' && Number(row.value) >= 0 && styles.success,
+                    ]}>{money(row.value)}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.dreMethod}>
+                <Text style={styles.dreMethodTitle}>Critério do relatório</Text>
+                {(dre?.notes || []).map((note: string) => <Text key={note} style={styles.dreMethodText}>• {note}</Text>)}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={detailMode === 'purchases'}
         transparent
         animationType="fade"
@@ -2442,8 +2492,6 @@ function ReportCard({
   background,
   title,
   description,
-  value,
-  subtitle,
   onPress,
 }: {
   icon: keyof typeof Feather.glyphMap;
@@ -2470,14 +2518,10 @@ function ReportCard({
           {title}
         </Text>
         <Text style={styles.reportDescription} numberOfLines={2}>{description}</Text>
-        <View style={styles.reportPreview}>
-          <Text style={styles.reportValue} numberOfLines={1}>{value}</Text>
-          <Text style={styles.reportSubtitle} numberOfLines={1}>{subtitle}</Text>
+        <View style={styles.reportAction}>
+          <Text style={[styles.reportActionText, { color }]}>Visualizar relatório</Text>
+          <Feather name="arrow-right" size={15} color={color} />
         </View>
-      </View>
-
-      <View style={[styles.cardArrow, { backgroundColor: background }]}>
-        <Feather name="chevron-right" size={18} color={color} />
       </View>
     </Pressable>
   );
@@ -2900,15 +2944,15 @@ const styles = StyleSheet.create({
 
   periodEyebrow: {
     color: theme.colors.muted,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.7,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11.5,
+    letterSpacing: 0.35,
   },
 
   periodTitle: {
     color: theme.colors.text,
-    fontFamily: 'Sora_700Bold',
-    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
     marginTop: 2,
   },
 
@@ -3031,24 +3075,24 @@ const styles = StyleSheet.create({
   },
 
   catalogEyebrow: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11.5,
+    letterSpacing: 0.5,
     color: theme.colors.muted,
   },
 
   catalogTitle: {
     marginTop: 3,
     fontFamily: 'Sora_700Bold',
-    fontSize: 18,
+    fontSize: 19,
     color: theme.colors.text,
   },
 
   catalogSubtitle: {
     marginTop: 5,
     maxWidth: 720,
-    fontSize: 11.5,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     color: theme.colors.muted,
   },
 
@@ -3097,7 +3141,7 @@ const styles = StyleSheet.create({
 
   executiveLabel: {
     color: theme.colors.muted,
-    fontSize: 9,
+    fontSize: 11.5,
     fontWeight: '900',
     letterSpacing: 0.55,
   },
@@ -3111,7 +3155,7 @@ const styles = StyleSheet.create({
 
   executiveNote: {
     color: theme.colors.muted,
-    fontSize: 9.5,
+    fontSize: 11.5,
     marginTop: 1,
   },
 
@@ -3144,8 +3188,8 @@ const styles = StyleSheet.create({
 
   catalogCountText: {
     color: theme.colors.muted,
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
   },
 
   catalogTools: {
@@ -3171,7 +3215,7 @@ const styles = StyleSheet.create({
   searchInput: {
     color: theme.colors.text,
     flex: 1,
-    fontSize: 12.5,
+    fontSize: 14,
     height: 40,
     outlineStyle: 'none',
   } as any,
@@ -3198,8 +3242,8 @@ const styles = StyleSheet.create({
 
   catalogFilterText: {
     color: theme.colors.text,
-    fontSize: 11,
-    fontWeight: '800',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12.5,
   },
 
   catalogFilterTextActive: {
@@ -3226,8 +3270,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#ECEAE5',
     borderRadius: 999,
     color: theme.colors.muted,
-    fontSize: 9.5,
-    fontWeight: '900',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
     overflow: 'hidden',
     paddingHorizontal: 7,
     paddingVertical: 2,
@@ -3248,7 +3292,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 14,
-    minHeight: 108,
+    minHeight: 102,
     overflow: 'hidden',
     paddingHorizontal: 13,
     paddingVertical: 12,
@@ -3287,15 +3331,15 @@ const styles = StyleSheet.create({
   },
 
   reportTitle: {
-    fontSize: 14,
-    fontWeight: '900',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
     color: theme.colors.text,
   },
 
   reportDescription: {
     color: theme.colors.muted,
-    fontSize: 10.5,
-    lineHeight: 15,
+    fontSize: 12.5,
+    lineHeight: 18,
     marginTop: 3,
   },
 
@@ -3316,8 +3360,20 @@ const styles = StyleSheet.create({
 
   reportSubtitle: {
     flex: 1,
-    fontSize: 9.5,
+    fontSize: 11.5,
     color: theme.colors.muted,
+  },
+
+  reportAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 5,
+    marginTop: 8,
+  },
+
+  reportActionText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12.5,
   },
 
   cardArrow: {
@@ -3458,6 +3514,95 @@ const styles = StyleSheet.create({
 
   danger: {
     color: theme.colors.danger,
+  },
+
+  success: {
+    color: theme.colors.success,
+  },
+
+  dreNotice: {
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF8E8',
+    borderColor: '#E8D3A4',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    padding: 13,
+  },
+
+  dreNoticeTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+
+  dreNoticeText: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+
+  dreTable: {
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+
+  dreRow: {
+    alignItems: 'center',
+    borderTopColor: theme.colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 48,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+
+  dreRowStrong: {
+    backgroundColor: '#F3F6F8',
+  },
+
+  dreLabel: {
+    color: theme.colors.text,
+    flex: 1,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13.5,
+  },
+
+  dreLabelStrong: {
+    fontFamily: 'Inter_700Bold',
+  },
+
+  dreValue: {
+    color: theme.colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    textAlign: 'right',
+  },
+
+  dreMethod: {
+    backgroundColor: '#F7F8F9',
+    borderRadius: 12,
+    gap: 5,
+    padding: 13,
+  },
+
+  dreMethodTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+
+  dreMethodText: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   detailSection: {

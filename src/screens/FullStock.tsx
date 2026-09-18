@@ -547,7 +547,7 @@ const stockStyles = StyleSheet.create({
     borderColor: '#F1CDCD',
   },
   metricLabel: {
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.7,
     color: theme.colors.muted,
@@ -563,7 +563,7 @@ const stockStyles = StyleSheet.create({
   },
   metricNote: {
     marginTop: 1,
-    fontSize: 10,
+    fontSize: 11.5,
     color: theme.colors.muted,
   },
   searchPanel: {
@@ -628,7 +628,7 @@ const stockStyles = StyleSheet.create({
   },
   productMeta: {
     marginTop: 2,
-    fontSize: 10,
+    fontSize: 11.5,
     color: theme.colors.muted,
   },
   balanceColumn: {
@@ -646,7 +646,7 @@ const stockStyles = StyleSheet.create({
     paddingHorizontal: 7,
     borderRadius: 10,
     overflow: 'hidden',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
     color: theme.colors.success,
     backgroundColor: '#EAF7EF',
@@ -664,7 +664,7 @@ const stockStyles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   miniActionText: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '900',
     color: theme.colors.text,
   },
@@ -705,7 +705,7 @@ const stockStyles = StyleSheet.create({
   },
   compactMeta: {
     marginTop: 2,
-    fontSize: 10,
+    fontSize: 11.5,
     color: theme.colors.muted,
   },
   compactRight: {
@@ -727,7 +727,7 @@ const stockStyles = StyleSheet.create({
     marginBottom: 12,
   },
   valuationEyebrow: {
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.8,
     color: theme.colors.muted,
@@ -753,7 +753,7 @@ const stockStyles = StyleSheet.create({
     backgroundColor: '#DED7C7',
   },
   valuationLabel: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '800',
     color: theme.colors.muted,
   },

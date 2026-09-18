@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -283,6 +284,7 @@ export default function Statistics() {
 
   const [periodError, setPeriodError] = useState('');
   const [periodNotice, setPeriodNotice] = useState('');
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
 
   async function load() {
     try {
@@ -825,7 +827,7 @@ export default function Statistics() {
         'Informe as datas no formato DD/MM/AAAA.'
       );
       setPeriodNotice('');
-      return;
+      return false;
     }
 
     if (start > end) {
@@ -833,7 +835,7 @@ export default function Statistics() {
         'A data inicial não pode ser posterior à data final.'
       );
       setPeriodNotice('');
-      return;
+      return false;
     }
 
     if (end > todayIso) {
@@ -841,7 +843,7 @@ export default function Statistics() {
         'A data final não pode ser posterior a hoje.'
       );
       setPeriodNotice('');
-      return;
+      return false;
     }
 
     setPeriodStart(start);
@@ -850,6 +852,7 @@ export default function Statistics() {
     setPeriodNotice(
       `Período aplicado: ${isoToBR(start)} a ${isoToBR(end)}`
     );
+    return true;
   }
 
   function setQuickPeriod(days: number) {
@@ -958,147 +961,105 @@ export default function Statistics() {
           </View>
         </View>
 
-        <View style={styles.tabs}>
-        <TabButton
-          label="Dia"
-          icon="sun"
-          active={tab === 'day'}
-          onPress={() => setTab('day')}
-        />
-
-        <TabButton
-          label="Mês"
-          icon="calendar"
-          active={tab === 'month'}
-          onPress={() => setTab('month')}
-        />
-
-        <TabButton
-          label="Ano"
-          icon="bar-chart-2"
-          active={tab === 'year'}
-          onPress={() => setTab('year')}
-        />
-
-        <TabButton
-          label="Período"
-          icon="sliders"
-          active={tab === 'period'}
-          onPress={() => setTab('period')}
-        />
-        </View>
-
-        {tab === 'period' && (
-          <View style={styles.customPeriodCard}>
-          <Text style={styles.customPeriodTitle}>
-            Escolha o período
-          </Text>
-
-          <View style={styles.quickFilters}>
-            <QuickButton
-              label="Hoje"
-              onPress={() => setQuickPeriod(1)}
-            />
-
-            <QuickButton
-              label="7 dias"
-              onPress={() => setQuickPeriod(7)}
-            />
-
-            <QuickButton
-              label="30 dias"
-              onPress={() => setQuickPeriod(30)}
-            />
-
-            <QuickButton
-              label="Mês atual"
-              onPress={currentMonthPeriod}
-            />
-          </View>
-
-          <View style={styles.dateFields}>
-            <View style={styles.dateField}>
-              <DateField label="Data inicial" value={periodStartInput} onChangeText={(value) => {
-                setPeriodStartInput(value);
-                setPeriodError('');
-                setPeriodNotice('');
-              }} />
-            </View>
-
-            <View style={styles.dateField}>
-              <DateField label="Data final" value={periodEndInput} onChangeText={(value) => {
-                setPeriodEndInput(value);
-                setPeriodError('');
-                setPeriodNotice('');
-              }} />
-            </View>
-          </View>
-
-          {!!periodError && (
-            <Text style={styles.periodError}>
-              {periodError}
-            </Text>
+        <View style={styles.periodToolbar}>
+          {tab !== 'period' && (
+            <Pressable style={styles.arrowButton} onPress={previous} accessibilityLabel="Período anterior">
+              <Feather name="chevron-left" size={18} color={theme.colors.text} />
+            </Pressable>
           )}
 
-          <Pressable
-            style={styles.applyButton}
-            onPress={applyPeriod}
-          >
-            <Text style={styles.applyButtonText}>
-              Ver estatísticas
-            </Text>
-          </Pressable>
-
-          {!!periodNotice && (
-            <Text style={styles.periodNotice}>
-              {periodNotice}
-            </Text>
-          )}
+          <View style={styles.periodMain}>
+            <Text style={styles.periodCaption}>PERÍODO SELECIONADO</Text>
+            <Text style={styles.periodTitle}>{view.title}</Text>
+            <Text style={styles.periodSubtitle}>{view.subtitle}</Text>
           </View>
-        )}
 
-        <View style={styles.periodCard}>
-        {tab !== 'period' ? (
-          <Pressable
-            style={styles.arrowButton}
-            onPress={previous}
-          >
-            <Text style={styles.arrowText}>‹</Text>
-          </Pressable>
-        ) : (
-          <View style={styles.arrowSpacer} />
-        )}
-
-        <View style={styles.periodMain}>
-          <Text style={styles.periodTitle}>{view.title}</Text>
-          <Text style={styles.periodSubtitle}>
-            {view.subtitle}
-          </Text>
-        </View>
-
-        {tab !== 'period' ? (
-          <Pressable
-            disabled={!canGoNext}
-            style={[
-              styles.arrowButton,
-              !canGoNext && styles.arrowButtonDisabled,
-            ]}
-            onPress={next}
-          >
-            <Text
-              style={[
-                styles.arrowText,
-                !canGoNext && styles.arrowTextDisabled,
-              ]}
+          {tab !== 'period' && (
+            <Pressable
+              disabled={!canGoNext}
+              style={[styles.arrowButton, !canGoNext && styles.arrowButtonDisabled]}
+              onPress={next}
+              accessibilityLabel="Próximo período"
             >
-              ›
-            </Text>
+              <Feather name="chevron-right" size={18} color={canGoNext ? theme.colors.text : '#B7BDC4'} />
+            </Pressable>
+          )}
+
+          <Pressable style={styles.periodPickerButton} onPress={() => setPeriodPickerOpen(true)}>
+            <Feather name="calendar" size={16} color="#3568B8" />
+            <Text style={styles.periodPickerButtonText}>Alterar período</Text>
           </Pressable>
-        ) : (
-          <View style={styles.arrowSpacer} />
-        )}
         </View>
       </View>
+
+      <Modal
+        visible={periodPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPeriodPickerOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.periodModal}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Selecionar período</Text>
+                <Text style={styles.modalSubtitle}>Escolha como deseja analisar e comparar os resultados.</Text>
+              </View>
+              <Pressable style={styles.modalClose} onPress={() => setPeriodPickerOpen(false)} accessibilityLabel="Fechar">
+                <Feather name="x" size={21} color={theme.colors.muted} />
+              </Pressable>
+            </View>
+
+            <View style={styles.tabs}>
+              <TabButton label="Dia" icon="sun" active={tab === 'day'} onPress={() => setTab('day')} />
+              <TabButton label="Mês" icon="calendar" active={tab === 'month'} onPress={() => setTab('month')} />
+              <TabButton label="Ano" icon="bar-chart-2" active={tab === 'year'} onPress={() => setTab('year')} />
+              <TabButton label="Personalizado" icon="sliders" active={tab === 'period'} onPress={() => setTab('period')} />
+            </View>
+
+            <View style={styles.quickFilters}>
+              <QuickButton label="Hoje" onPress={() => { setTab('period'); setQuickPeriod(1); }} />
+              <QuickButton label="7 dias" onPress={() => { setTab('period'); setQuickPeriod(7); }} />
+              <QuickButton label="30 dias" onPress={() => { setTab('period'); setQuickPeriod(30); }} />
+              <QuickButton label="Mês atual" onPress={() => { setTab('period'); currentMonthPeriod(); }} />
+            </View>
+
+            {tab === 'period' && (
+              <View style={styles.customPeriodCard}>
+                <View style={styles.dateFields}>
+                  <View style={styles.dateField}>
+                    <DateField label="Data inicial" value={periodStartInput} onChangeText={(value) => {
+                      setPeriodStartInput(value);
+                      setPeriodError('');
+                      setPeriodNotice('');
+                    }} />
+                  </View>
+                  <View style={styles.dateField}>
+                    <DateField label="Data final" value={periodEndInput} onChangeText={(value) => {
+                      setPeriodEndInput(value);
+                      setPeriodError('');
+                      setPeriodNotice('');
+                    }} />
+                  </View>
+                </View>
+                {!!periodError && <Text style={styles.periodError}>{periodError}</Text>}
+                {!!periodNotice && <Text style={styles.periodNotice}>{periodNotice}</Text>}
+              </View>
+            )}
+
+            <View style={styles.modalFooter}>
+              <Pressable style={styles.cancelButton} onPress={() => setPeriodPickerOpen(false)}>
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </Pressable>
+              <Pressable style={styles.applyButton} onPress={() => {
+                if (tab !== 'period' || applyPeriod()) setPeriodPickerOpen(false);
+              }}>
+                <Text style={styles.applyButtonText}>Aplicar período</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.metricsGrid}>
         <PerformanceMetric
@@ -1269,7 +1230,7 @@ export default function Statistics() {
           <View style={styles.detailHeader}>
             <View style={styles.sectionTitleGroup}>
               <View style={styles.sectionIcon}>
-                <Feather name="list" size={15} color={c.gold} />
+                <Feather name="list" size={15} color="#3568B8" />
               </View>
               <View>
                 <Text style={styles.detailTitle}>Ranking do período</Text>
@@ -1381,7 +1342,7 @@ export default function Statistics() {
             <View style={styles.insightCard}>
               <View style={styles.insightHeader}>
                 <View style={[styles.insightIcon, styles.productIcon]}>
-                  <Feather name="package" size={16} color="#8A6520" />
+                  <Feather name="package" size={16} color="#6A70A8" />
                 </View>
                 <View>
                   <Text style={styles.detailTitle}>Produtos mais vendidos</Text>
@@ -1475,7 +1436,7 @@ function HighlightItem({
   return (
     <View style={styles.highlightItem}>
       <View style={styles.highlightIcon}>
-        <Feather name={icon} size={15} color={c.gold} />
+        <Feather name={icon} size={15} color="#3568B8" />
       </View>
       <View style={styles.highlightContent}>
         <Text style={styles.highlightLabel}>{label}</Text>
@@ -1615,16 +1576,16 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   analysisEyebrow: {
-    color: c.gold,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.2,
+    color: '#3568B8',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11.5,
+    letterSpacing: 0.5,
   },
 
   analysisTitle: {
     color: theme.colors.text,
-    fontSize: 17,
-    fontWeight: '900',
+    fontFamily: 'Sora_700Bold',
+    fontSize: 18,
     marginTop: 2,
   },
 
@@ -1647,13 +1608,117 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   analysisStatusText: {
     color: theme.colors.muted,
-    fontSize: 10,
-    fontWeight: '800',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+
+  periodToolbar: {
+    alignItems: 'center',
+    backgroundColor: '#FAFBFC',
+    borderColor: '#E4E7EB',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    padding: 10,
+  },
+
+  periodCaption: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    letterSpacing: 0.35,
+  },
+
+  periodPickerButton: {
+    alignItems: 'center',
+    backgroundColor: '#EEF4FC',
+    borderRadius: 9,
+    flexDirection: 'row',
+    gap: 7,
+    minHeight: 38,
+    paddingHorizontal: 12,
+  },
+
+  periodPickerButtonText: {
+    color: '#284F7A',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+
+  modalBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.52)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 18,
+  },
+
+  periodModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    gap: 14,
+    maxWidth: 680,
+    padding: 18,
+    width: '100%',
+  },
+
+  modalHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+
+  modalTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 20,
+  },
+
+  modalSubtitle: {
+    color: theme.colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+
+  modalClose: {
+    alignItems: 'center',
+    borderRadius: 9,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+
+  modalFooter: {
+    alignItems: 'center',
+    borderTopColor: theme.colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 9,
+    justifyContent: 'flex-end',
+    paddingTop: 14,
+  },
+
+  cancelButton: {
+    borderColor: theme.colors.border,
+    borderRadius: 9,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+
+  cancelButtonText: {
+    color: theme.colors.text,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
   },
 
   tabs: {
     flexDirection: 'row',
-    backgroundColor: '#F2F1ED',
+    backgroundColor: '#F2F4F6',
     borderRadius: 12,
     padding: 4,
     gap: 4,
@@ -1661,7 +1726,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   tabButton: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 40,
     borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1675,8 +1740,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   tabText: {
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
-    fontWeight: '900',
     color: theme.colors.muted,
   },
 
@@ -1692,8 +1757,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   customPeriodTitle: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 16,
-    fontWeight: '900',
     color: theme.colors.text,
   },
 
@@ -1715,8 +1780,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   quickButtonText: {
-    fontSize: 12,
-    fontWeight: '900',
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
     color: theme.colors.text,
   },
 
@@ -1771,8 +1836,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   applyButtonText: {
     color: '#FFFFFF',
+    fontFamily: 'Inter_700Bold',
     fontSize: 13,
-    fontWeight: '900',
   },
 
   periodCard: {
@@ -1816,22 +1881,20 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   periodMain: {
     flex: 1,
-    alignItems: 'center',
+    minWidth: 190,
   },
 
   periodTitle: {
-    fontSize: 17,
-    fontWeight: '900',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 16,
     color: theme.colors.text,
     textTransform: 'capitalize',
-    textAlign: 'center',
   },
 
   periodSubtitle: {
     marginTop: 2,
-    fontSize: 11,
+    fontSize: 12.5,
     color: theme.colors.muted,
-    textAlign: 'center',
   },
 
   metricsGrid: {
@@ -1867,24 +1930,22 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   metricLabel: {
     color: theme.colors.muted,
-    fontSize: 11,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 0.45,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    letterSpacing: 0.2,
   },
 
   metricValue: {
     color: theme.colors.text,
-    fontSize: 24,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 22,
     lineHeight: 30,
-    fontWeight: '900',
     marginTop: 12,
   },
 
   metricHelper: {
     color: theme.colors.muted,
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 12,
     marginTop: 8,
   },
 
@@ -1925,23 +1986,22 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   highlightLabel: {
     color: theme.colors.muted,
-    fontSize: 9,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11.5,
+    letterSpacing: 0.2,
   },
 
   highlightValue: {
     color: theme.colors.text,
+    fontFamily: 'Inter_700Bold',
     fontSize: 14,
-    fontWeight: '900',
     marginTop: 2,
     textTransform: 'capitalize',
   },
 
   highlightDetail: {
     color: theme.colors.muted,
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 2,
   },
 
@@ -2088,7 +2148,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   bestBadgeLabel: {
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
     color: theme.colors.muted,
     textTransform: 'uppercase',
@@ -2125,13 +2185,12 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 3,
-    backgroundColor: c.gold,
+    backgroundColor: '#244D70',
   },
 
   legendText: {
     color: theme.colors.muted,
-    fontSize: 10,
-    fontWeight: '700',
+    fontSize: 12,
   },
 
   chartScrollContent: {
@@ -2179,8 +2238,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     width: 54,
     height: 16,
     color: theme.colors.muted,
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 10.5,
+    fontFamily: 'Inter_600SemiBold',
     textAlign: 'center',
     marginBottom: 4,
   },
@@ -2201,14 +2260,14 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   barFillHighlight: {
-    backgroundColor: c.gold,
+    backgroundColor: '#244D70',
   },
 
   barLabel: {
     width: 50,
     marginTop: 7,
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
     color: theme.colors.muted,
     textAlign: 'center',
   },
@@ -2259,25 +2318,25 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: '#F7F2E6',
+    backgroundColor: '#EEF4FC',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   sectionSubtitle: {
     color: theme.colors.muted,
-    fontSize: 10,
+    fontSize: 11.5,
     marginTop: 2,
   },
 
   detailTitle: {
     fontSize: 17,
-    fontWeight: '900',
+    fontFamily: 'Sora_700Bold',
     color: theme.colors.text,
   },
 
   detailHeaderMeta: {
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '800',
     color: theme.colors.muted,
   },
@@ -2343,7 +2402,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   rankingFill: {
     height: '100%',
     borderRadius: 2,
-    backgroundColor: c.gold,
+    backgroundColor: '#3568B8',
   },
 
   detailAmount: {
@@ -2366,10 +2425,10 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   contentSectionEyebrow: {
-    color: c.gold,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
+    color: '#3568B8',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11.5,
+    letterSpacing: 0.45,
   },
 
   contentSectionTitle: {
@@ -2381,7 +2440,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   contentSectionPeriod: {
     color: theme.colors.muted,
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '700',
     textTransform: 'capitalize',
   },
@@ -2424,7 +2483,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   productIcon: {
-    backgroundColor: '#FBF3DF',
+    backgroundColor: '#F0F1FA',
   },
 
   insightSubtitle: {
@@ -2444,7 +2503,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   productRankText: {
     color: '#8A6520',
-    fontSize: 10,
+    fontSize: 11.5,
     fontWeight: '900',
   },
 
@@ -2482,7 +2541,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   paymentFill: {
-    backgroundColor: c.gold,
+    backgroundColor: '#3568B8',
     borderRadius: 4,
     height: '100%',
   },

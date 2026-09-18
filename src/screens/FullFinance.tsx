@@ -800,8 +800,13 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           {view !== 'all' && (
             <View style={monthlyStyles.periodBar}>
               <View>
-                <Text style={monthlyStyles.periodCaption}>PERÍODO DOS LANÇAMENTOS</Text>
+                <Text style={monthlyStyles.periodCaption}>
+                  {listStatus === 'settled'
+                    ? view === 'payable' ? 'PERÍODO DOS PAGAMENTOS' : 'PERÍODO DOS RECEBIMENTOS'
+                    : 'PERÍODO DOS VENCIMENTOS'}
+                </Text>
                 <Text style={monthlyStyles.periodTitle}>{monthLabel(listMonth)}</Text>
+                <Text style={monthlyStyles.periodHint}>Use as setas para selecionar o mês desejado.</Text>
               </View>
               <View style={monthlyStyles.periodActions}>
                 <Pressable style={monthlyStyles.monthArrow} onPress={() => setListMonth((value) => shiftMonth(value, -1))}>
@@ -834,7 +839,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                 style={[monthlyStyles.statusTab, listStatus === 'settled' && monthlyStyles.statusTabActive]}
               >
                 <Text style={[monthlyStyles.statusTabText, listStatus === 'settled' && monthlyStyles.statusTabTextActive]}>
-                  {view === 'payable' ? 'Pagas no período' : 'Recebidas no período'}
+                  {view === 'payable' ? `Pagas em ${monthLabel(listMonth)}` : `Recebidas em ${monthLabel(listMonth)}`}
                 </Text>
               </Pressable>
             </View>
@@ -1822,9 +1827,9 @@ const monthlyStyles = StyleSheet.create({
   },
   compactMetricDot: { borderRadius: 5, height: 9, width: 9 },
   compactMetricContent: { flex: 1 },
-  compactMetricLabel: { color: theme.colors.muted, fontSize: 9.5, fontWeight: '900', textTransform: 'uppercase' },
+  compactMetricLabel: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11.5, textTransform: 'uppercase' },
   compactMetricValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 2 },
-  compactMetricNote: { color: theme.colors.muted, fontSize: 9.5, marginTop: 2 },
+  compactMetricNote: { color: theme.colors.muted, fontFamily: 'Inter_400Regular', fontSize: 11.5, marginTop: 2 },
   entriesCard: {
     backgroundColor: '#FFFFFF',
     borderColor: theme.colors.border,
@@ -1858,7 +1863,7 @@ const monthlyStyles = StyleSheet.create({
     backgroundColor: '#EAF7EF',
     borderRadius: 9,
     color: theme.colors.success,
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
     overflow: 'hidden',
     paddingHorizontal: 7,
@@ -1879,9 +1884,9 @@ const monthlyStyles = StyleSheet.create({
   },
   periodCaption: {
     color: theme.colors.muted,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.7,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11.5,
+    letterSpacing: 0.35,
   },
   periodTitle: {
     color: theme.colors.text,
@@ -1889,6 +1894,7 @@ const monthlyStyles = StyleSheet.create({
     fontSize: 16,
     marginTop: 3,
   },
+  periodHint: { color: theme.colors.muted, fontSize: 12.5, marginTop: 3 },
   periodActions: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1904,7 +1910,7 @@ const monthlyStyles = StyleSheet.create({
   },
   statusTab: { borderRadius: 8, paddingHorizontal: 15, paddingVertical: 9 },
   statusTabActive: { backgroundColor: theme.colors.black },
-  statusTabText: { color: theme.colors.muted, fontSize: 12, fontWeight: '800' },
+  statusTabText: { color: theme.colors.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   statusTabTextActive: { color: '#FFFFFF' },
   backdrop: {
     flex: 1,

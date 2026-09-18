@@ -22,11 +22,11 @@ const money = (value: number) =>
 
 const flowColors = {
   realizedIn: '#25835A',
-  forecastIn: '#8CCFB0',
+  forecastIn: '#9BBEAA',
   realizedOut: '#C84E4E',
-  forecastOut: '#E8A2A5',
+  forecastOut: '#C9CFD6',
   balance: '#3568B8',
-  category: '#B8862F',
+  category: '#3F6F8F',
 };
 
 const isoFromDate = (date: Date) => {
@@ -707,7 +707,7 @@ const styles = StyleSheet.create({
   sectionEyebrow: {
     color: theme.colors.muted,
     fontFamily: 'Inter_700Bold',
-    fontSize: 10,
+    fontSize: 11.5,
     letterSpacing: 1.1,
   },
   filterTitle: {
@@ -814,7 +814,7 @@ const styles = StyleSheet.create({
   metricIcon: { alignItems: 'center', borderRadius: 8, height: 30, justifyContent: 'center', width: 30 },
   metricLabel: { color: theme.colors.muted, fontSize: 10.5, fontWeight: '800', marginTop: 8 },
   metricValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 3 },
-  metricNote: { color: '#929292', fontSize: 9.5, marginTop: 3 },
+  metricNote: { color: theme.colors.muted, fontFamily: 'Inter_400Regular', fontSize: 11.5, marginTop: 3 },
 
   riskBanner: {
     alignItems: 'center',
@@ -857,7 +857,7 @@ const styles = StyleSheet.create({
   chartColumn: { alignItems: 'center', flex: 1, height: 130, justifyContent: 'flex-end', minWidth: 16 },
   bars: { alignItems: 'flex-end', flexDirection: 'row', gap: 3, height: 106 },
   chartBarStack: { borderRadius: 4, justifyContent: 'flex-end', minWidth: 5, overflow: 'hidden', width: 9 },
-  chartDate: { color: '#8B8B8B', fontSize: 9.5, height: 16, marginTop: 5 },
+  chartDate: { color: theme.colors.muted, fontFamily: 'Inter_600SemiBold', fontSize: 11, height: 18, marginTop: 5 },
   chartSummary: { borderTopColor: '#EEECE7', borderTopWidth: 1, flexDirection: 'row', gap: 8, paddingTop: 12 },
   chartSummaryText: { color: theme.colors.muted, fontSize: 11.5, fontWeight: '700' },
   chartSummaryDivider: { color: '#C2C0BA', fontSize: 11 },
@@ -883,7 +883,7 @@ const styles = StyleSheet.create({
   periodPill: { alignItems: 'center', backgroundColor: '#F3F2EE', borderRadius: 16, flexDirection: 'row', gap: 5, paddingHorizontal: 10, paddingVertical: 6 },
   periodPillText: { color: theme.colors.muted, fontSize: 11, fontWeight: '800' },
   tableHeader: { backgroundColor: '#F7F6F3', borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10 },
-  tableHeadText: { color: '#858585', fontSize: 9.5, fontWeight: '900', letterSpacing: 0.4 },
+  tableHeadText: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.3 },
   tableGroup: { borderBottomColor: '#ECEAE5', borderBottomWidth: 1 },
   todayGroup: { borderLeftColor: '#C9A548', borderLeftWidth: 3 },
   tableRow: { alignItems: 'center', flexDirection: 'row', minHeight: 68, paddingHorizontal: 16, paddingVertical: 10 },
@@ -895,7 +895,7 @@ const styles = StyleSheet.create({
   expandColumn: { alignItems: 'flex-end', justifyContent: 'center', width: 32 },
   tableDate: { color: theme.colors.text, fontSize: 13, fontWeight: '900' },
   rowMetaLine: { alignItems: 'center', flexDirection: 'row', gap: 7, marginTop: 4 },
-  todayBadge: { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  todayBadge: { fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.3 },
   itemCount: { color: theme.colors.muted, fontSize: 10.5 },
   tableValue: { color: theme.colors.text, fontSize: 12.5, fontWeight: '800' },
   inValue: { color: theme.colors.success },
@@ -904,7 +904,7 @@ const styles = StyleSheet.create({
   balanceValue: { color: theme.colors.text, fontWeight: '900' },
   mobileValues: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, width: '100%' },
   mobileValue: { flex: 1, minWidth: 90 },
-  mobileValueLabel: { color: theme.colors.muted, fontSize: 9.5, fontWeight: '700', marginBottom: 3, textTransform: 'uppercase' },
+  mobileValueLabel: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 3, textTransform: 'uppercase' },
   itemList: { backgroundColor: '#FAF9F6', borderTopColor: '#ECEAE5', borderTopWidth: 1, paddingHorizontal: 18 },
   itemRow: { alignItems: 'center', borderBottomColor: '#EEECE8', borderBottomWidth: 1, flexDirection: 'row', gap: 11, paddingVertical: 11 },
   itemRowMobile: { alignItems: 'flex-start' },
@@ -915,7 +915,7 @@ const styles = StyleSheet.create({
   itemLabel: { color: theme.colors.text, fontSize: 12.5, fontWeight: '700' },
   itemMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 4 },
   itemCategory: { color: theme.colors.muted, fontSize: 10.5 },
-  statusBadge: { borderRadius: 8, fontSize: 8.5, fontWeight: '900', overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 3 },
+  statusBadge: { borderRadius: 8, fontFamily: 'Inter_700Bold', fontSize: 11, overflow: 'hidden', paddingHorizontal: 7, paddingVertical: 3 },
   statusRealized: { backgroundColor: '#E8F4EC', color: theme.colors.success },
   statusForecast: { backgroundColor: '#ECEFF2', color: '#596B78' },
   itemAmount: { fontSize: 12.5, fontWeight: '900' },

@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   chevron: {
-    fontSize: 10,
+    fontSize: 11.5,
     color: theme.colors.muted,
   },
   dropdown: {
