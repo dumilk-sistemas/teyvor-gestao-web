@@ -10,7 +10,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
-import { DateField } from '@/components/FormKit';
+import { DateField, SearchablePicker } from '@/components/FormKit';
 import { theme, useThemeColors } from '@/constants/theme';
 import { getReports } from '@/services/api';
 import { getFull } from '@/services/fullApi';
@@ -285,6 +285,7 @@ export default function Statistics() {
   const [periodError, setPeriodError] = useState('');
   const [periodNotice, setPeriodNotice] = useState('');
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+  const [periodChoice, setPeriodChoice] = useState('day');
 
   async function load() {
     try {
@@ -891,6 +892,46 @@ export default function Statistics() {
     );
   }
 
+  function choosePeriod(value: string) {
+    setPeriodChoice(value);
+    setPeriodError('');
+    setPeriodNotice('');
+
+    if (value === 'today') {
+      setTab('day');
+      setDayCursor(new Date());
+      return;
+    }
+    if (value === '7days') {
+      setTab('period');
+      setQuickPeriod(7);
+      return;
+    }
+    if (value === '30days') {
+      setTab('period');
+      setQuickPeriod(30);
+      return;
+    }
+    if (value === 'current_month') {
+      setTab('period');
+      currentMonthPeriod();
+      return;
+    }
+    if (value === 'month') {
+      setTab('month');
+      return;
+    }
+    if (value === 'year') {
+      setTab('year');
+      return;
+    }
+    if (value === 'custom') {
+      setTab('period');
+      return;
+    }
+    setTab('day');
+  }
+
   function previous() {
     if (tab === 'day') {
       setDayCursor((current) => addDays(current, -1));
@@ -1010,21 +1051,29 @@ export default function Statistics() {
               </Pressable>
             </View>
 
-            <View style={styles.tabs}>
-              <TabButton label="Dia" icon="sun" active={tab === 'day'} onPress={() => setTab('day')} />
-              <TabButton label="Mês" icon="calendar" active={tab === 'month'} onPress={() => setTab('month')} />
-              <TabButton label="Ano" icon="bar-chart-2" active={tab === 'year'} onPress={() => setTab('year')} />
-              <TabButton label="Personalizado" icon="sliders" active={tab === 'period'} onPress={() => setTab('period')} />
+            <View style={styles.periodChoiceArea}>
+              <SearchablePicker
+                label="Tipo de período"
+                value={periodChoice}
+                onChange={choosePeriod}
+                options={[
+                  { label: 'Hoje', value: 'today', description: 'Desempenho por hora do dia atual' },
+                  { label: 'Últimos 7 dias', value: '7days', description: 'Comparação diária da última semana' },
+                  { label: 'Últimos 30 dias', value: '30days', description: 'Comparação diária do último mês' },
+                  { label: 'Mês atual', value: 'current_month', description: 'Do primeiro dia do mês até hoje' },
+                  { label: 'Dia', value: 'day', description: 'Use as setas da tela para navegar entre dias' },
+                  { label: 'Mês', value: 'month', description: 'Use as setas da tela para navegar entre meses' },
+                  { label: 'Ano', value: 'year', description: 'Use as setas da tela para navegar entre anos' },
+                  { label: 'Período personalizado', value: 'custom', description: 'Informe uma data inicial e uma data final' },
+                ]}
+                placeholder="Selecione o período da análise"
+              />
+              {periodChoice !== 'custom' && (
+                <Text style={styles.periodChoiceHelp}>A opção escolhida será aplicada ao confirmar.</Text>
+              )}
             </View>
 
-            <View style={styles.quickFilters}>
-              <QuickButton label="Hoje" onPress={() => { setTab('period'); setQuickPeriod(1); }} />
-              <QuickButton label="7 dias" onPress={() => { setTab('period'); setQuickPeriod(7); }} />
-              <QuickButton label="30 dias" onPress={() => { setTab('period'); setQuickPeriod(30); }} />
-              <QuickButton label="Mês atual" onPress={() => { setTab('period'); currentMonthPeriod(); }} />
-            </View>
-
-            {tab === 'period' && (
+            {periodChoice === 'custom' && (
               <View style={styles.customPeriodCard}>
                 <View style={styles.dateFields}>
                   <View style={styles.dateField}>
@@ -1052,7 +1101,7 @@ export default function Statistics() {
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
               </Pressable>
               <Pressable style={styles.applyButton} onPress={() => {
-                if (tab !== 'period' || applyPeriod()) setPeriodPickerOpen(false);
+                if (periodChoice !== 'custom' || applyPeriod()) setPeriodPickerOpen(false);
               }}>
                 <Text style={styles.applyButtonText}>Aplicar período</Text>
               </Pressable>
@@ -1555,7 +1604,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   errorText: {
     color: theme.colors.danger,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   analysisPanel: {
@@ -1749,6 +1798,17 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     color: '#FFFFFF',
   },
 
+  periodChoiceArea: {
+    gap: 7,
+  },
+
+  periodChoiceHelp: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+
   customPeriodCard: {
     backgroundColor: '#F8F7F4',
     borderRadius: 12,
@@ -1799,7 +1859,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   dateLabel: {
     marginBottom: 5,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: theme.colors.muted,
   },
 
@@ -1817,13 +1877,13 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   periodError: {
     color: theme.colors.danger,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   periodNotice: {
     color: '#2E7D32',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   applyButton: {
@@ -2021,7 +2081,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   heroLabel: {
     color: theme.colors.muted,
     fontSize: 11,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 1.2,
   },
 
@@ -2030,7 +2090,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     color: theme.colors.text,
     fontSize: 32,
     lineHeight: 38,
-    fontWeight: '900',
+    fontWeight: '700',
   },
 
   comparisonPill: {
@@ -2059,7 +2119,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   comparisonText: {
     color: theme.colors.muted,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   comparisonTextPositive: {
@@ -2097,14 +2157,14 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   heroStatLabel: {
     color: theme.colors.muted,
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   heroStatValue: {
     marginTop: 4,
     color: theme.colors.text,
     fontSize: 19,
-    fontWeight: '900',
+    fontWeight: '700',
   },
 
   chartCard: {
@@ -2128,7 +2188,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   chartTitle: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     color: theme.colors.text,
   },
 
@@ -2149,7 +2209,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   bestBadgeLabel: {
     fontSize: 11,
-    fontWeight: '900',
+    fontWeight: '700',
     color: theme.colors.muted,
     textTransform: 'uppercase',
   },
@@ -2157,7 +2217,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   bestBadgeValue: {
     marginTop: 2,
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '700',
     color: theme.colors.text,
   },
 
@@ -2281,7 +2341,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   emptyTitle: {
     fontSize: 15,
-    fontWeight: '900',
+    fontWeight: '700',
     color: theme.colors.text,
   },
 
@@ -2337,7 +2397,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   detailHeaderMeta: {
     fontSize: 11.5,
-    fontWeight: '800',
+    fontWeight: '700',
     color: theme.colors.muted,
   },
 
@@ -2371,7 +2431,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   rankBadgeText: {
     color: theme.colors.muted,
     fontSize: 11,
-    fontWeight: '900',
+    fontWeight: '700',
   },
 
   rankBadgeTextFirst: {
@@ -2380,7 +2440,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   detailName: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: theme.colors.text,
     textTransform: 'capitalize',
   },
@@ -2407,7 +2467,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   detailAmount: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: theme.colors.text,
   },
 
@@ -2434,7 +2494,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   contentSectionTitle: {
     color: theme.colors.text,
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     marginTop: 2,
   },
 
@@ -2504,7 +2564,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   productRankText: {
     color: '#8A6520',
     fontSize: 11.5,
-    fontWeight: '900',
+    fontWeight: '700',
   },
 
   paymentRow: {
@@ -2524,13 +2584,13 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   paymentMethod: {
     color: theme.colors.text,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   paymentValue: {
     color: theme.colors.text,
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '700',
   },
 
   paymentTrack: {

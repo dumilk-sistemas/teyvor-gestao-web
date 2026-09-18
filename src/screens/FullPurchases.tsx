@@ -32,12 +32,15 @@ const today = () =>
   new Date().toISOString().slice(0, 10);
 
 const paymentTermSuggestions = [
-  { label: 'À vista', value: 'À vista', days: 0 },
-  { label: '7 dias', value: '7 dias', days: 7 },
-  { label: '15 dias', value: '15 dias', days: 15 },
-  { label: '30 dias', value: '30 dias', days: 30 },
-  { label: '45 dias', value: '45 dias', days: 45 },
-  { label: '60 dias', value: '60 dias', days: 60 },
+  { label: 'À vista', value: 'À vista', days: [0], description: 'Pagamento no recebimento' },
+  { label: '7 dias', value: '7 dias', days: [7], description: 'Vencimento em 7 dias' },
+  { label: '15 dias', value: '15 dias', days: [15], description: 'Vencimento em 15 dias' },
+  { label: '21 dias', value: '21 dias', days: [21], description: 'Vencimento em 21 dias' },
+  { label: '30 dias', value: '30 dias', days: [30], description: 'Vencimento em 30 dias' },
+  { label: '45 dias', value: '45 dias', days: [45], description: 'Vencimento em 45 dias' },
+  { label: '60 dias', value: '60 dias', days: [60], description: 'Vencimento em 60 dias' },
+  { label: '21 / 45 dias', value: '21/45', days: [21, 45], description: 'Condição em duas parcelas: 21 e 45 dias' },
+  { label: '30 / 60 dias', value: '30/60', days: [30, 60], description: 'Condição em duas parcelas: 30 e 60 dias' },
 ];
 
 function addDaysIso(iso: string, days: number) {
@@ -291,7 +294,7 @@ export default function FullPurchases() {
     setForm((current) => ({
       ...current,
       paymentTerms: suggestion.value,
-      dueDate: addDaysIso(current.date, suggestion.days),
+      dueDate: addDaysIso(current.date, suggestion.days[0]),
     }));
   };
 
@@ -303,7 +306,7 @@ export default function FullPurchases() {
       return {
         ...current,
         date: value,
-        dueDate: suggestion ? addDaysIso(value, suggestion.days) : current.dueDate,
+        dueDate: suggestion ? addDaysIso(value, suggestion.days[0]) : current.dueDate,
       };
     });
   };
@@ -816,22 +819,28 @@ export default function FullPurchases() {
           }))}
         />
 
-        <Choice
-          label="Condições sugeridas"
-          value={form.paymentTerms}
-          onChange={applyPaymentTerm}
-          options={paymentTermSuggestions.map(({ label, value }) => ({ label, value }))}
+        <SearchablePicker
+          label="Condição de pagamento"
+          value={paymentTermSuggestions.some((item) => item.value === form.paymentTerms) ? form.paymentTerms : 'custom'}
+          onChange={(value) => value === 'custom' ? set('paymentTerms', 'Personalizada') : applyPaymentTerm(value)}
+          options={[
+            ...paymentTermSuggestions.map(({ label, value, description }) => ({ label, value, description })),
+            { label: 'Outra condição', value: 'custom', description: 'Informar manualmente' },
+          ]}
+          placeholder="Selecione a condição"
         />
 
-        <Field
-          label="Condição de pagamento (editável)"
-          value={form.paymentTerms}
-          onChangeText={(value) => set('paymentTerms', value)}
-          placeholder="Escolha acima ou escreva outra condição"
-        />
+        {!paymentTermSuggestions.some((item) => item.value === form.paymentTerms) && (
+          <Field
+            label="Descrição da condição"
+            value={form.paymentTerms === 'Personalizada' ? '' : form.paymentTerms}
+            onChangeText={(value) => set('paymentTerms', value)}
+            placeholder="Ex.: 10/20/30 ou condição negociada"
+          />
+        )}
 
         <DateField
-          label="Vencimento"
+          label={['21/45', '30/60'].includes(form.paymentTerms) ? 'Primeiro vencimento' : 'Vencimento'}
           value={form.dueDate}
           onChangeText={(value) =>
             set('dueDate', value)

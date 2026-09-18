@@ -1077,36 +1077,19 @@ export default function Reports() {
             </View>
           </View>
 
-          <View style={styles.periodButtons}>
-            <PeriodButton
-              label="Hoje"
-              active={period === 'today'}
-              onPress={() => applyQuickPeriod('today')}
-            />
-            <PeriodButton
-              label="7 dias"
-              active={period === '7days'}
-              onPress={() => applyQuickPeriod('7days')}
-            />
-            <PeriodButton
-              label="30 dias"
-              active={period === '30days'}
-              onPress={() => applyQuickPeriod('30days')}
-            />
-            <PeriodButton
-              label="Mês"
-              active={period === 'month'}
-              onPress={() => applyQuickPeriod('month')}
-            />
-            <PeriodButton
-              label="Ano"
-              active={period === 'year'}
-              onPress={() => applyQuickPeriod('year')}
-            />
-            <PeriodButton
-              label="Personalizado"
-              active={period === 'custom'}
-              onPress={() => applyQuickPeriod('custom')}
+          <View style={styles.periodSelect}>
+            <SearchablePicker
+              label="Alterar período"
+              value={period}
+              onChange={(value) => applyQuickPeriod(value as PeriodKey)}
+              options={[
+                { label: 'Hoje', value: 'today', description: 'Somente o dia atual' },
+                { label: 'Últimos 7 dias', value: '7days', description: 'Hoje e os seis dias anteriores' },
+                { label: 'Últimos 30 dias', value: '30days', description: 'Hoje e os 29 dias anteriores' },
+                { label: 'Mês atual', value: 'month', description: 'Do primeiro dia do mês até hoje' },
+                { label: 'Ano atual', value: 'year', description: 'Do primeiro dia do ano até hoje' },
+                { label: 'Período personalizado', value: 'custom', description: 'Informar data inicial e final' },
+              ]}
             />
           </View>
         </View>
@@ -2927,6 +2910,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+
+  periodSelect: {
+    minWidth: 260,
   },
   selectionBar: {
     alignItems: 'center',
