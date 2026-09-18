@@ -47,6 +47,24 @@ const statusLabelPt = (status: string) => {
   return 'Em aberto';
 };
 
+const dreCostQualityText = (quality: any) => {
+  if (quality?.historical_cogs_complete) {
+    return `CMV histórico completo em ${Number(quality.cogs_costed_lines || 0)} item(ns) vendido(s)`;
+  }
+  if (quality?.historical_cogs_available) {
+    return `CMV histórico parcial: ${Number(quality.cogs_coverage_percent || 0).toFixed(1).replace('.', ',')}% dos itens com custo`;
+  }
+  return 'CMV histórico indisponível; usando custos diretos classificados';
+};
+
+const dreNeedsReview = (quality: any) => Boolean(
+  quality && (
+    Number(quality.categories_to_review || 0) > 0 ||
+    Number(quality.unmapped_entries || 0) > 0 ||
+    !quality.historical_cogs_complete
+  )
+);
+
 const isoFromDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -1161,18 +1179,18 @@ export default function Reports() {
               <View style={styles.dreInlineContext}>
                 <View style={styles.dreInlineQuality}>
                   <Feather
-                    name={Number(dre?.quality?.categories_to_review || 0) + Number(dre?.quality?.unmapped_entries || 0) > 0 ? 'alert-triangle' : 'info'}
+                    name={dreNeedsReview(dre?.quality) ? 'alert-triangle' : 'check-circle'}
                     size={17}
-                    color={Number(dre?.quality?.categories_to_review || 0) + Number(dre?.quality?.unmapped_entries || 0) > 0 ? '#9A6A12' : '#3568B8'}
+                    color={dreNeedsReview(dre?.quality) ? '#9A6A12' : theme.colors.success}
                   />
                   <View style={styles.inlineRowMain}>
                     <Text style={styles.dreInlineTitle}>
-                      {Number(dre?.quality?.categories_to_review || 0) + Number(dre?.quality?.unmapped_entries || 0) > 0
+                      {dreNeedsReview(dre?.quality)
                         ? 'Resultado sujeito a revisão'
-                        : 'DRE gerencial por competência'}
+                        : 'Base do DRE consistente para o período'}
                     </Text>
                     <Text style={styles.dreInlineText}>
-                      {Number(dre?.quality?.categories_to_review || 0)} categoria(s) para revisar • {Number(dre?.quality?.unmapped_entries || 0)} lançamento(s) sem mapeamento • CMV histórico ainda não disponível
+                      {Number(dre?.quality?.categories_to_review || 0)} categoria(s) para revisar • {Number(dre?.quality?.unmapped_entries || 0)} lançamento(s) sem mapeamento • {dreCostQualityText(dre?.quality)}
                     </Text>
                   </View>
                 </View>
@@ -2154,13 +2172,13 @@ export default function Reports() {
             />
 
             <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalBody}>
-              {(Number(dre?.quality?.categories_to_review || 0) > 0 || Number(dre?.quality?.unmapped_entries || 0) > 0) && (
+              {dreNeedsReview(dre?.quality) && (
                 <View style={styles.dreNotice}>
                   <Feather name="alert-circle" size={18} color="#9A6A12" />
                   <View style={styles.dayMain}>
                     <Text style={styles.dreNoticeTitle}>Revise a base antes de usar o resultado como definitivo</Text>
                     <Text style={styles.dreNoticeText}>
-                      {Number(dre?.quality?.categories_to_review || 0)} categoria(s) ainda usam classificação automática e {Number(dre?.quality?.unmapped_entries || 0)} lançamento(s) estão sem categoria mapeada.
+                      {Number(dre?.quality?.categories_to_review || 0)} categoria(s) ainda usam classificação automática; {Number(dre?.quality?.unmapped_entries || 0)} lançamento(s) estão sem categoria mapeada. {dreCostQualityText(dre?.quality)}.
                     </Text>
                   </View>
                 </View>
