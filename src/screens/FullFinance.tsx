@@ -150,6 +150,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const pendingEntriesRef = useRef<any[]>([]);
   const [search, setSearch] = useState('');
   const [listMonth, setListMonth] = useState(currentMonthString());
+  const [listStatus, setListStatus] = useState<'open' | 'settled'>('open');
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [deleteReason, setDeleteReason] = useState('');
@@ -218,13 +219,34 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
     }
   }
 
+  async function handleSetReceivableAccount(receivableKey: string, accountId: number | null) {
+    try {
+      await setEntryAccount(`CARD:${receivableKey}`, accountId);
+      setData((prev: any) => prev ? {
+        ...prev,
+        card_receivables: (prev.card_receivables || []).map((row: any) =>
+          String(row.key) === String(receivableKey) ? { ...row, account_id: accountId } : row
+        ),
+      } : prev);
+      showToast('Conta de destino do recebível atualizada.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao definir a conta de destino do recebível.');
+    }
+  }
+
   const filteredEntries = useMemo(() => {
     const entries = data?.entries || [];
     const term = search.trim().toLocaleLowerCase('pt-BR');
 
     return entries.filter((row: any) => {
       if (view !== 'all' && row.type !== view) return false;
-      if (view !== 'all' && String(row.due_date || '').slice(0, 7) !== listMonth) return false;
+      if (view !== 'all') {
+        const isSettled = ['paid', 'received'].includes(row.status);
+        if (listStatus === 'open' && (isSettled || !['open', 'overdue', 'pending_sync'].includes(row.status))) return false;
+        if (listStatus === 'settled' && !isSettled) return false;
+        const referenceDate = listStatus === 'settled' ? row.settlement_date : row.due_date;
+        if (String(referenceDate || '').slice(0, 7) !== listMonth) return false;
+      }
       if (!term) return true;
       return [
         counterpartyName(row),
@@ -236,27 +258,42 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
         .filter(Boolean)
         .some((field) => String(field).toLocaleLowerCase('pt-BR').includes(term));
     });
-  }, [customers, data, listMonth, search, suppliers, view]);
+  }, [customers, data, listMonth, listStatus, search, suppliers, view]);
 
   const periodSummary = useMemo(() => {
-    const entries = (data?.entries || []).filter((row: any) =>
-      (view === 'all' || row.type === view) &&
+    const typedEntries = (data?.entries || []).filter((row: any) =>
+      view === 'all' || row.type === view
+    );
+    const dueEntries = typedEntries.filter((row: any) =>
       String(row.due_date || '').slice(0, 7) === listMonth
     );
-    const open = entries
+    const settledEntries = typedEntries.filter((row: any) =>
+      String(row.settlement_date || '').slice(0, 7) === listMonth
+    );
+    const open = dueEntries
       .filter((row: any) => ['open', 'overdue', 'pending_sync'].includes(row.status))
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
-    const overdue = entries
+    const overdue = dueEntries
       .filter((row: any) => row.status === 'overdue')
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
-    const settled = entries
+    const settled = settledEntries
       .filter((row: any) => ['paid', 'received'].includes(row.status))
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
-    const recurring = entries
+    const recurring = dueEntries
       .filter((row: any) => row.recurring_rule_id && ['open', 'overdue', 'pending_sync'].includes(row.status))
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
-    return { open, overdue, settled, recurring, count: entries.length };
+    return { open, overdue, settled, recurring };
   }, [data, listMonth, view]);
+
+  const visibleCardReceivables = useMemo(() => {
+    const rows = data?.card_receivables || [];
+    if (view !== 'receivable') return rows;
+    return rows.filter((row: any) => {
+      if (String(row.date || '').slice(0, 7) !== listMonth) return false;
+      const settled = ['Liquidado', 'Antecipado'].includes(row.status);
+      return listStatus === 'settled' ? settled : !settled;
+    });
+  }, [data, listMonth, listStatus, view]);
 
   const nearTerm = useMemo(() => {
     const entries = data?.entries || [];
@@ -782,6 +819,27 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             </View>
           )}
 
+          {view !== 'all' && (
+            <View style={monthlyStyles.statusTabs}>
+              <Pressable
+                onPress={() => setListStatus('open')}
+                style={[monthlyStyles.statusTab, listStatus === 'open' && monthlyStyles.statusTabActive]}
+              >
+                <Text style={[monthlyStyles.statusTabText, listStatus === 'open' && monthlyStyles.statusTabTextActive]}>
+                  {view === 'payable' ? 'A pagar' : 'A receber'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setListStatus('settled')}
+                style={[monthlyStyles.statusTab, listStatus === 'settled' && monthlyStyles.statusTabActive]}
+              >
+                <Text style={[monthlyStyles.statusTabText, listStatus === 'settled' && monthlyStyles.statusTabTextActive]}>
+                  {view === 'payable' ? 'Pagas no período' : 'Recebidas no período'}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
           <View style={monthlyStyles.compactSummaryGrid}>
             {view !== 'all' ? (
               <>
@@ -879,7 +937,11 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
 
           <View style={monthlyStyles.entriesCard}>
             <Text style={monthlyStyles.entriesTitle}>
-              {view === 'payable' ? `Contas a pagar — ${monthLabel(listMonth)}` : view === 'receivable' ? `Contas a receber — ${monthLabel(listMonth)}` : 'Lançamentos'}
+              {view === 'payable'
+                ? `${listStatus === 'open' ? 'Contas a pagar' : 'Contas pagas'} — ${monthLabel(listMonth)}`
+                : view === 'receivable'
+                  ? `${listStatus === 'open' ? 'Contas a receber' : 'Contas recebidas'} — ${monthLabel(listMonth)}`
+                  : 'Lançamentos'}
             </Text>
 
             {filteredEntries.length >
@@ -1025,14 +1087,15 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           {view !== 'payable' && (
             <View style={s.card}>
               <Text style={s.cardTitle}>
-                Recebíveis de cartão
+                {view === 'receivable' && listStatus === 'settled'
+                  ? 'Recebimentos de vendas — Pix e cartões'
+                  : 'Recebíveis de vendas — Pix e cartões'}
               </Text>
 
-            {(data.card_receivables || [])
+            {visibleCardReceivables
               .length > 0 ? (
               (
-                data.card_receivables ||
-                []
+                visibleCardReceivables
               ).map((row: any) => (
                 <View
                   key={String(row.key)}
@@ -1050,6 +1113,18 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                       {row.installments} •
                       previsão {formatDateBR(row.date)}
                     </Text>
+                    {(data.accounts || []).length > 0 && (
+                      <AccountPicker
+                        label="Conta de destino"
+                        options={(data.accounts || []).map((account: any) => ({
+                          label: account.name,
+                          value: String(account.id),
+                        }))}
+                        value={row.account_id != null ? String(row.account_id) : ''}
+                        onChange={(value) => handleSetReceivableAccount(row.key, value ? Number(value) : null)}
+                        emptyLabel="Usar a conta padrão desta forma de pagamento"
+                      />
+                    )}
                   </View>
 
                   <View style={s.right}>
@@ -1080,8 +1155,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               ))
             ) : (
               <Text style={s.empty}>
-                Nenhum recebível de
-                cartão.
+                Nenhum recebível de Pix, débito ou crédito.
               </Text>
             )}
             </View>
@@ -1820,6 +1894,18 @@ const monthlyStyles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  statusTabs: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#ECEBE7',
+    borderRadius: 11,
+    flexDirection: 'row',
+    gap: 3,
+    padding: 3,
+  },
+  statusTab: { borderRadius: 8, paddingHorizontal: 15, paddingVertical: 9 },
+  statusTabActive: { backgroundColor: theme.colors.black },
+  statusTabText: { color: theme.colors.muted, fontSize: 12, fontWeight: '800' },
+  statusTabTextActive: { color: '#FFFFFF' },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

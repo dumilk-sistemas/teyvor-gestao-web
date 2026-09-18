@@ -102,11 +102,15 @@ export default function FinanceHome() {
     };
   }, [data, month]);
 
-  const nextPayables = useMemo(
-    () => [...summary.payablesMonth]
+  const nextEntries = useMemo(
+    () => [...summary.payablesMonth, ...(data?.entries || []).filter(
+      (entry) => entry.type === 'receivable' &&
+        ['open', 'overdue'].includes(entry.status) &&
+        entry.due_date.slice(0, 7) === month
+    )]
       .sort((a, b) => a.due_date.localeCompare(b.due_date))
-      .slice(0, 5),
-    [summary.payablesMonth]
+      .slice(0, 8),
+    [data, month, summary.payablesMonth]
   );
 
   const modules = [
@@ -261,28 +265,41 @@ export default function FinanceHome() {
           <View style={styles.panel}>
             <View style={styles.panelHead}>
               <View>
-                <Text style={styles.panelTitle}>Próximas contas a pagar</Text>
-                <Text style={styles.panelSubtitle}>Vencimentos em {monthName(month)}</Text>
+                <Text style={styles.panelTitle}>Próximos vencimentos</Text>
+                <Text style={styles.panelSubtitle}>Entradas e saídas previstas em {monthName(month)}</Text>
               </View>
-              <Pressable onPress={() => router.push('/payables')}>
-                <Text style={[styles.seeAll, { color: colors.primary }]}>Ver todas</Text>
-              </Pressable>
+              <View style={styles.panelLinks}>
+                <Pressable onPress={() => router.push('/payables')}>
+                  <Text style={[styles.seeAll, { color: theme.colors.danger }]}>A pagar</Text>
+                </Pressable>
+                <Pressable onPress={() => router.push('/receivables')}>
+                  <Text style={[styles.seeAll, { color: theme.colors.success }]}>A receber</Text>
+                </Pressable>
+              </View>
             </View>
-            {nextPayables.length ? nextPayables.map((entry) => (
-              <View key={String(entry.id)} style={styles.payableRow}>
-                <View style={[styles.dueIcon, entry.status === 'overdue' && styles.dueIconDanger]}>
-                  <Feather name="calendar" size={15} color={entry.status === 'overdue' ? theme.colors.danger : theme.colors.muted} />
+            {nextEntries.length ? nextEntries.map((entry) => (
+              <View key={`${entry.type}:${String(entry.id)}`} style={styles.payableRow}>
+                <View style={[
+                  styles.dueIcon,
+                  entry.type === 'receivable' && styles.dueIconReceivable,
+                  entry.status === 'overdue' && styles.dueIconDanger,
+                ]}>
+                  <Feather
+                    name={entry.type === 'receivable' ? 'arrow-down-left' : 'arrow-up-right'}
+                    size={15}
+                    color={entry.status === 'overdue' ? theme.colors.danger : entry.type === 'receivable' ? theme.colors.success : theme.colors.muted}
+                  />
                 </View>
                 <View style={styles.payableMain}>
                   <Text style={styles.payableName}>{entry.description}</Text>
                   <Text style={styles.payableMeta}>
-                    {entry.category} • vence {dateLabel(entry.due_date)}{entry.recurring_rule_id ? ' • recorrente' : ''}
+                    {entry.type === 'receivable' ? 'Entrada' : 'Saída'} • {entry.category} • vence {dateLabel(entry.due_date)}{entry.recurring_rule_id ? ' • recorrente' : ''}
                   </Text>
                 </View>
-                <Text style={styles.payableAmount}>{money(entry.amount)}</Text>
+                <Text style={[styles.payableAmount, entry.type === 'receivable' && styles.receivableAmount]}>{money(entry.amount)}</Text>
               </View>
             )) : (
-              <Text style={s.empty}>Nenhuma conta pendente com vencimento neste mês.</Text>
+              <Text style={s.empty}>Nenhuma entrada ou saída pendente com vencimento neste mês.</Text>
             )}
           </View>
         </>
@@ -363,12 +380,15 @@ const styles = StyleSheet.create({
   panelHead: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'space-between', padding: 16 },
   panelTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 16 },
   panelSubtitle: { color: theme.colors.muted, fontSize: 11.5, marginTop: 3 },
+  panelLinks: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   seeAll: { fontSize: 12, fontWeight: '900' },
   payableRow: { alignItems: 'center', borderTopColor: '#ECEAE5', borderTopWidth: 1, flexDirection: 'row', gap: 11, padding: 14 },
   dueIcon: { alignItems: 'center', backgroundColor: '#F1F0EC', borderRadius: 8, height: 32, justifyContent: 'center', width: 32 },
+  dueIconReceivable: { backgroundColor: '#EAF7EF' },
   dueIconDanger: { backgroundColor: '#FDECEC' },
   payableMain: { flex: 1 },
   payableName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   payableMeta: { color: theme.colors.muted, fontSize: 10.5, marginTop: 3 },
   payableAmount: { color: theme.colors.text, fontSize: 13, fontWeight: '900' },
+  receivableAmount: { color: theme.colors.success },
 });
