@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +9,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
-import { DateField, SearchablePicker } from '@/components/FormKit';
+import { PeriodCalendar, type PeriodPreset } from '@/components/PeriodCalendar';
 import { theme, useThemeColors } from '@/constants/theme';
 import { getReports } from '@/services/api';
 import { getFull } from '@/services/fullApi';
@@ -284,7 +283,6 @@ export default function Statistics() {
 
   const [periodError, setPeriodError] = useState('');
   const [periodNotice, setPeriodNotice] = useState('');
-  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
   const [periodChoice, setPeriodChoice] = useState('day');
 
   async function load() {
@@ -1026,89 +1024,30 @@ export default function Statistics() {
             </Pressable>
           )}
 
-          <Pressable style={styles.periodPickerButton} onPress={() => setPeriodPickerOpen(true)}>
-            <Feather name="calendar" size={16} color="#3568B8" />
-            <Text style={styles.periodPickerButtonText}>Alterar período</Text>
-          </Pressable>
+          <PeriodCalendar
+            start={view.start}
+            end={view.end}
+            maxDate={todayIso}
+            compact
+            label="Alterar período"
+            onApply={(start, end, preset: PeriodPreset) => {
+              setPeriodChoice(preset === 'month' ? 'current_month' : preset);
+              if (preset === 'today') {
+                setDayCursor(new Date());
+                setTab('day');
+                return;
+              }
+              setPeriodStart(start);
+              setPeriodEnd(end);
+              setPeriodStartInput(isoToBR(start));
+              setPeriodEndInput(isoToBR(end));
+              setPeriodError('');
+              setPeriodNotice(`Período aplicado: ${isoToBR(start)} a ${isoToBR(end)}`);
+              setTab('period');
+            }}
+          />
         </View>
       </View>
-
-      <Modal
-        visible={periodPickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPeriodPickerOpen(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.periodModal}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>Selecionar período</Text>
-                <Text style={styles.modalSubtitle}>Escolha como deseja analisar e comparar os resultados.</Text>
-              </View>
-              <Pressable style={styles.modalClose} onPress={() => setPeriodPickerOpen(false)} accessibilityLabel="Fechar">
-                <Feather name="x" size={21} color={theme.colors.muted} />
-              </Pressable>
-            </View>
-
-            <View style={styles.periodChoiceArea}>
-              <SearchablePicker
-                label="Tipo de período"
-                value={periodChoice}
-                onChange={choosePeriod}
-                options={[
-                  { label: 'Hoje', value: 'today', description: 'Desempenho por hora do dia atual' },
-                  { label: 'Últimos 7 dias', value: '7days', description: 'Comparação diária da última semana' },
-                  { label: 'Últimos 30 dias', value: '30days', description: 'Comparação diária do último mês' },
-                  { label: 'Mês atual', value: 'current_month', description: 'Do primeiro dia do mês até hoje' },
-                  { label: 'Dia', value: 'day', description: 'Use as setas da tela para navegar entre dias' },
-                  { label: 'Mês', value: 'month', description: 'Use as setas da tela para navegar entre meses' },
-                  { label: 'Ano', value: 'year', description: 'Use as setas da tela para navegar entre anos' },
-                  { label: 'Período personalizado', value: 'custom', description: 'Informe uma data inicial e uma data final' },
-                ]}
-                placeholder="Selecione o período da análise"
-              />
-              {periodChoice !== 'custom' && (
-                <Text style={styles.periodChoiceHelp}>A opção escolhida será aplicada ao confirmar.</Text>
-              )}
-            </View>
-
-            {periodChoice === 'custom' && (
-              <View style={styles.customPeriodCard}>
-                <View style={styles.dateFields}>
-                  <View style={styles.dateField}>
-                    <DateField label="Data inicial" value={periodStartInput} onChangeText={(value) => {
-                      setPeriodStartInput(value);
-                      setPeriodError('');
-                      setPeriodNotice('');
-                    }} />
-                  </View>
-                  <View style={styles.dateField}>
-                    <DateField label="Data final" value={periodEndInput} onChangeText={(value) => {
-                      setPeriodEndInput(value);
-                      setPeriodError('');
-                      setPeriodNotice('');
-                    }} />
-                  </View>
-                </View>
-                {!!periodError && <Text style={styles.periodError}>{periodError}</Text>}
-                {!!periodNotice && <Text style={styles.periodNotice}>{periodNotice}</Text>}
-              </View>
-            )}
-
-            <View style={styles.modalFooter}>
-              <Pressable style={styles.cancelButton} onPress={() => setPeriodPickerOpen(false)}>
-                <Text style={styles.cancelButtonText}>Cancelar</Text>
-              </Pressable>
-              <Pressable style={styles.applyButton} onPress={() => {
-                if (periodChoice !== 'custom' || applyPeriod()) setPeriodPickerOpen(false);
-              }}>
-                <Text style={styles.applyButtonText}>Aplicar período</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       <View style={styles.metricsGrid}>
         <PerformanceMetric

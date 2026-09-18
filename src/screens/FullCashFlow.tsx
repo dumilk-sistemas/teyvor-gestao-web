@@ -10,7 +10,8 @@ import { Feather } from '@expo/vector-icons';
 
 import { AccountPicker } from '@/components/AccountPicker';
 import { AdminShell } from '@/components/AdminShell';
-import { DateField, Notice, formStyles as s } from '@/components/FormKit';
+import { Notice, formStyles as s } from '@/components/FormKit';
+import { PeriodCalendar } from '@/components/PeriodCalendar';
 import { getCashFlow } from '@/services/fullApi';
 import { theme, useThemeColors } from '@/constants/theme';
 
@@ -327,30 +328,19 @@ export default function FullCashFlow() {
             <Text style={styles.filterTitle}>Período e conta financeira</Text>
           </View>
 
-          <View style={styles.modeSwitch}>
-            <Pressable
-              onPress={() => {
-                setMode('month');
-                const { start, end } = monthRange(month);
-                load(start, end);
-              }}
-              style={[styles.modeButton, mode === 'month' && { backgroundColor: colors.primary }]}
-            >
-              <Text style={[styles.modeButtonText, mode === 'month' && styles.modeButtonTextActive]}>Mensal</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                if (data) {
-                  setStartInput(isoToBR(data.start));
-                  setEndInput(isoToBR(data.end));
-                }
-                setMode('custom');
-              }}
-              style={[styles.modeButton, mode === 'custom' && { backgroundColor: colors.primary }]}
-            >
-              <Text style={[styles.modeButtonText, mode === 'custom' && styles.modeButtonTextActive]}>Personalizado</Text>
-            </Pressable>
-          </View>
+          <PeriodCalendar
+            start={data?.start || monthRange(month).start}
+            end={data?.end || monthRange(month).end}
+            label="Período do fluxo"
+            compact
+            onApply={(start, end) => {
+              setMode('custom');
+              setStartInput(isoToBR(start));
+              setEndInput(isoToBR(end));
+              setPeriodError('');
+              load(start, end);
+            }}
+          />
         </View>
 
         {!data?.no_accounts && (data?.accounts || []).length > 0 && (
@@ -366,46 +356,7 @@ export default function FullCashFlow() {
           />
         )}
 
-        {mode === 'month' ? (
-          <View style={styles.monthNav}>
-            <Pressable style={styles.monthArrow} onPress={() => changeMonth(-1)}>
-              <Feather name="chevron-left" size={18} color={theme.colors.text} />
-            </Pressable>
-            <View style={styles.monthTextArea}>
-              <Text style={styles.monthCaption}>Competência</Text>
-              <Text style={styles.monthLabel}>{monthLabel(month)}</Text>
-            </View>
-            <Pressable style={styles.monthArrow} onPress={() => changeMonth(1)}>
-              <Feather name="chevron-right" size={18} color={theme.colors.text} />
-            </Pressable>
-            {month !== currentMonthString() && (
-              <Pressable style={styles.currentMonthButton} onPress={() => setMonth(currentMonthString())}>
-                <Text style={styles.currentMonthButtonText}>Ir para o mês atual</Text>
-              </Pressable>
-            )}
-          </View>
-        ) : (
-          <View style={styles.customArea}>
-            <View style={styles.dateFields}>
-              <View style={styles.dateField}>
-                <DateField label="Data inicial" value={startInput} onChangeText={(value) => {
-                  setStartInput(value);
-                  setPeriodError('');
-                }} />
-              </View>
-              <View style={styles.dateField}>
-                <DateField label="Data final" value={endInput} onChangeText={(value) => {
-                  setEndInput(value);
-                  setPeriodError('');
-                }} />
-              </View>
-              <Pressable style={[styles.applyButton, { backgroundColor: colors.primary }]} onPress={applyCustomPeriod}>
-                <Text style={styles.applyButtonText}>Aplicar período</Text>
-              </Pressable>
-            </View>
-            {!!periodError && <Text style={styles.periodError}>{periodError}</Text>}
-          </View>
-        )}
+        {!!periodError && <Text style={styles.periodError}>{periodError}</Text>}
       </View>
 
       {!!data && !data.no_accounts && data.clamped && (

@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
 import { AccountPicker } from '@/components/AccountPicker';
@@ -67,6 +70,8 @@ const blank = {
 };
 
 export default function FullProducts() {
+  const { width } = useWindowDimensions();
+  const compactLayout = width < 900;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -76,6 +81,14 @@ export default function FullProducts() {
   const [form, setForm] = useState({ ...blank });
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'negative' | 'inactive'>('all');
+  const [sortMode, setSortMode] = useState<'name' | 'price_desc' | 'stock_asc'>('name');
+  const [sortOpen, setSortOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({ code: true, category: true, unit: true, cost: true, price: true, stock: true, status: true });
   const [categories, setCategories] = useState<any[]>([]);
   const [categorySummary, setCategorySummary] = useState<any>(null);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
@@ -95,19 +108,20 @@ export default function FullProducts() {
   const filteredRows = useMemo(() => {
     const rows = data?.rows || [];
     const term = search.trim().toLocaleLowerCase('pt-BR');
+    return rows
+      .filter((row: any) => selectedCategory === 'all' || (selectedCategory === 'uncategorized' ? !row.category : row.category === selectedCategory))
+      .filter((row: any) => stockFilter === 'all' || (stockFilter === 'low' && Number(row.stock || 0) <= Number(row.minimum || 0)) || (stockFilter === 'negative' && Number(row.stock || 0) < 0) || (stockFilter === 'inactive' && row.active === false))
+      .filter((row: any) => !term || [row.name, row.code, row.category].filter(Boolean).some((field) => String(field).toLocaleLowerCase('pt-BR').includes(term)))
+      .sort((a: any, b: any) => sortMode === 'price_desc' ? Number(b.price || 0) - Number(a.price || 0) : sortMode === 'stock_asc' ? Number(a.stock || 0) - Number(b.stock || 0) : String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
+  }, [data, search, selectedCategory, stockFilter, sortMode]);
 
-    if (!term) {
-      return rows;
-    }
-
-    return rows.filter((row: any) =>
-      [row.name, row.code, row.category]
-        .filter(Boolean)
-        .some((field) =>
-          String(field).toLocaleLowerCase('pt-BR').includes(term)
-        )
-    );
-  }, [data, search]);
+  const categoryNavigation = useMemo(() => {
+    const rows = data?.rows || [];
+    const counts = new Map<string, number>();
+    let uncategorized = 0;
+    rows.forEach((row: any) => row.category ? counts.set(row.category, (counts.get(row.category) || 0) + 1) : uncategorized++);
+    return { uncategorized, rows: activeCategories.map((category) => ({ ...category, product_count: counts.get(category.name) || 0 })) };
+  }, [data, activeCategories]);
 
   async function load() {
     try {
@@ -497,82 +511,69 @@ export default function FullProducts() {
             />
           </View>
 
-          <SearchBar
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Buscar por código ou nome"
-          />
+          <View style={[productStyles.workspace, compactLayout && productStyles.workspaceCompact]}>
+            {(!compactLayout || categoriesOpen) && <View style={[productStyles.categoryRail, compactLayout && productStyles.categoryRailCompact]}>
+              <Text style={productStyles.railTitle}>Categorias</Text>
+              <CategoryNav label="Todos os produtos" count={data.summary?.products || 0} active={selectedCategory === 'all'} onPress={() => setSelectedCategory('all')} />
+              <CategoryNav label="Sem categoria" count={categoryNavigation.uncategorized} active={selectedCategory === 'uncategorized'} onPress={() => setSelectedCategory('uncategorized')} />
+              {categoryNavigation.rows.map((category: any) => <CategoryNav key={String(category.id)} label={category.name} count={category.product_count} active={selectedCategory === category.name} onPress={() => setSelectedCategory(category.name)} />)}
+              <Pressable style={productStyles.manageCategories} onPress={() => { setCategoryError(''); setCategoryManagerOpen(true); loadCategories(); }}>
+                <Feather name="settings" size={14} color={theme.colors.text} /><Text style={productStyles.manageText}>Gerenciar categorias</Text>
+              </Pressable>
+            </View>}
 
-          <View style={s.card}>
-            <Text style={s.cardTitle}>
-              Cadastro de produtos
-            </Text>
+            <View style={productStyles.productArea}>
+              <View style={productStyles.tableToolbar}>
+                {compactLayout && <Pressable style={productStyles.mobileCategoryButton} onPress={() => setCategoriesOpen((current) => !current)}><Feather name="tag" size={16} color={theme.colors.text} /><Text style={productStyles.mobileCategoryText}>Categorias</Text></Pressable>}
+                <View style={productStyles.searchArea}><SearchBar value={search} onChangeText={setSearch} placeholder="Buscar por código ou nome" /></View>
+                <View style={productStyles.tools}>
+                  <ToolbarMenu icon="chevron-down" label="Ordenar" open={sortOpen} onPress={() => { setSortOpen(!sortOpen); setFilterOpen(false); setColumnsOpen(false); }}>
+                    <MenuOption label="Nome (A–Z)" active={sortMode === 'name'} onPress={() => { setSortMode('name'); setSortOpen(false); }} />
+                    <MenuOption label="Maior preço" active={sortMode === 'price_desc'} onPress={() => { setSortMode('price_desc'); setSortOpen(false); }} />
+                    <MenuOption label="Menor estoque" active={sortMode === 'stock_asc'} onPress={() => { setSortMode('stock_asc'); setSortOpen(false); }} />
+                  </ToolbarMenu>
+                  <ToolbarMenu icon="filter" label="Filtrar" open={filterOpen} onPress={() => { setFilterOpen(!filterOpen); setSortOpen(false); setColumnsOpen(false); }}>
+                    {[['all','Todos'],['low','Estoque baixo'],['negative','Estoque negativo'],['inactive','Produtos inativos']].map(([value,label]) => <MenuOption key={value} label={label} active={stockFilter === value} onPress={() => { setStockFilter(value as any); setFilterOpen(false); }} />)}
+                  </ToolbarMenu>
+                  <ToolbarMenu icon="columns" label="Colunas" open={columnsOpen} onPress={() => { setColumnsOpen(!columnsOpen); setSortOpen(false); setFilterOpen(false); }}>
+                    {Object.entries({ code: 'Código', category: 'Categoria', unit: 'Unidade', cost: 'Custo', price: 'Preço de venda', stock: 'Estoque', status: 'Status' }).map(([key,label]) => <MenuOption key={key} label={label} active={visibleColumns[key]} onPress={() => setVisibleColumns((current) => ({ ...current, [key]: !current[key] }))} />)}
+                  </ToolbarMenu>
+                </View>
+              </View>
 
-            {filteredRows.length > 0 ? (
-              filteredRows.map(
-                (row: any) => (
-                  <View
-                    key={String(row.id)}
-                    style={s.row}
-                  >
-                    {row.image_url ? (
-                      <Image
-                        source={{ uri: row.image_url }}
-                        style={thumbStyles.thumb}
-                      />
-                    ) : (
-                      <View style={thumbStyles.thumbPlaceholder}>
-                        <Text style={thumbStyles.thumbPlaceholderText}>
-                          {(row.name || '?').charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-
-                    <View style={s.main}>
-                      <Text style={s.name}>
-                        {row.name}
-                      </Text>
-
-                      <Text style={s.meta}>
-                        {row.code} • {row.category} •{' '}
-                        {row.sale_mode === 'weight'
-                          ? 'kg / peso'
-                          : row.unit}
-                        {row.scale_enabled
-                          ? ` • PLU ${row.scale_plu}`
-                          : ''}
-                      </Text>
-
-                      <Text style={s.meta}>
-                        Estoque {row.stock} • mínimo{' '}
-                        {row.minimum} • custo{' '}
-                        {money(row.cost)}
-                      </Text>
-                    </View>
-
-                    <View style={s.right}>
-                      <Text style={s.amount}>
-                        {money(row.price)}
-                      </Text>
-
-                      <Pressable
-                        onPress={() => edit(row)}
-                      >
-                        <Text style={s.badge}>
-                          Editar
-                        </Text>
-                      </Pressable>
-                    </View>
+              <View style={productStyles.resultLine}><Text style={productStyles.resultText}>{filteredRows.length} produto(s)</Text></View>
+              <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={productStyles.tableScroll}>
+                <View style={productStyles.table}>
+                  <View style={[productStyles.tableRow, productStyles.tableHead]}>
+                    <Text style={[productStyles.headText, productStyles.productColumn]}>PRODUTO</Text>
+                    {visibleColumns.code && <Text style={[productStyles.headText, productStyles.smallColumn]}>CÓDIGO</Text>}
+                    {visibleColumns.category && <Text style={[productStyles.headText, productStyles.mediumColumn]}>CATEGORIA</Text>}
+                    {visibleColumns.unit && <Text style={[productStyles.headText, productStyles.tinyColumn]}>UN.</Text>}
+                    {visibleColumns.cost && <Text style={[productStyles.headText, productStyles.valueColumn]}>CUSTO</Text>}
+                    {visibleColumns.price && <Text style={[productStyles.headText, productStyles.valueColumn]}>VENDA</Text>}
+                    {visibleColumns.stock && <Text style={[productStyles.headText, productStyles.stockColumn]}>ESTOQUE</Text>}
+                    {visibleColumns.status && <Text style={[productStyles.headText, productStyles.statusColumn]}>STATUS</Text>}
+                    <View style={productStyles.actionColumn} />
                   </View>
-                )
-              )
-            ) : (
-              <Text style={s.empty}>
-                {search
-                  ? 'Nenhum produto encontrado para essa busca.'
-                  : 'Nenhum produto cadastrado.'}
-              </Text>
-            )}
+                  {filteredRows.map((row: any) => {
+                    const stock = Number(row.stock || 0); const minimum = Number(row.minimum || 0);
+                    const stockTone = stock < 0 ? productStyles.stockNegative : stock <= minimum ? productStyles.stockLow : productStyles.stockOk;
+                    return <View key={String(row.id)} style={productStyles.tableRow}>
+                      <View style={productStyles.productColumn}>{row.image_url ? <Image source={{ uri: row.image_url }} style={thumbStyles.thumb} /> : <View style={thumbStyles.thumbPlaceholder}><Text style={thumbStyles.thumbPlaceholderText}>{(row.name || '?').charAt(0).toUpperCase()}</Text></View>}<View style={productStyles.productNameArea}><Text style={productStyles.productName} numberOfLines={1}>{row.name}</Text><Text style={productStyles.productMeta} numberOfLines={1}>Mínimo {row.minimum || 0}{row.scale_enabled ? ` • PLU ${row.scale_plu}` : ''}</Text></View></View>
+                      {visibleColumns.code && <Text style={[productStyles.cellText, productStyles.smallColumn]}>{row.code || '—'}</Text>}
+                      {visibleColumns.category && <Text style={[productStyles.cellText, productStyles.mediumColumn]}>{row.category || 'Sem categoria'}</Text>}
+                      {visibleColumns.unit && <Text style={[productStyles.cellText, productStyles.tinyColumn]}>{row.sale_mode === 'weight' ? 'kg' : row.unit}</Text>}
+                      {visibleColumns.cost && <Text style={[productStyles.cellText, productStyles.valueColumn]}>{money(row.cost)}</Text>}
+                      {visibleColumns.price && <Text style={[productStyles.cellStrong, productStyles.valueColumn]}>{money(row.price)}</Text>}
+                      {visibleColumns.stock && <Text style={[productStyles.cellStrong, productStyles.stockColumn, stockTone]}>{row.stock}</Text>}
+                      {visibleColumns.status && <View style={productStyles.statusColumn}><Text style={[productStyles.statusBadge, row.active === false && productStyles.statusInactive]}>{row.active === false ? 'Inativo' : 'Ativo'}</Text></View>}
+                      <View style={productStyles.actionColumn}><Pressable onPress={() => edit(row)} style={productStyles.editButton}><Feather name="edit-2" size={14} color={theme.colors.text} /><Text style={productStyles.editText}>Editar</Text></Pressable></View>
+                    </View>;
+                  })}
+                  {filteredRows.length === 0 && <Text style={s.empty}>Nenhum produto encontrado com estes filtros.</Text>}
+                </View>
+              </ScrollView>
+            </View>
           </View>
         </>
       )}
@@ -970,6 +971,55 @@ export default function FullProducts() {
     </AdminShell>
   );
 }
+
+function CategoryNav({ label, count, active, onPress }: { label: string; count: number; active: boolean; onPress: () => void }) {
+  return <Pressable onPress={onPress} style={[productStyles.categoryItem, active && productStyles.categoryItemActive]}>
+    <Text style={[productStyles.categoryLabel, active && productStyles.categoryLabelActive]} numberOfLines={1}>{label}</Text>
+    <Text style={[productStyles.categoryCount, active && productStyles.categoryCountActive]}>{count}</Text>
+  </Pressable>;
+}
+
+function ToolbarMenu({ icon, label, open, onPress, children }: { icon: any; label: string; open: boolean; onPress: () => void; children: any }) {
+  return <View style={productStyles.toolWrap}>
+    <Pressable onPress={onPress} style={[productStyles.toolButton, open && productStyles.toolButtonActive]} accessibilityLabel={label}>
+      <Feather name={icon} size={17} color={theme.colors.text} />
+    </Pressable>
+    {open && <View style={productStyles.toolMenu}><Text style={productStyles.toolMenuTitle}>{label}</Text>{children}</View>}
+  </View>;
+}
+
+function MenuOption({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return <Pressable onPress={onPress} style={productStyles.menuOption}>
+    <Text style={[productStyles.menuOptionText, active && productStyles.menuOptionActive]}>{label}</Text>
+    {active && <Feather name="check" size={15} color="#3568B8" />}
+  </Pressable>;
+}
+
+const productStyles = StyleSheet.create({
+  workspace: { flexDirection: 'row', alignItems: 'stretch', gap: 12 },
+  workspaceCompact: { flexDirection: 'column' },
+  categoryRail: { width: 220, flexShrink: 0, backgroundColor: '#FFF', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 14, padding: 10, alignSelf: 'flex-start' },
+  categoryRailCompact: { width: '100%' },
+  railTitle: { fontFamily: 'Sora_700Bold', fontSize: 15, color: theme.colors.text, paddingHorizontal: 9, paddingVertical: 8 },
+  categoryItem: { minHeight: 40, paddingHorizontal: 9, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  categoryItemActive: { backgroundColor: '#EEF4FC' }, categoryLabel: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.text },
+  categoryLabelActive: { fontFamily: 'Inter_700Bold', color: '#285DA9' }, categoryCount: { fontFamily: 'Inter_600SemiBold', fontSize: 11.5, color: theme.colors.muted }, categoryCountActive: { color: '#285DA9' },
+  manageCategories: { minHeight: 42, marginTop: 8, paddingHorizontal: 9, borderTopWidth: 1, borderTopColor: theme.colors.border, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  manageText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.text },
+  productArea: { flex: 1, minWidth: 0, backgroundColor: '#FFF', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 14, zIndex: 2 },
+  tableToolbar: { padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, zIndex: 15 }, searchArea: { flex: 1, minWidth: 220 }, tools: { flexDirection: 'row', gap: 7 },
+  mobileCategoryButton: { minHeight: 42, paddingHorizontal: 10, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }, mobileCategoryText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.text },
+  toolWrap: { position: 'relative' }, toolButton: { width: 42, height: 42, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center' }, toolButtonActive: { borderColor: '#3568B8', backgroundColor: '#EEF4FC' },
+  toolMenu: { position: 'absolute', zIndex: 30, top: 47, right: 0, width: 220, paddingVertical: 8, backgroundColor: '#FFF', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, shadowColor: '#000', shadowOpacity: .12, shadowRadius: 14, elevation: 10 },
+  toolMenuTitle: { paddingHorizontal: 13, paddingVertical: 7, fontFamily: 'Sora_700Bold', fontSize: 13.5, color: theme.colors.text }, menuOption: { minHeight: 42, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, menuOptionText: { fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.text }, menuOptionActive: { fontFamily: 'Inter_600SemiBold', color: '#285DA9' },
+  resultLine: { paddingHorizontal: 14, paddingBottom: 10 }, resultText: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
+  tableScroll: { minWidth: '100%' }, table: { minWidth: 900, flex: 1 }, tableRow: { minHeight: 66, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: theme.colors.border, flexDirection: 'row', alignItems: 'center' }, tableHead: { minHeight: 38, backgroundColor: '#F7F6F3' },
+  headText: { fontFamily: 'Inter_600SemiBold', fontSize: 10.5, letterSpacing: .45, color: theme.colors.muted }, cellText: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.text }, cellStrong: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.text },
+  productColumn: { width: 260, flexDirection: 'row', alignItems: 'center', gap: 10 }, productNameArea: { flex: 1, minWidth: 0 }, productName: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text }, productMeta: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 11.5, color: theme.colors.muted },
+  tinyColumn: { width: 60 }, smallColumn: { width: 100 }, mediumColumn: { width: 145 }, valueColumn: { width: 115, textAlign: 'right', paddingRight: 16 }, stockColumn: { width: 90, textAlign: 'right', paddingRight: 16 }, statusColumn: { width: 85, alignItems: 'center' }, actionColumn: { width: 88, alignItems: 'flex-end' },
+  stockNegative: { color: theme.colors.danger }, stockLow: { color: '#B06D17' }, stockOk: { color: theme.colors.success }, statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#EAF7EF', fontFamily: 'Inter_600SemiBold', fontSize: 11, color: theme.colors.success }, statusInactive: { backgroundColor: '#EEF0F2', color: theme.colors.muted },
+  editButton: { minHeight: 34, paddingHorizontal: 9, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }, editText: { fontFamily: 'Inter_600SemiBold', fontSize: 11.5, color: theme.colors.text },
+});
 
 const thumbStyles = StyleSheet.create({
   thumb: {

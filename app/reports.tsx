@@ -6,12 +6,14 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
 import { DateField, Notice, SearchablePicker } from '@/components/FormKit';
+import { PeriodCalendar, type PeriodPreset } from '@/components/PeriodCalendar';
 import { theme } from '@/constants/theme';
 import { useBranding } from '@/contexts/BrandingContext';
 import { getReports } from '@/services/api';
@@ -343,6 +345,8 @@ type CashData = {
 const METHODS = ['Dinheiro', 'Pix', 'Débito', 'Crédito', 'Outros'];
 
 export default function Reports() {
+  const { width } = useWindowDimensions();
+  const compactReports = width < 900;
   const { branding } = useBranding();
   const [data, setData] = useState<ReportsData | null>(null);
   const [cash, setCash] = useState<CashData | null>(null);
@@ -1050,6 +1054,36 @@ export default function Reports() {
     description: `${report.group} • ${report.description}`,
   }));
 
+  const inlineRows = useMemo(() => {
+    const financeEntries = (finance?.entries || []).filter((entry: any) => entry.due_date >= appliedStart && entry.due_date <= appliedEnd);
+    if (selectedReportId === 'sales-performance') return periodDays.map((row: any) => ({ id: row.date, primary: dateBR(row.date), secondary: `${row.sales || 0} venda(s)`, value: money(row.total) }));
+    if (selectedReportId === 'products') return productsAbc.map((row: any, index) => ({ id: `${row.name}-${index}`, primary: row.name, secondary: `${qtyLabel(row.qty)} vendido(s) • Curva ${row.tier}`, value: money(row.revenue) }));
+    if (selectedReportId === 'payments') return paymentBreakdown.map((row: any) => ({ id: row.method, primary: row.method, secondary: `${row.percent.toFixed(1).replace('.', ',')}% do faturamento`, value: money(row.value) }));
+    if (selectedReportId === 'customers') return customerRanking.map((row: any, index) => ({ id: `${row.name}-${index}`, primary: row.name, secondary: `${row.purchases} compra(s) • Curva ${row.tier}`, value: money(row.total) }));
+    if (selectedReportId === 'payables') return financeEntries.filter((row: any) => row.type === 'payable' && ['open', 'overdue'].includes(row.status)).map((row: any) => ({ id: String(row.id), primary: row.description || row.supplier || 'Conta a pagar', secondary: `${row.category || 'Sem categoria'} • vence ${dateBR(row.due_date)}`, value: money(row.amount) }));
+    if (selectedReportId === 'receivables') return financeEntries.filter((row: any) => row.type === 'receivable' && ['open', 'overdue'].includes(row.status)).map((row: any) => ({ id: String(row.id), primary: row.description || row.customer || 'Conta a receber', secondary: `${row.category || 'Sem categoria'} • vence ${dateBR(row.due_date)}`, value: money(row.amount) }));
+    if (selectedReportId === 'finance-categories') return financeCategoryRows.map((row: any) => ({ id: row.selectionKey, primary: row.category, secondary: `${row.reportType} • ${row.count} lançamento(s)`, value: money(row.total) }));
+    if (selectedReportId === 'managerial-dre') return (dre?.rows || []).map((row: any) => ({ id: row.key, primary: row.label, secondary: row.kind === 'result' ? 'Resultado do período' : 'Regime de competência', value: money(row.value) }));
+    if (selectedReportId === 'cash') return cashClosings.map((row: any, index) => ({ id: String(row.id || `${row.code}-${index}`), primary: `Caixa ${row.code || ''}`, secondary: `${dateBR(row.date)} • ${row.sales || 0} venda(s)`, value: money(row.difference), tone: Number(row.difference || 0) < 0 ? 'danger' : 'default' }));
+    if (selectedReportId === 'purchases') return purchaseRows.map((row: any) => ({ id: String(row.id), primary: row.supplier || row.description || `Compra #${row.number || row.id}`, secondary: `${dateBR(row.date)} • ${row.status || 'Recebida'}`, value: money(row.total) }));
+    return stockAlerts.map((row: any) => ({ id: String(row.id || row.code), primary: row.name, secondary: `${row.category || 'Sem categoria'} • mínimo ${row.minimum || 0}`, value: `${row.stock || 0} em estoque`, tone: row.status === 'Negativo' ? 'danger' : 'default' }));
+  }, [selectedReportId, periodDays, productsAbc, paymentBreakdown, customerRanking, finance, appliedStart, appliedEnd, financeCategoryRows, dre, cashClosings, purchaseRows, stockAlerts]);
+
+  useEffect(() => {
+    setReportSelected(Object.fromEntries(inlineRows.map((row: any) => [String(row.id), true])));
+  }, [selectedReportId, inlineRows.map((row: any) => row.id).join('|')]);
+
+  const selectedInlineRows = inlineRows.filter((row: any) => reportSelected[String(row.id)]);
+  const reportGroups = ['Vendas e clientes', 'Financeiro', 'Caixa', 'Compras', 'Estoque'];
+
+  function exportInlinePdf() {
+    printReport(selectedReport.title, periodLabel, ['Descrição', 'Detalhes', 'Valor'], selectedInlineRows.map((row: any) => [row.primary, row.secondary, row.value]));
+  }
+
+  function exportInlineCsv() {
+    downloadCsv(`relatorio_${selectedReportId}_${appliedStart}_${appliedEnd}.csv`, ['Descrição', 'Detalhes', 'Valor'], selectedInlineRows.map((row: any) => [row.primary, row.secondary, row.value]));
+  }
+
   return (
     <AdminShell
       title="Relatórios"
@@ -1065,131 +1099,65 @@ export default function Reports() {
         </Text>
       )}
 
-      <View style={styles.periodCard}>
-        <View style={styles.periodTopRow}>
-          <View style={styles.periodHeading}>
-            <View style={styles.periodIcon}>
-              <Feather name="calendar" size={17} color="#B8862F" />
-            </View>
-            <View>
-              <Text style={styles.periodEyebrow}>PERÍODO DA ANÁLISE</Text>
-              <Text style={styles.periodTitle}>{periodLabel}</Text>
-            </View>
-          </View>
-
-          <View style={styles.periodSelect}>
-            <SearchablePicker
-              label="Alterar período"
-              value={period}
-              onChange={(value) => applyQuickPeriod(value as PeriodKey)}
-              options={[
-                { label: 'Hoje', value: 'today', description: 'Somente o dia atual' },
-                { label: 'Últimos 7 dias', value: '7days', description: 'Hoje e os seis dias anteriores' },
-                { label: 'Últimos 30 dias', value: '30days', description: 'Hoje e os 29 dias anteriores' },
-                { label: 'Mês atual', value: 'month', description: 'Do primeiro dia do mês até hoje' },
-                { label: 'Ano atual', value: 'year', description: 'Do primeiro dia do ano até hoje' },
-                { label: 'Período personalizado', value: 'custom', description: 'Informar data inicial e final' },
-              ]}
-            />
-          </View>
-        </View>
-
-        {period === 'custom' && (
-          <View style={styles.customArea}>
-            <View style={styles.dateFields}>
-              <View style={styles.dateField}>
-                <DateField label="Data inicial" value={startInput} onChangeText={(value) => {
-                  setStartInput(value);
-                  setPeriodError('');
-                  setAppliedNotice('');
-                }} />
-              </View>
-
-              <View style={styles.dateField}>
-                <DateField label="Data final" value={endInput} onChangeText={(value) => {
-                  setEndInput(value);
-                  setPeriodError('');
-                  setAppliedNotice('');
-                }} />
-              </View>
-            </View>
-
-            {!!periodError && (
-              <Text
-                style={styles.periodError}
-              >
-                {periodError}
-              </Text>
-            )}
-
-            <Pressable
-              style={styles.applyButton}
-              onPress={applyCustomPeriod}
-            >
-              <Text
-                style={styles.applyButtonText}
-              >
-                Ver relatório
-              </Text>
-            </Pressable>
-
-            {!!appliedNotice && (
-              <Text style={styles.appliedNotice}>
-                {appliedNotice}
-              </Text>
-            )}
-          </View>
-        )}
-
-        {period !== 'custom' && !!appliedNotice && (
-          <Text style={styles.appliedNotice}>
-            {appliedNotice}
-          </Text>
-        )}
-
-      </View>
-
       {!!data && (
-        <View style={styles.reportFlow}>
-          <View style={styles.flowHeader}>
-            <View style={styles.catalogIntro}>
-              <Text style={styles.catalogEyebrow}>GERAR RELATÓRIO</Text>
-              <Text style={styles.catalogTitle}>Escolha o relatório e abra</Text>
-              <Text style={styles.catalogSubtitle}>O período acima será aplicado automaticamente. Na próxima janela você escolhe os itens e exporta.</Text>
-            </View>
-            <View style={styles.flowSteps}>
-              <View style={styles.flowStepDone}><Text style={styles.flowStepNumber}>1</Text><Text style={styles.flowStepText}>Período definido</Text></View>
-              <View style={styles.flowStepActive}><Text style={styles.flowStepNumberActive}>2</Text><Text style={styles.flowStepTextActive}>Escolher relatório</Text></View>
-              <View style={styles.flowStep}><Text style={styles.flowStepNumberMuted}>3</Text><Text style={styles.flowStepText}>Selecionar e exportar</Text></View>
-            </View>
+        <View style={[styles.reportsWorkspace, compactReports && styles.reportsWorkspaceCompact]}>
+          <View style={[styles.reportsNavigation, compactReports && styles.reportsNavigationCompact]}>
+            <Text style={styles.navigationTitle}>Relatórios</Text>
+            {reportGroups.map((group) => (
+              <View key={group} style={styles.navigationGroup}>
+                <Text style={styles.navigationGroupTitle}>{group}</Text>
+                {reportCatalog.filter((report) => report.group === group).map((report) => (
+                  <Pressable key={report.id} onPress={() => { setSelectedReportId(report.id); setDetailMode(null); }} style={[styles.navigationItem, selectedReportId === report.id && styles.navigationItemActive]}>
+                    <Feather name={report.icon} size={15} color={selectedReportId === report.id ? report.color : theme.colors.muted} />
+                    <Text style={[styles.navigationItemText, selectedReportId === report.id && styles.navigationItemTextActive]}>{report.title}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ))}
           </View>
 
-          <View style={styles.reportChooser}>
-            <View style={styles.reportPickerColumn}>
-              <SearchablePicker
-                label="Relatório"
-                value={selectedReportId}
-                onChange={setSelectedReportId}
-                options={reportOptions}
-                placeholder="Selecione o relatório desejado"
-              />
-              <Text style={styles.chooserHelp}>Clique no campo acima para ver todos os relatórios disponíveis.</Text>
+          <View style={[styles.inlineReport, compactReports && styles.inlineReportCompact]}>
+            <View style={styles.inlineReportHeader}>
+              <View style={styles.inlineTitleArea}>
+                <View style={[styles.iconCircle, { backgroundColor: selectedReport.background }]}><Feather name={selectedReport.icon} size={20} color={selectedReport.color} /></View>
+                <View style={styles.selectedReportMain}>
+                  <Text style={styles.selectedReportGroup}>{selectedReport.group}</Text>
+                  <Text style={styles.inlineTitle}>{selectedReport.title}</Text>
+                  <Text style={styles.selectedReportDescription}>{selectedReport.description}</Text>
+                </View>
+              </View>
+              <View style={styles.inlineHeaderActions}>
+                <PeriodCalendar
+                  start={appliedStart}
+                  end={appliedEnd}
+                  maxDate={today}
+                  compact
+                  label="Período"
+                  onApply={(start, end, preset: PeriodPreset) => {
+                    setAppliedStart(start); setAppliedEnd(end); setStartInput(isoToBR(start)); setEndInput(isoToBR(end)); setPeriod(preset as PeriodKey); setAppliedNotice(`Período aplicado: ${isoToBR(start)} a ${isoToBR(end)}`);
+                  }}
+                />
+                <Pressable style={styles.inlineExportButton} onPress={exportInlinePdf}><Feather name="printer" size={15} color={theme.colors.text} /><Text style={styles.inlineExportButtonText}>PDF</Text></Pressable>
+                <Pressable style={styles.inlineExportButton} onPress={exportInlineCsv}><Feather name="download" size={15} color={theme.colors.text} /><Text style={styles.inlineExportButtonText}>Excel</Text></Pressable>
+              </View>
             </View>
 
-            <View style={styles.selectedReportCard}>
-              <View style={[styles.iconCircle, { backgroundColor: selectedReport.background }]}>
-                <Feather name={selectedReport.icon} size={22} color={selectedReport.color} />
-              </View>
-              <View style={styles.selectedReportMain}>
-                <Text style={styles.selectedReportGroup}>{selectedReport.group}</Text>
-                <Text style={styles.selectedReportTitle}>{selectedReport.title}</Text>
-                <Text style={styles.selectedReportDescription}>{selectedReport.description}</Text>
-              </View>
-              <Pressable style={styles.openReportButton} onPress={selectedReport.onPress}>
-                <Text style={styles.openReportButtonText}>Abrir relatório</Text>
-                <Feather name="arrow-right" size={17} color="#FFF" />
-              </Pressable>
+            <View style={styles.inlineSummary}>
+              <View><Text style={styles.inlineSummaryLabel}>RESULTADO PRINCIPAL</Text><Text style={styles.inlineSummaryValue}>{selectedReport.value}</Text><Text style={styles.inlineSummaryDetail}>{selectedReport.subtitle}</Text></View>
+              <View style={styles.selectionActions}><Text style={styles.selectionCount}>{selectedInlineRows.length} de {inlineRows.length} selecionado(s)</Text><Pressable onPress={() => setReportSelected(Object.fromEntries(inlineRows.map((row: any) => [String(row.id), true])))}><Text style={styles.selectionLink}>Selecionar todos</Text></Pressable><Pressable onPress={() => setReportSelected({})}><Text style={styles.selectionLink}>Limpar</Text></Pressable></View>
             </View>
+
+            <ScrollView style={styles.inlineRows} nestedScrollEnabled>
+              {inlineRows.map((row: any) => {
+                const checked = !!reportSelected[String(row.id)];
+                return <Pressable key={String(row.id)} onPress={() => setReportSelected((current) => ({ ...current, [String(row.id)]: !checked }))} style={styles.inlineRow}>
+                  <View style={[styles.inlineCheckbox, checked && { backgroundColor: selectedReport.color, borderColor: selectedReport.color }]}>{checked && <Feather name="check" size={13} color="#FFF" />}</View>
+                  <View style={styles.inlineRowMain}><Text style={styles.inlineRowTitle}>{row.primary}</Text><Text style={styles.inlineRowDetail}>{row.secondary}</Text></View>
+                  <Text style={[styles.inlineRowValue, row.tone === 'danger' && styles.inlineRowDanger]}>{row.value}</Text>
+                </Pressable>;
+              })}
+              {inlineRows.length === 0 && <View style={styles.inlineEmpty}><Feather name="inbox" size={24} color={theme.colors.muted} /><Text style={styles.inlineEmptyTitle}>Nenhum dado neste período</Text><Text style={styles.inlineEmptyText}>Altere o período para consultar outros resultados.</Text></View>}
+            </ScrollView>
           </View>
         </View>
       )}
@@ -2854,6 +2822,25 @@ function ClosingDetails({
 }
 
 const styles = StyleSheet.create({
+  reportsWorkspace: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 12 },
+  reportsWorkspaceCompact: { flexDirection: 'column' },
+  reportsNavigation: { width: 230, flexGrow: 0, flexShrink: 0, padding: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 14 },
+  reportsNavigationCompact: { width: '100%' },
+  navigationTitle: { paddingHorizontal: 8, paddingVertical: 8, fontFamily: 'Sora_700Bold', fontSize: 17, color: theme.colors.text },
+  navigationGroup: { marginTop: 8 }, navigationGroupTitle: { paddingHorizontal: 8, paddingVertical: 6, fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .65, textTransform: 'uppercase', color: theme.colors.muted },
+  navigationItem: { minHeight: 42, paddingHorizontal: 9, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }, navigationItemActive: { backgroundColor: '#EEF4FC' },
+  navigationItemText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.text }, navigationItemTextActive: { fontFamily: 'Inter_700Bold', color: '#285DA9' },
+  inlineReport: { flex: 1, minWidth: 500, overflow: 'hidden', backgroundColor: '#FFF', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 14 },
+  inlineReportCompact: { width: '100%', minWidth: 0 },
+  inlineReportHeader: { padding: 16, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  inlineTitleArea: { flex: 1, minWidth: 280, flexDirection: 'row', alignItems: 'flex-start', gap: 11 }, inlineTitle: { marginTop: 3, fontFamily: 'Sora_700Bold', fontSize: 19, color: theme.colors.text },
+  inlineHeaderActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
+  inlineExportButton: { minHeight: 42, paddingHorizontal: 11, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 6 }, inlineExportButtonText: { fontFamily: 'Inter_700Bold', fontSize: 12, color: theme.colors.text },
+  inlineSummary: { padding: 15, backgroundColor: '#F8F8F6', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  inlineSummaryLabel: { fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .6, color: theme.colors.muted }, inlineSummaryValue: { marginTop: 4, fontFamily: 'Sora_700Bold', fontSize: 21, color: theme.colors.text }, inlineSummaryDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
+  selectionCount: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.muted }, inlineRows: { maxHeight: 590 }, inlineRow: { minHeight: 66, paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  inlineCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' }, inlineRowMain: { flex: 1, minWidth: 0 }, inlineRowTitle: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text }, inlineRowDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12, color: theme.colors.muted }, inlineRowValue: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text, textAlign: 'right' }, inlineRowDanger: { color: theme.colors.danger },
+  inlineEmpty: { minHeight: 230, padding: 30, alignItems: 'center', justifyContent: 'center' }, inlineEmptyTitle: { marginTop: 9, fontFamily: 'Sora_700Bold', fontSize: 15, color: theme.colors.text }, inlineEmptyText: { marginTop: 4, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
   error: {
     color: theme.colors.danger,
     fontSize: 14,

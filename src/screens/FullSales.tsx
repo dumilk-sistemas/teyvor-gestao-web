@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
 import { MetricCard } from '@/components/MetricCard';
@@ -21,6 +22,7 @@ import {
 import { useToast } from '@/components/Toast';
 import { theme } from '@/constants/theme';
 import { formatDateBR } from '@/utils/date';
+import { formatPeriodLabel, PeriodCalendar, type PeriodPreset } from '@/components/PeriodCalendar';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', {
@@ -34,22 +36,6 @@ function todayDateString() {
   const day = String(now.getDate()).padStart(2, '0');
   return `${now.getFullYear()}-${month}-${day}`;
 }
-
-function addDaysISO(iso: string, amount: number) {
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  date.setDate(date.getDate() + amount);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-type PeriodKey = 'today' | '7days' | '30days' | 'all';
-
-const PERIOD_LABELS: Record<PeriodKey, string> = {
-  today: 'hoje',
-  '7days': 'últimos 7 dias',
-  '30days': 'últimos 30 dias',
-  all: 'todo o período',
-};
 
 export default function FullSales() {
   const [data, setData] = useState<any>(null);
@@ -65,20 +51,18 @@ export default function FullSales() {
   const [form, setForm] = useState<any>({});
   const [items, setItems] = useState<any[]>([]);
   const [addProduct, setAddProduct] = useState('');
-  const [period, setPeriod] = useState<PeriodKey>('today');
+  const today = todayDateString();
+  const [periodStart, setPeriodStart] = useState(today);
+  const [periodEnd, setPeriodEnd] = useState(today);
+  const [, setPeriodPreset] = useState<PeriodPreset>('today');
   const [search, setSearch] = useState('');
+  const [actionSaleId, setActionSaleId] = useState<string | null>(null);
 
-  const range = useMemo(() => {
-    const today = todayDateString();
-    if (period === 'today') return { start: today, end: today };
-    if (period === '7days') return { start: addDaysISO(today, -6), end: today };
-    if (period === '30days') return { start: addDaysISO(today, -29), end: today };
-    return null;
-  }, [period]);
+  const range = useMemo(() => ({ start: periodStart, end: periodEnd }), [periodStart, periodEnd]);
+  const periodLabel = formatPeriodLabel(periodStart, periodEnd);
 
   const periodRows = useMemo(() => {
     const rows = data?.rows || [];
-    if (!range) return rows;
     return rows.filter((row: any) => row.date >= range.start && row.date <= range.end);
   }, [data, range]);
 
@@ -372,17 +356,21 @@ export default function FullSales() {
                 Os indicadores acompanham os filtros abaixo
               </Text>
             </View>
-            <Choice
-              label="Período"
-              value={period}
-              onChange={(value) => setPeriod(value as PeriodKey)}
-              options={[
-                { label: 'Hoje', value: 'today' },
-                { label: '7 dias', value: '7days' },
-                { label: '30 dias', value: '30days' },
-                { label: 'Tudo', value: 'all' },
-              ]}
-            />
+            <View style={salesStyles.periodRow}>
+              <PeriodCalendar
+                start={periodStart}
+                end={periodEnd}
+                maxDate={today}
+                compact
+                label="Período das vendas"
+                onApply={(start, end, preset) => {
+                  setPeriodStart(start);
+                  setPeriodEnd(end);
+                  setPeriodPreset(preset);
+                }}
+              />
+              <Text style={salesStyles.periodSummary}>Resultados de {periodLabel}</Text>
+            </View>
             <View style={salesStyles.searchWrap}>
               <SearchBar
                 value={search}
@@ -394,7 +382,7 @@ export default function FullSales() {
 
           <View style={s.grid}>
             <MetricCard
-              label={`Faturamento — ${PERIOD_LABELS[period]}`}
+              label="Faturamento"
               value={money(visibleSummary.total)}
               note="Somente vendas concluídas"
               icon="dollar-sign"
@@ -433,22 +421,28 @@ export default function FullSales() {
           {Object.keys(visibleSummary.payment_totals).length > 0 && (
             <View style={s.card}>
               <Text style={s.cardTitle}>
-                Formas de pagamento — {PERIOD_LABELS[period]}
+                Formas de pagamento
               </Text>
+
+              <Text style={paymentChartStyles.subtitle}>Participação no faturamento de {periodLabel}</Text>
 
               {Object.entries(visibleSummary.payment_totals)
                 .sort(([, a]: any, [, b]: any) => b - a)
-                .map(([method, value]: any) => (
+                .map(([method, value]: any, index) => {
+                  const palette = ['#3568B8', '#7357B6', '#25835A', '#66717D', '#B8862F'];
+                  const color = palette[index % palette.length];
+                  const percent = visibleSummary.total > 0 ? (value / visibleSummary.total) * 100 : 0;
+                  return (
                   <View
                     key={method}
                     style={paymentChartStyles.row}
                   >
                     <View style={paymentChartStyles.labelRow}>
                       <Text style={paymentChartStyles.label}>
-                        {method}
+                        <Text style={[paymentChartStyles.dot, { color }]}>● </Text>{method}
                       </Text>
                       <Text style={paymentChartStyles.value}>
-                        {money(value)}
+                        {percent.toFixed(1).replace('.', ',')}%  ·  {money(value)}
                       </Text>
                     </View>
 
@@ -457,19 +451,14 @@ export default function FullSales() {
                         style={[
                           paymentChartStyles.bar,
                           {
-                            width: `${
-                              visibleSummary.total > 0
-                                ? Math.round(
-                                    (value / visibleSummary.total) * 100
-                                  )
-                                : 0
-                            }%`,
+                            width: `${Math.round(percent)}%`,
+                            backgroundColor: color,
                           },
                         ]}
                       />
                     </View>
                   </View>
-                ))}
+                );})}
             </View>
           )}
 
@@ -478,7 +467,7 @@ export default function FullSales() {
               <View>
                 <Text style={salesStyles.listTitle}>Histórico de vendas</Text>
                 <Text style={salesStyles.listSubtitle}>
-                  {visibleRows.length} resultado(s) — {PERIOD_LABELS[period]}
+                  {visibleRows.length} resultado(s) — {periodLabel}
                 </Text>
               </View>
             </View>
@@ -529,18 +518,17 @@ export default function FullSales() {
                   </Text>
 
                   {row.status === 'Concluída' && (
-                    <View style={s.toolbar}>
-                      <ActionButton
-                        label="Editar"
-                        tone="plain"
-                        onPress={() => edit(row)}
-                      />
-
-                      <ActionButton
-                        label="Cancelar"
-                        tone="danger"
-                        onPress={() => cancel(row)}
-                      />
+                    <View style={salesStyles.actionWrap}>
+                      <Pressable style={salesStyles.actionTrigger} onPress={() => setActionSaleId((current) => current === String(row.id) ? null : String(row.id))}>
+                        <Feather name="more-horizontal" size={18} color={theme.colors.text} />
+                        <Text style={salesStyles.actionTriggerText}>Ações</Text>
+                      </Pressable>
+                      {actionSaleId === String(row.id) && (
+                        <View style={salesStyles.actionMenu}>
+                          <Pressable style={salesStyles.actionItem} onPress={() => { setActionSaleId(null); edit(row); }}><Feather name="edit-2" size={14} color={theme.colors.text} /><Text style={salesStyles.actionItemText}>Editar venda</Text></Pressable>
+                          <Pressable style={salesStyles.actionItem} onPress={() => { setActionSaleId(null); cancel(row); }}><Feather name="x-circle" size={14} color={theme.colors.danger} /><Text style={salesStyles.actionDangerText}>Cancelar venda</Text></Pressable>
+                        </View>
+                      )}
                     </View>
                   )}
                 </View>
@@ -728,6 +716,14 @@ export default function FullSales() {
 }
 
 const paymentChartStyles = StyleSheet.create({
+  subtitle: {
+    paddingHorizontal: 15,
+    marginTop: -8,
+    marginBottom: 5,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12.5,
+    color: theme.colors.muted,
+  },
   row: {
     paddingHorizontal: 15,
     paddingVertical: 10,
@@ -739,12 +735,13 @@ const paymentChartStyles = StyleSheet.create({
   },
   label: {
     fontSize: 13,
-    fontWeight: '800',
+    fontFamily: 'Inter_600SemiBold',
     color: theme.colors.text,
   },
+  dot: { fontSize: 12 },
   value: {
     fontSize: 13,
-    fontWeight: '900',
+    fontFamily: 'Inter_700Bold',
     color: theme.colors.text,
   },
   track: {
@@ -756,11 +753,24 @@ const paymentChartStyles = StyleSheet.create({
   bar: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: theme.colors.text,
+    backgroundColor: '#3568B8',
   },
 });
 
 const salesStyles = StyleSheet.create({
+  periodRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 12,
+  },
+  periodSummary: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12.5,
+    color: theme.colors.muted,
+  },
   filterHeader: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -778,7 +788,7 @@ const salesStyles = StyleSheet.create({
   filterTitle: {
     marginTop: 3,
     fontSize: 18,
-    fontWeight: '900',
+    fontFamily: 'Sora_700Bold',
     color: theme.colors.text,
   },
   filterHint: {
@@ -797,7 +807,7 @@ const salesStyles = StyleSheet.create({
   },
   listTitle: {
     fontSize: 18,
-    fontWeight: '900',
+    fontFamily: 'Sora_700Bold',
     color: theme.colors.text,
   },
   listSubtitle: {
@@ -826,7 +836,14 @@ const salesStyles = StyleSheet.create({
   customerMeta: {
     marginTop: 5,
     fontSize: 12.5,
-    fontWeight: '700',
+    fontFamily: 'Inter_600SemiBold',
     color: theme.colors.text,
   },
+  actionWrap: { marginTop: 7, zIndex: 5, alignItems: 'flex-end' },
+  actionTrigger: { minHeight: 34, paddingHorizontal: 10, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, backgroundColor: '#FFF', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actionTriggerText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.text },
+  actionMenu: { width: 175, marginTop: 6, zIndex: 20, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 10, backgroundColor: '#FFF', overflow: 'hidden' },
+  actionItem: { minHeight: 42, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: '#F0EFEA' },
+  actionItemText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.text },
+  actionDangerText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.danger },
 });
