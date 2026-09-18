@@ -88,7 +88,7 @@ export default function FullProducts() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
-  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({ code: true, category: true, unit: true, cost: true, price: true, stock: true, status: true });
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({ code: false, category: true, unit: true, cost: true, price: true, stock: true, status: false });
   const [categories, setCategories] = useState<any[]>([]);
   const [categorySummary, setCategorySummary] = useState<any>(null);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
@@ -525,7 +525,7 @@ export default function FullProducts() {
             <View style={productStyles.productArea}>
               <View style={productStyles.tableToolbar}>
                 {compactLayout && <Pressable style={productStyles.mobileCategoryButton} onPress={() => setCategoriesOpen((current) => !current)}><Feather name="tag" size={16} color={theme.colors.text} /><Text style={productStyles.mobileCategoryText}>Categorias</Text></Pressable>}
-                <View style={productStyles.searchArea}><SearchBar value={search} onChangeText={setSearch} placeholder="Buscar por código ou nome" /></View>
+                <View style={productStyles.searchArea}><SearchBar value={search} onChangeText={setSearch} placeholder="Buscar por nome, código ou categoria" /></View>
                 <View style={productStyles.tools}>
                   <ToolbarMenu icon="chevron-down" label="Ordenar" open={sortOpen} onPress={() => { setSortOpen(!sortOpen); setFilterOpen(false); setColumnsOpen(false); }}>
                     <MenuOption label="Nome (A–Z)" active={sortMode === 'name'} onPress={() => { setSortMode('name'); setSortOpen(false); }} />
@@ -542,7 +542,12 @@ export default function FullProducts() {
               </View>
 
               <View style={productStyles.resultLine}><Text style={productStyles.resultText}>{filteredRows.length} produto(s)</Text></View>
-              <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={productStyles.tableScroll}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator
+                persistentScrollbar
+                contentContainerStyle={productStyles.tableScroll}
+              >
                 <View style={productStyles.table}>
                   <View style={[productStyles.tableRow, productStyles.tableHead]}>
                     <Text style={[productStyles.headText, productStyles.productColumn]}>PRODUTO</Text>
@@ -998,7 +1003,7 @@ function MenuOption({ label, active, onPress }: { label: string; active: boolean
 const productStyles = StyleSheet.create({
   workspace: { flexDirection: 'row', alignItems: 'stretch', gap: 12 },
   workspaceCompact: { flexDirection: 'column' },
-  categoryRail: { width: 220, flexShrink: 0, backgroundColor: '#FFF', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 14, padding: 10, alignSelf: 'flex-start' },
+  categoryRail: { width: 184, flexShrink: 0, backgroundColor: '#FFF', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 14, padding: 8, alignSelf: 'flex-start' },
   categoryRailCompact: { width: '100%' },
   railTitle: { fontFamily: 'Sora_700Bold', fontSize: 15, color: theme.colors.text, paddingHorizontal: 9, paddingVertical: 8 },
   categoryItem: { minHeight: 40, paddingHorizontal: 9, borderRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
@@ -1013,12 +1018,12 @@ const productStyles = StyleSheet.create({
   toolMenu: { position: 'absolute', zIndex: 30, top: 47, right: 0, width: 220, paddingVertical: 8, backgroundColor: '#FFF', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, shadowColor: '#000', shadowOpacity: .12, shadowRadius: 14, elevation: 10 },
   toolMenuTitle: { paddingHorizontal: 13, paddingVertical: 7, fontFamily: 'Sora_700Bold', fontSize: 13.5, color: theme.colors.text }, menuOption: { minHeight: 42, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, menuOptionText: { fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.text }, menuOptionActive: { fontFamily: 'Inter_600SemiBold', color: '#285DA9' },
   resultLine: { paddingHorizontal: 14, paddingBottom: 10 }, resultText: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
-  tableScroll: { minWidth: '100%' }, table: { minWidth: 900, flex: 1 }, tableRow: { minHeight: 66, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: theme.colors.border, flexDirection: 'row', alignItems: 'center' }, tableHead: { minHeight: 38, backgroundColor: '#F7F6F3' },
+  tableScroll: { minWidth: '100%' }, table: { minWidth: 700, flex: 1 }, tableRow: { minHeight: 62, paddingHorizontal: 10, borderTopWidth: 1, borderTopColor: theme.colors.border, flexDirection: 'row', alignItems: 'center' }, tableHead: { minHeight: 38, backgroundColor: '#F7F6F3' },
   headText: { fontFamily: 'Inter_600SemiBold', fontSize: 10.5, letterSpacing: .45, color: theme.colors.muted }, cellText: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.text }, cellStrong: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.text },
-  productColumn: { width: 260, flexDirection: 'row', alignItems: 'center', gap: 10 }, productNameArea: { flex: 1, minWidth: 0 }, productName: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text }, productMeta: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 11.5, color: theme.colors.muted },
-  tinyColumn: { width: 60 }, smallColumn: { width: 100 }, mediumColumn: { width: 145 }, valueColumn: { width: 115, textAlign: 'right', paddingRight: 16 }, stockColumn: { width: 90, textAlign: 'right', paddingRight: 16 }, statusColumn: { width: 85, alignItems: 'center' }, actionColumn: { width: 88, alignItems: 'flex-end' },
+  productColumn: { width: 214, flexDirection: 'row', alignItems: 'center', gap: 8 }, productNameArea: { flex: 1, minWidth: 0 }, productName: { fontFamily: 'Inter_700Bold', fontSize: 13, color: theme.colors.text }, productMeta: { marginTop: 2, fontFamily: 'Inter_400Regular', fontSize: 11, color: theme.colors.muted },
+  tinyColumn: { width: 42 }, smallColumn: { width: 88 }, mediumColumn: { width: 112 }, valueColumn: { width: 88, textAlign: 'right', paddingRight: 10 }, stockColumn: { width: 70, textAlign: 'right', paddingRight: 10 }, statusColumn: { width: 76, alignItems: 'center' }, actionColumn: { width: 66, alignItems: 'flex-end' },
   stockNegative: { color: theme.colors.danger }, stockLow: { color: '#B06D17' }, stockOk: { color: theme.colors.success }, statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#EAF7EF', fontFamily: 'Inter_600SemiBold', fontSize: 11, color: theme.colors.success }, statusInactive: { backgroundColor: '#EEF0F2', color: theme.colors.muted },
-  editButton: { minHeight: 34, paddingHorizontal: 9, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }, editText: { fontFamily: 'Inter_600SemiBold', fontSize: 11.5, color: theme.colors.text },
+  editButton: { width: 34, height: 34, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }, editText: { display: 'none' },
 });
 
 const thumbStyles = StyleSheet.create({

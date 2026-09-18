@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { theme, useThemeColors } from '@/constants/theme';
 import { brDateToISO, formatDateBR } from '@/utils/date';
 
@@ -14,7 +14,29 @@ export function Field({label,value,onChangeText,placeholder='',keyboardType='def
   return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} keyboardType={keyboardType} multiline={multiline} style={[styles.input,multiline&&styles.multiline]}/></View>;
 }
 
-export function DateField({label,value,onChangeText}:{label:string;value:string;onChangeText:(v:string)=>void}){
+export function DateField({label,value,onChangeText,min,max}:{label:string;value:string;onChangeText:(v:string)=>void;min?:string;max?:string}){
+  if (Platform.OS === 'web') {
+    return <View style={styles.field}>
+      {!!label && <Text style={styles.label}>{label}</Text>}
+      {createElement('input', {
+        type: 'date',
+        value: value || '',
+        min,
+        max,
+        onChange: (event: any) => onChangeText(event.target.value),
+        style: {
+          width: '100%', height: 48, boxSizing: 'border-box',
+          border: `1px solid ${theme.colors.border}`, borderRadius: 10,
+          padding: '0 12px', fontFamily: 'Inter_400Regular', fontSize: 14.5,
+          color: theme.colors.text, background: '#FFF', outline: 'none', colorScheme: 'light',
+        },
+      })}
+    </View>;
+  }
+  return <NativeDateParts label={label} value={value} onChangeText={onChangeText} />;
+}
+
+function NativeDateParts({label,value,onChangeText}:{label:string;value:string;onChangeText:(v:string)=>void}) {
   const split = (source: string) => {
     const formatted = formatDateBR(source);
     const match = formatted.match(/^(\d{0,2})\/?(\d{0,2})?\/?(\d{0,4})?/);
@@ -40,7 +62,7 @@ export function DateField({label,value,onChangeText}:{label:string;value:string;
     onChangeText(nextValue);
   }
   return <View style={styles.field}>
-    <Text style={styles.label}>{label}</Text>
+    {!!label && <Text style={styles.label}>{label}</Text>}
     <View style={styles.dateInput}>
       <TextInput value={parts.day} onChangeText={(v)=>change('day',v)} placeholder="DD" keyboardType="number-pad" selectTextOnFocus maxLength={2} style={[styles.datePart,styles.datePartShort]}/>
       <Text style={styles.dateSeparator}>/</Text>

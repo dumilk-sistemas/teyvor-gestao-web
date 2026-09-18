@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { DateField, SearchablePicker } from '@/components/FormKit';
 import { theme, useThemeColors } from '@/constants/theme';
 
-export type PeriodPreset = 'today' | '7days' | '30days' | 'month' | 'year' | 'custom';
+export type PeriodPreset = 'today' | 'yesterday' | '7days' | '30days' | 'month' | 'previous_month' | 'year' | 'custom';
 
 const iso = (date: Date) => {
   const year = date.getFullYear();
@@ -32,10 +32,40 @@ export function rangeForPreset(preset: Exclude<PeriodPreset, 'custom'>) {
   const now = new Date();
   const end = iso(now);
   if (preset === 'today') return { start: end, end };
+  if (preset === 'yesterday') {
+    const yesterday = iso(addDays(now, -1));
+    return { start: yesterday, end: yesterday };
+  }
   if (preset === '7days') return { start: iso(addDays(now, -6)), end };
   if (preset === '30days') return { start: iso(addDays(now, -29)), end };
   if (preset === 'month') return { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end };
+  if (preset === 'previous_month') {
+    return {
+      start: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+      end: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
+    };
+  }
   return { start: iso(new Date(now.getFullYear(), 0, 1)), end };
+}
+
+const PRESETS: Array<{ label: string; value: PeriodPreset; description: string }> = [
+  { label: 'Hoje', value: 'today', description: 'Somente o dia atual' },
+  { label: 'Ontem', value: 'yesterday', description: 'Somente o dia anterior' },
+  { label: 'Últimos 7 dias', value: '7days', description: 'Hoje e os seis dias anteriores' },
+  { label: 'Últimos 30 dias', value: '30days', description: 'Hoje e os 29 dias anteriores' },
+  { label: 'Mês atual', value: 'month', description: 'Do primeiro dia do mês até hoje' },
+  { label: 'Mês anterior', value: 'previous_month', description: 'Do primeiro ao último dia do mês anterior' },
+  { label: 'Ano atual', value: 'year', description: 'Do primeiro dia do ano até hoje' },
+  { label: 'Período personalizado', value: 'custom', description: 'Selecione a data inicial e final' },
+];
+
+function presetForRange(start: string, end: string): PeriodPreset {
+  const match = PRESETS.find((option) => {
+    if (option.value === 'custom') return false;
+    const range = rangeForPreset(option.value);
+    return range.start === start && range.end === end;
+  });
+  return match?.value || 'custom';
 }
 
 function NativeDateInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -80,6 +110,7 @@ export function PeriodCalendar({
     if (!open) return;
     setDraftStart(start);
     setDraftEnd(end);
+    setPreset(presetForRange(start, end));
     setError('');
   }, [open, start, end]);
 
@@ -135,14 +166,7 @@ export function PeriodCalendar({
                 label="Tipo de período"
                 value={preset}
                 onChange={choose}
-                options={[
-                  { label: 'Hoje', value: 'today', description: 'Somente o dia atual' },
-                  { label: 'Últimos 7 dias', value: '7days', description: 'Hoje e os seis dias anteriores' },
-                  { label: 'Últimos 30 dias', value: '30days', description: 'Hoje e os 29 dias anteriores' },
-                  { label: 'Mês atual', value: 'month', description: 'Do primeiro dia do mês até hoje' },
-                  { label: 'Ano atual', value: 'year', description: 'Do primeiro dia do ano até hoje' },
-                  { label: 'Período personalizado', value: 'custom', description: 'Selecione a data inicial e final' },
-                ]}
+                options={PRESETS}
               />
 
               <View style={styles.dateArea}>
