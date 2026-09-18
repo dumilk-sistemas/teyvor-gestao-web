@@ -284,6 +284,7 @@ export default function Statistics() {
   const [periodError, setPeriodError] = useState('');
   const [periodNotice, setPeriodNotice] = useState('');
   const [periodChoice, setPeriodChoice] = useState('day');
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   async function load() {
     try {
@@ -1074,8 +1075,8 @@ export default function Statistics() {
           label="Ticket médio"
           value={money(view.summary.ticket)}
           icon="trending-up"
-          color="#8A6520"
-          background="#FBF3DF"
+          color="#256D6B"
+          background="#E9F5F4"
           current={view.summary.ticket}
           previous={view.previous.ticket}
         />
@@ -1087,27 +1088,6 @@ export default function Statistics() {
           color="#6E56A6"
           background="#F2EEFA"
           helper={`${activeBars.length} ${activeBars.length === 1 ? 'faixa com movimento' : 'faixas com movimento'}`}
-        />
-      </View>
-
-      <View style={styles.periodHighlights}>
-        <HighlightItem
-          icon="award"
-          label="Melhor desempenho"
-          value={bestBar && bestBar.value > 0 ? bestBar.detailLabel : 'Sem movimento'}
-          detail={bestBar && bestBar.value > 0 ? money(bestBar.value) : 'Nenhuma venda no período'}
-        />
-        <HighlightItem
-          icon="pie-chart"
-          label="Concentração da melhor faixa"
-          value={`${bestRangeShare.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}
-          detail="Participação no faturamento total"
-        />
-        <HighlightItem
-          icon="check-circle"
-          label="Cobertura do período"
-          value={`${activeBars.length} de ${view.bars.length}`}
-          detail="Faixas com vendas registradas"
         />
       </View>
 
@@ -1213,7 +1193,48 @@ export default function Statistics() {
         )}
       </View>
 
-      {rankedBars.length > 0 && (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: detailsOpen }}
+        onPress={() => setDetailsOpen((current) => !current)}
+        style={styles.detailsToggle}
+      >
+        <View style={styles.detailsToggleMain}>
+          <View style={styles.detailsToggleIcon}>
+            <Feather name="bar-chart-2" size={16} color="#3568B8" />
+          </View>
+          <View style={styles.detailsToggleCopy}>
+            <Text style={styles.detailsToggleTitle}>Análises detalhadas</Text>
+            <Text style={styles.detailsToggleText}>
+              Destaques, ranking, formas de pagamento e produtos do período
+            </Text>
+          </View>
+        </View>
+        <Feather name={detailsOpen ? 'chevron-up' : 'chevron-down'} size={19} color="#3568B8" />
+      </Pressable>
+
+      {detailsOpen && <View style={styles.periodHighlights}>
+        <HighlightItem
+          icon="award"
+          label="Melhor desempenho"
+          value={bestBar && bestBar.value > 0 ? bestBar.detailLabel : 'Sem movimento'}
+          detail={bestBar && bestBar.value > 0 ? money(bestBar.value) : 'Nenhuma venda no período'}
+        />
+        <HighlightItem
+          icon="pie-chart"
+          label="Concentração da melhor faixa"
+          value={`${bestRangeShare.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}
+          detail="Participação no faturamento total"
+        />
+        <HighlightItem
+          icon="check-circle"
+          label="Cobertura do período"
+          value={`${activeBars.length} de ${view.bars.length}`}
+          detail="Faixas com vendas registradas"
+        />
+      </View>}
+
+      {detailsOpen && rankedBars.length > 0 && (
         <View style={styles.detailCard}>
           <View style={styles.detailHeader}>
             <View style={styles.sectionTitleGroup}>
@@ -1282,7 +1303,7 @@ export default function Statistics() {
         </View>
       )}
 
-      {(periodInsights.payments.length > 0 || periodInsights.products.length > 0) && (
+      {detailsOpen && (periodInsights.payments.length > 0 || periodInsights.products.length > 0) && (
         <View style={styles.insightsSection}>
           <View style={styles.contentSectionHeader}>
             <View>
@@ -1974,7 +1995,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: '#F6F1E5',
+    backgroundColor: '#EDF3FC',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2140,7 +2161,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   bestBadge: {
     borderRadius: 12,
-    backgroundColor: '#F7F2E6',
+    backgroundColor: '#EDF3FC',
     paddingHorizontal: 12,
     paddingVertical: 8,
     alignItems: 'flex-end',
@@ -2165,6 +2186,54 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     alignItems: 'center',
     gap: 14,
     marginTop: 14,
+  },
+
+  detailsToggle: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+    minHeight: 62,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  detailsToggleMain: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  detailsToggleIcon: {
+    alignItems: 'center',
+    backgroundColor: '#EDF3FC',
+    borderRadius: 9,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+
+  detailsToggleCopy: {
+    flex: 1,
+  },
+
+  detailsToggleTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13.5,
+  },
+
+  detailsToggleText: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 2,
   },
 
   legendItem: {
@@ -2364,7 +2433,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   rankBadgeFirst: {
-    backgroundColor: '#F7F0DE',
+    backgroundColor: '#EDF3FC',
   },
 
   rankBadgeText: {
@@ -2374,7 +2443,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   rankBadgeTextFirst: {
-    color: '#8A6520',
+    color: '#3568B8',
   },
 
   detailName: {
@@ -2495,13 +2564,13 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 8,
-    backgroundColor: '#F6F1E5',
+    backgroundColor: '#EDF3FC',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   productRankText: {
-    color: '#8A6520',
+    color: '#3568B8',
     fontSize: 11.5,
     fontWeight: '700',
   },
