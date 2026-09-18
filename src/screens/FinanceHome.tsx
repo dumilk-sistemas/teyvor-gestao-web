@@ -6,21 +6,23 @@ import { router } from 'expo-router';
 import { AccountsModal } from '@/components/AccountsModal';
 import { AdminShell } from '@/components/AdminShell';
 import { Notice, formStyles as s } from '@/components/FormKit';
+import { formatPeriodLabel, PeriodCalendar } from '@/components/PeriodCalendar';
 import { getFull } from '@/services/fullApi';
 import { theme, useThemeColors } from '@/constants/theme';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 
-const currentMonth = () => new Date().toISOString().slice(0, 7);
+const isoLocal = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-const monthName = (month: string) => {
-  const [year, value] = month.split('-').map(Number);
-  const label = new Date(year, value - 1, 1).toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
+const currentMonthRange = () => {
+  const now = new Date();
+  return { start: isoLocal(new Date(now.getFullYear(), now.getMonth(), 1)), end: isoLocal(now) };
 };
 
 const dateLabel = (iso: string) => {
@@ -50,7 +52,10 @@ export default function FinanceHome() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [accountsOpen, setAccountsOpen] = useState(false);
-  const month = currentMonth();
+  const initialRange = useMemo(currentMonthRange, []);
+  const [periodStart, setPeriodStart] = useState(initialRange.start);
+  const [periodEnd, setPeriodEnd] = useState(initialRange.end);
+  const periodLabel = formatPeriodLabel(periodStart, periodEnd);
 
   async function load() {
     try {
@@ -74,20 +79,21 @@ export default function FinanceHome() {
     const payablesMonth = entries.filter(
       (entry) => entry.type === 'payable' &&
         openStatuses.includes(entry.status) &&
-        entry.due_date.slice(0, 7) === month
+        entry.due_date >= periodStart && entry.due_date <= periodEnd
     );
     const receivablesMonth = entries.filter(
       (entry) => entry.type === 'receivable' &&
         openStatuses.includes(entry.status) &&
-        entry.due_date.slice(0, 7) === month
+        entry.due_date >= periodStart && entry.due_date <= periodEnd
     );
     const overdue = entries.filter(
-      (entry) => entry.type === 'payable' && entry.status === 'overdue'
+      (entry) => entry.type === 'payable' && entry.status === 'overdue' &&
+        entry.due_date >= periodStart && entry.due_date <= periodEnd
     );
     const future = entries.filter(
       (entry) => entry.type === 'payable' &&
         openStatuses.includes(entry.status) &&
-        entry.due_date.slice(0, 7) > month
+        entry.due_date > periodEnd
     );
     const sum = (rows: Entry[]) => rows.reduce((total, entry) => total + Number(entry.amount || 0), 0);
 
@@ -100,17 +106,17 @@ export default function FinanceHome() {
       futureTotal: sum(future),
       futureCount: future.length,
     };
-  }, [data, month]);
+  }, [data, periodStart, periodEnd]);
 
   const nextEntries = useMemo(
     () => [...summary.payablesMonth, ...(data?.entries || []).filter(
       (entry) => entry.type === 'receivable' &&
         ['open', 'overdue'].includes(entry.status) &&
-        entry.due_date.slice(0, 7) === month
+        entry.due_date >= periodStart && entry.due_date <= periodEnd
     )]
       .sort((a, b) => a.due_date.localeCompare(b.due_date))
       .slice(0, 8),
-    [data, month, summary.payablesMonth]
+    [data, periodStart, periodEnd, summary.payablesMonth]
   );
 
   const modules = [
@@ -173,10 +179,22 @@ export default function FinanceHome() {
 
       <View style={styles.periodBanner}>
         <View>
-          <Text style={styles.eyebrow}>RESUMO DO MÊS</Text>
-          <Text style={styles.periodTitle}>{monthName(month)}</Text>
+          <Text style={styles.eyebrow}>RESUMO FINANCEIRO</Text>
+          <Text style={styles.periodTitle}>{periodLabel}</Text>
         </View>
-        <Text style={styles.periodNote}>Os valores abaixo consideram somente os vencimentos deste mês.</Text>
+        <View style={styles.periodControl}>
+          <Text style={styles.periodNote}>Indicadores calculados pela data de vencimento.</Text>
+          <PeriodCalendar
+            start={periodStart}
+            end={periodEnd}
+            compact
+            label="Alterar período"
+            onApply={(start, end) => {
+              setPeriodStart(start);
+              setPeriodEnd(end);
+            }}
+          />
+        </View>
       </View>
 
       {!!data && (
@@ -184,7 +202,7 @@ export default function FinanceHome() {
           <View style={styles.summaryGrid}>
             {[
               {
-                label: 'A PAGAR NO MÊS',
+                label: 'A PAGAR NO PERÍODO',
                 value: summary.payablesTotal,
                 note: `${summary.payablesMonth.length} lançamento${summary.payablesMonth.length === 1 ? '' : 's'}`,
                 icon: 'arrow-up-right',
@@ -200,7 +218,7 @@ export default function FinanceHome() {
                 background: '#FDEBEC',
               },
               {
-                label: 'A RECEBER NO MÊS',
+                label: 'A RECEBER NO PERÍODO',
                 value: summary.receivablesTotal,
                 note: 'Em aberto no período',
                 icon: 'arrow-down-left',
@@ -210,7 +228,7 @@ export default function FinanceHome() {
               {
                 label: 'COMPROMISSOS FUTUROS',
                 value: summary.futureTotal,
-                note: `${summary.futureCount} após este mês`,
+                note: `${summary.futureCount} após o período`,
                 icon: 'calendar',
                 color: '#3568B8',
                 background: '#EEF4FC',
@@ -266,7 +284,7 @@ export default function FinanceHome() {
             <View style={styles.panelHead}>
               <View>
                 <Text style={styles.panelTitle}>Próximos vencimentos</Text>
-                <Text style={styles.panelSubtitle}>Entradas e saídas previstas em {monthName(month)}</Text>
+                <Text style={styles.panelSubtitle}>Entradas e saídas previstas de {periodLabel}</Text>
               </View>
               <View style={styles.panelLinks}>
                 <Pressable style={styles.panelLink} onPress={() => router.push('/payables')}>
@@ -304,7 +322,7 @@ export default function FinanceHome() {
                 ]}>{money(entry.amount)}</Text>
               </View>
             )) : (
-              <Text style={s.empty}>Nenhuma entrada ou saída pendente com vencimento neste mês.</Text>
+              <Text style={s.empty}>Nenhuma entrada ou saída pendente com vencimento no período.</Text>
             )}
           </View>
         </>
@@ -335,6 +353,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.5 },
   periodTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 3 },
   periodNote: { color: theme.colors.muted, fontSize: 13 },
+  periodControl: { alignItems: 'flex-end', flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   sectionTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 18 },
   sectionSubtitle: { color: theme.colors.muted, fontSize: 12.5, marginTop: 3 },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
