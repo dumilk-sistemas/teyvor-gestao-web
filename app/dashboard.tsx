@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { router } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
 import { Skeleton } from '@/components/Skeleton';
@@ -726,68 +727,92 @@ export default function Dashboard() {
       {data && (
         <View style={styles.summaryRow}>
           <View style={styles.summaryCard}>
-            <View style={styles.summaryLabelRow}>
-              <Text style={styles.summaryLabel}>Faturamento hoje</Text>
-
-              {(() => {
-                const trend = trendVsYesterday(
-                  data.revenue_today,
-                  data.revenue_yesterday
-                );
-                if (trend === null) return null;
-                const positive = trend >= 0;
-                return (
-                  <View
-                    style={[
-                      styles.trendPill,
-                      positive ? styles.trendPillUp : styles.trendPillDown,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.trendText,
-                        positive ? styles.trendTextUp : styles.trendTextDown,
-                      ]}
-                    >
-                      {positive ? '↑' : '↓'} {Math.abs(trend)}%
-                    </Text>
-                  </View>
-                );
-              })()}
+            <View style={[styles.summaryIcon, { backgroundColor: '#EAF7F0' }]}>
+              <Feather name="dollar-sign" size={16} color="#25835A" />
             </View>
 
-            <Text style={styles.summaryValue}>
-              {money(data.revenue_today)}
-            </Text>
-            <Text style={styles.summaryNote}>
-              Ontem: {money(data.revenue_yesterday)}
-            </Text>
+            <View style={styles.summaryContent}>
+              <View style={styles.summaryLabelRow}>
+                <Text style={styles.summaryLabel}>Faturamento hoje</Text>
+
+                {(() => {
+                  const trend = trendVsYesterday(
+                    data.revenue_today,
+                    data.revenue_yesterday
+                  );
+                  if (trend === null) return null;
+                  const positive = trend >= 0;
+                  return (
+                    <View
+                      style={[
+                        styles.trendPill,
+                        positive ? styles.trendPillUp : styles.trendPillDown,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.trendText,
+                          positive ? styles.trendTextUp : styles.trendTextDown,
+                        ]}
+                      >
+                        {positive ? '↑' : '↓'} {Math.abs(trend)}%
+                      </Text>
+                    </View>
+                  );
+                })()}
+              </View>
+
+              <Text style={styles.summaryValue}>
+                {money(data.revenue_today)}
+              </Text>
+              <Text style={styles.summaryNote}>
+                Ontem: {money(data.revenue_yesterday)}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Vendas hoje</Text>
-            <Text style={styles.summaryValue}>{data.sales_today}</Text>
-            <Text style={styles.summaryNote}>Operações concluídas</Text>
+            <View style={[styles.summaryIcon, { backgroundColor: '#EEF4FC' }]}>
+              <Feather name="shopping-bag" size={16} color="#3568B8" />
+            </View>
+
+            <View style={styles.summaryContent}>
+              <Text style={styles.summaryLabel}>Vendas hoje</Text>
+              <Text style={styles.summaryValue}>{data.sales_today}</Text>
+              <Text style={styles.summaryNote}>Operações concluídas</Text>
+            </View>
           </View>
 
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Ticket médio hoje</Text>
-            <Text style={styles.summaryValue}>
-              {money(data.sales_today ? data.revenue_today / data.sales_today : 0)}
-            </Text>
-            <Text style={styles.summaryNote}>Valor médio por venda</Text>
+            <View style={[styles.summaryIcon, { backgroundColor: '#F1EEFB' }]}>
+              <Feather name="trending-up" size={16} color="#6C55A3" />
+            </View>
+
+            <View style={styles.summaryContent}>
+              <Text style={styles.summaryLabel}>Ticket médio hoje</Text>
+              <Text style={styles.summaryValue}>
+                {money(data.sales_today ? data.revenue_today / data.sales_today : 0)}
+              </Text>
+              <Text style={styles.summaryNote}>Valor médio por venda</Text>
+            </View>
           </View>
 
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Caixa</Text>
-            <Text style={styles.summaryValueSmall}>
-              {data.cash_status || '—'}
-            </Text>
-            <Text style={styles.summaryNote}>
-              {data.cash_session
-                ? `Sessão ${data.cash_session}`
-                : 'Sem sessão ativa'}
-            </Text>
+            <View style={[styles.summaryIcon, { backgroundColor: '#F2F4F5' }]}>
+              <Feather name="briefcase" size={16} color="#66717D" />
+            </View>
+
+            <View style={styles.summaryContent}>
+              <Text style={styles.summaryLabel}>Caixa</Text>
+              <Text style={styles.summaryValueSmall}>
+                {data.cash_status || '—'}
+              </Text>
+              <Text style={styles.summaryNote}>
+                {data.cash_session
+                  ? `Sessão ${data.cash_session}`
+                  : 'Sem sessão ativa'}
+              </Text>
+            </View>
           </View>
         </View>
       )}
@@ -1393,14 +1418,24 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     minWidth: 155,
     flexGrow: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: theme.radius.lg,
-    padding: 18,
-    shadowColor: '#0D1117',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 13,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
+
+  summaryIcon: {
+    alignItems: 'center',
+    borderRadius: 9,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+
+  summaryContent: { flex: 1, minWidth: 0 },
 
   summaryLabelRow: {
     flexDirection: 'row',
@@ -1410,7 +1445,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   summaryLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontFamily: 'Inter_700Bold',
     color: theme.colors.muted,
   },
@@ -1444,14 +1479,14 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   summaryValue: {
     marginTop: 5,
-    fontSize: 22,
+    fontSize: 19,
     fontFamily: 'Sora_800ExtraBold',
     color: theme.colors.text,
   },
 
   summaryValueSmall: {
     marginTop: 5,
-    fontSize: 18,
+    fontSize: 17,
     fontFamily: 'Sora_800ExtraBold',
     color: theme.colors.text,
   },
@@ -1534,7 +1569,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     marginTop: 14,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: '#F7F4EC',
+    backgroundColor: '#F2F6FB',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1557,7 +1592,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   stockActionArrow: {
     fontSize: 20,
-    color: c.gold,
+    color: '#3568B8',
   },
 
   insightsGrid: {
@@ -1612,13 +1647,10 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   chartCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: theme.radius.lg,
-    padding: 18,
-    shadowColor: '#0D1117',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 16,
   },
 
   chartTitle: {
@@ -1654,19 +1686,19 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     maxWidth: 26,
     height: 90,
     justifyContent: 'flex-end',
-    backgroundColor: '#F3F1EC',
+    backgroundColor: '#EDF1F5',
     borderRadius: 6,
     overflow: 'hidden',
   },
 
   chartBar: {
     width: '100%',
-    backgroundColor: `${theme.colors.text}33`,
+    backgroundColor: '#90A9C7',
     borderRadius: 6,
   },
 
   chartBarActive: {
-    backgroundColor: c.gold,
+    backgroundColor: '#3568B8',
   },
 
   chartBarLabel: {
@@ -1677,7 +1709,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   chartBarLabelActive: {
-    color: c.gold,
+    color: '#285DA9',
   },
 
   recentSaleRow: {
@@ -1740,14 +1772,14 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   topProductTrack: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#F3F1EC',
+    backgroundColor: '#EDF1F5',
     overflow: 'hidden',
   },
 
   topProductBar: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: c.gold,
+    backgroundColor: '#3568B8',
   },
 
   headerRow: {
