@@ -106,6 +106,7 @@ export function AccountsModal({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [activeSection, setActiveSection] = useState<'accounts' | 'mapping' | 'transfers'>('accounts');
+  const [accountMenuId, setAccountMenuId] = useState<number | null>(null);
 
   function showError(message: string) {
     setSuccess('');
@@ -441,7 +442,7 @@ export function AccountsModal({
                   <Feather
                     name={tab.icon as any}
                     size={14}
-                    color={activeSection === tab.key ? '#FFFFFF' : theme.colors.muted}
+                    color={activeSection === tab.key ? '#285DA9' : theme.colors.muted}
                   />
                   <Text style={[styles.tabText, activeSection === tab.key && styles.tabTextActive]}>
                     {tab.label}
@@ -516,7 +517,7 @@ export function AccountsModal({
                 <Text style={s.empty}>Nenhuma conta cadastrada ainda.</Text>
               ) : (
                 accounts.map((acc) => (
-                  <View key={acc.id} style={styles.accountRow}>
+                  <View key={acc.id} style={[styles.accountRow, accountMenuId === acc.id && styles.accountRowMenuOpen]}>
                     <View style={styles.accountMain}>
                       <View style={styles.accountNameLine}>
                         <Text style={styles.accountName}>{acc.name}</Text>
@@ -528,32 +529,41 @@ export function AccountsModal({
                         {ACCOUNT_TYPES.find((type) => type.value === acc.account_type)?.label || 'Conta'} • saldo inicial em {isoToBR(acc.opening_date)}: {money(acc.initial_balance)}
                       </Text>
 
-                      <View style={styles.rowActions}>
-                        {!acc.is_default && (
-                          <Pressable onPress={() => toggleDefault(acc.id)}>
-                            <Text style={styles.linkAction}>Definir como padrão</Text>
-                          </Pressable>
+                      <View style={styles.actionsWrap}>
+                        <Pressable
+                          onPress={() => setAccountMenuId((current) => current === acc.id ? null : acc.id)}
+                          style={[styles.actionsTrigger, accountMenuId === acc.id && styles.actionsTriggerActive]}
+                        >
+                          <Feather name="more-horizontal" size={16} color={theme.colors.text} />
+                          <Text style={styles.actionsTriggerText}>Ações</Text>
+                        </Pressable>
+
+                        {accountMenuId === acc.id && (
+                          <View style={styles.actionsMenu}>
+                            {!acc.is_default && (
+                              <Pressable style={styles.menuAction} onPress={() => { setAccountMenuId(null); toggleDefault(acc.id); }}>
+                                <Feather name="check-circle" size={14} color={theme.colors.text} />
+                                <Text style={styles.menuActionText}>Definir como padrão</Text>
+                              </Pressable>
+                            )}
+                            <Pressable style={styles.menuAction} onPress={() => { setAccountMenuId(null); editingId === acc.id ? cancelEdit() : startEdit(acc); }}>
+                              <Feather name="edit-2" size={14} color={theme.colors.text} />
+                              <Text style={styles.menuActionText}>{editingId === acc.id ? 'Cancelar edição' : 'Editar dados'}</Text>
+                            </Pressable>
+                            <Pressable style={styles.menuAction} onPress={() => { setAccountMenuId(null); startAdjustment(acc); }}>
+                              <Feather name="sliders" size={14} color={theme.colors.text} />
+                              <Text style={styles.menuActionText}>Ajustar saldo</Text>
+                            </Pressable>
+                            <Pressable style={styles.menuAction} onPress={() => { setAccountMenuId(null); toggleActive(acc); }}>
+                              <Feather name={acc.active ? 'pause-circle' : 'play-circle'} size={14} color={theme.colors.text} />
+                              <Text style={styles.menuActionText}>{acc.active ? 'Desativar conta' : 'Ativar conta'}</Text>
+                            </Pressable>
+                            <Pressable style={styles.menuAction} onPress={() => { setAccountMenuId(null); askRemoveAccount(acc); }}>
+                              <Feather name="trash-2" size={14} color={theme.colors.danger} />
+                              <Text style={styles.menuActionDanger}>Excluir conta</Text>
+                            </Pressable>
+                          </View>
                         )}
-
-                        <Pressable onPress={() => (editingId === acc.id ? cancelEdit() : startEdit(acc))}>
-                          <Text style={styles.linkAction}>
-                            {editingId === acc.id ? 'Cancelar edição' : 'Editar'}
-                          </Text>
-                        </Pressable>
-
-                        <Pressable onPress={() => startAdjustment(acc)}>
-                          <Text style={styles.linkAction}>Ajustar saldo</Text>
-                        </Pressable>
-
-                        <Pressable onPress={() => toggleActive(acc)}>
-                          <Text style={styles.linkAction}>
-                            {acc.active ? 'Desativar' : 'Ativar'}
-                          </Text>
-                        </Pressable>
-
-                        <Pressable onPress={() => askRemoveAccount(acc)}>
-                          <Text style={[styles.linkAction, styles.linkActionDanger]}>Excluir</Text>
-                        </Pressable>
                       </View>
 
                       {editingId === acc.id && (
@@ -787,7 +797,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(13,17,23,0.68)',
     flex: 1,
     justifyContent: 'center',
-    padding: 18,
+    padding: 16,
   },
   deleteModal: {
     backgroundColor: '#FFFFFF',
@@ -903,7 +913,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   scrollContent: {
-    gap: 14,
+    gap: 11,
     paddingBottom: 10,
   },
   accountOverview: {
@@ -913,39 +923,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    padding: 12,
+    gap: 6,
+    padding: 9,
   },
-  overviewItem: { flex: 1, minWidth: 170, paddingHorizontal: 4 },
-  overviewLabel: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11.5, letterSpacing: 0.25 },
-  overviewValue: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 18, marginTop: 3 },
-  overviewAccount: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 14, marginTop: 5 },
+  overviewItem: { flex: 1, minWidth: 150, paddingHorizontal: 5, paddingVertical: 2 },
+  overviewLabel: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: 0.25 },
+  overviewValue: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 16, marginTop: 2 },
+  overviewAccount: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 13, marginTop: 3 },
   negativeValue: { color: theme.colors.danger },
   tabs: {
-    backgroundColor: '#F2F3F5',
+    borderBottomColor: theme.colors.border,
+    borderBottomWidth: 1,
     borderRadius: 11,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 4,
-    padding: 4,
+    paddingHorizontal: 2,
   },
   tab: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
     flexDirection: 'row',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 8,
   },
-  tabActive: { backgroundColor: '#263748' },
+  tabActive: { borderBottomColor: '#3568B8' },
   tabText: { color: theme.colors.muted, fontFamily: 'Inter_600SemiBold', fontSize: 13 },
-  tabTextActive: { color: '#FFFFFF' },
+  tabTextActive: { color: '#285DA9' },
   sectionCard: {
     backgroundColor: '#FFFFFF',
     borderColor: theme.colors.border,
     borderRadius: 13,
     borderWidth: 1,
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   sectionTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 15 },
   sectionTitlePadded: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 15, paddingHorizontal: 16, paddingTop: 15 },
@@ -965,26 +977,14 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 12,
   },
-  rowActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
-  },
-  linkAction: {
-    backgroundColor: '#F3F4F5',
-    borderRadius: 7,
-    color: theme.colors.text,
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11.5,
-    overflow: 'hidden',
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-  },
-  linkActionDanger: {
-    color: theme.colors.danger,
-    backgroundColor: '#FFF0F0',
-  },
+  actionsWrap: { alignSelf: 'flex-start', marginTop: 7, position: 'relative', zIndex: 10 },
+  actionsTrigger: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 6, minHeight: 32, paddingHorizontal: 9 },
+  actionsTriggerActive: { backgroundColor: '#EEF4FC', borderColor: '#9BB7DE' },
+  actionsTriggerText: { color: theme.colors.text, fontFamily: 'Inter_600SemiBold', fontSize: 11.5 },
+  actionsMenu: { backgroundColor: '#FFFFFF', borderColor: theme.colors.border, borderRadius: 10, borderWidth: 1, elevation: 10, left: 0, minWidth: 205, paddingVertical: 5, position: 'absolute', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 12, top: 36, zIndex: 30 },
+  menuAction: { alignItems: 'center', flexDirection: 'row', gap: 8, minHeight: 38, paddingHorizontal: 11 },
+  menuActionText: { color: theme.colors.text, fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  menuActionDanger: { color: theme.colors.danger, fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   cardNote: {
     fontSize: 12,
     color: theme.colors.muted,
@@ -1009,6 +1009,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 11,
   },
+  accountRowMenuOpen: { zIndex: 20 },
   accountMain: { flex: 1, minWidth: 260 },
   accountNameLine: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   accountName: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 14 },
