@@ -404,8 +404,8 @@ export default function FullSales() {
               value={money(visibleSummary.ticket)}
               note="Valor médio por venda"
               icon="trending-up"
-              color="#B8862F"
-              background="#FBF3E0"
+              color="#256D6B"
+              background="#E9F5F4"
             />
 
             <MetricCard
@@ -420,16 +420,26 @@ export default function FullSales() {
 
           {Object.keys(visibleSummary.payment_totals).length > 0 && (
             <View style={s.card}>
-              <Text style={s.cardTitle}>
-                Formas de pagamento
-              </Text>
-
-              <Text style={paymentChartStyles.subtitle}>Participação no faturamento de {periodLabel}</Text>
+              <View style={paymentChartStyles.header}>
+                <View style={paymentChartStyles.headerMain}>
+                  <View style={paymentChartStyles.icon}>
+                    <Feather name="credit-card" size={17} color="#3568B8" />
+                  </View>
+                  <View>
+                    <Text style={paymentChartStyles.title}>Formas de pagamento</Text>
+                    <Text style={paymentChartStyles.subtitle}>Participação no faturamento de {periodLabel}</Text>
+                  </View>
+                </View>
+                <View style={paymentChartStyles.totalBlock}>
+                  <Text style={paymentChartStyles.totalLabel}>TOTAL RECEBIDO</Text>
+                  <Text style={paymentChartStyles.totalValue}>{money(visibleSummary.total)}</Text>
+                </View>
+              </View>
 
               {Object.entries(visibleSummary.payment_totals)
                 .sort(([, a]: any, [, b]: any) => b - a)
                 .map(([method, value]: any, index) => {
-                  const palette = ['#3568B8', '#7357B6', '#25835A', '#66717D', '#B8862F'];
+                  const palette = ['#3568B8', '#256D6B', '#25835A', '#6A70A8', '#66717D'];
                   const color = palette[index % palette.length];
                   const percent = visibleSummary.total > 0 ? (value / visibleSummary.total) * 100 : 0;
                   return (
@@ -716,17 +726,60 @@ export default function FullSales() {
 }
 
 const paymentChartStyles = StyleSheet.create({
+  header: {
+    alignItems: 'center',
+    borderBottomColor: theme.colors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+    padding: 15,
+  },
+  headerMain: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  icon: {
+    alignItems: 'center',
+    backgroundColor: '#EDF3FC',
+    borderRadius: 10,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  title: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 17,
+  },
   subtitle: {
-    paddingHorizontal: 15,
-    marginTop: -8,
-    marginBottom: 5,
+    marginTop: 2,
     fontFamily: 'Inter_400Regular',
-    fontSize: 12.5,
+    fontSize: 12,
     color: theme.colors.muted,
+  },
+  totalBlock: {
+    alignItems: 'flex-end',
+  },
+  totalLabel: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10.5,
+    letterSpacing: 0.45,
+  },
+  totalValue: {
+    color: theme.colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    marginTop: 2,
   },
   row: {
     paddingHorizontal: 15,
-    paddingVertical: 10,
+    paddingVertical: 11,
+    borderBottomColor: '#F1F2F3',
+    borderBottomWidth: 1,
   },
   labelRow: {
     flexDirection: 'row',
