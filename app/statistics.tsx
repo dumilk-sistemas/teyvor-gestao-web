@@ -12,10 +12,11 @@ import { AdminShell } from '@/components/AdminShell';
 import { PeriodCalendar, type PeriodPreset } from '@/components/PeriodCalendar';
 import { theme, useThemeColors } from '@/constants/theme';
 import { getReports } from '@/services/api';
-import { getFull } from '@/services/fullApi';
+import { getFull, getManagerialDre } from '@/services/fullApi';
 import type { ReportsData } from '@/types/api';
 
 type Tab = 'day' | 'month' | 'year' | 'period';
+type StatisticsSection = 'overview' | 'sales' | 'products' | 'customers';
 type FeatherIconName = ComponentProps<typeof Feather>['name'];
 
 type BarItem = {
@@ -253,6 +254,8 @@ export default function Statistics() {
   const styles = useMemo(() => makeStyles(c), [c]);
   const [data, setData] = useState<ReportsData | null>(null);
   const [salesRows, setSalesRows] = useState<any[]>([]);
+  const [dre, setDre] = useState<any>(null);
+  const [activeSection, setActiveSection] = useState<StatisticsSection>('overview');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -284,7 +287,6 @@ export default function Statistics() {
   const [periodError, setPeriodError] = useState('');
   const [periodNotice, setPeriodNotice] = useState('');
   const [periodChoice, setPeriodChoice] = useState('day');
-  const [detailsOpen, setDetailsOpen] = useState(false);
 
   async function load() {
     try {
@@ -704,6 +706,15 @@ export default function Statistics() {
     periodEnd,
   ]);
 
+  useEffect(() => {
+    if (!view.start || !view.end) return;
+    let active = true;
+    getManagerialDre(view.start, view.end)
+      .then((result) => { if (active) setDre(result); })
+      .catch(() => { if (active) setDre(null); });
+    return () => { active = false; };
+  }, [view.start, view.end]);
+
   const maxBar = useMemo(
     () =>
       Math.max(
@@ -736,11 +747,6 @@ export default function Statistics() {
     [activeBars]
   );
 
-  const averagePerActiveRange =
-    activeBars.length > 0
-      ? view.summary.total / activeBars.length
-      : 0;
-
   const bestRangeShare =
     bestBar && view.summary.total > 0
       ? (bestBar.value / view.summary.total) * 100
@@ -751,7 +757,7 @@ export default function Statistics() {
   // no mesmo espírito do "painel integrado" dos concorrentes.
   const periodInsights = useMemo(() => {
     if (!view.start || !view.end) {
-      return { payments: [] as Array<{ method: string; total: number; percent: number }>, products: [] as Array<{ name: string; qty: number; revenue: number }> };
+      return { payments: [] as Array<{ method: string; total: number; percent: number }>, products: [] as Array<{ name: string; qty: number; revenue: number }>, customers: [] as Array<{ name: string; sales: number; total: number; ticket: number }>, unidentifiedSales: 0 };
     }
 
     const rows = salesRows.filter(
@@ -762,10 +768,22 @@ export default function Statistics() {
 
     const paymentTotals = new Map<string, number>();
     const productTotals = new Map<string, { name: string; qty: number; revenue: number }>();
+    const customerTotals = new Map<string, { name: string; sales: number; total: number }>();
+    let unidentifiedSales = 0;
 
     rows.forEach((row) => {
       const method = row.payment || 'Outros';
       paymentTotals.set(method, (paymentTotals.get(method) || 0) + Number(row.total || 0));
+
+      const customer = String(row.customer || '').trim();
+      if (customer && customer.toLocaleLowerCase('pt-BR') !== 'cliente não identificado') {
+        const currentCustomer = customerTotals.get(customer) || { name: customer, sales: 0, total: 0 };
+        currentCustomer.sales += 1;
+        currentCustomer.total += Number(row.total || 0);
+        customerTotals.set(customer, currentCustomer);
+      } else {
+        unidentifiedSales += 1;
+      }
 
       (row.items_detail || []).forEach((item: any) => {
         const key = item.name || item.code || 'Produto';
@@ -790,7 +808,12 @@ export default function Statistics() {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
 
-    return { payments, products };
+    const customers = Array.from(customerTotals.values())
+      .map((customer) => ({ ...customer, ticket: customer.sales ? customer.total / customer.sales : 0 }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+
+    return { payments, products, customers, unidentifiedSales };
   }, [salesRows, view.start, view.end]);
 
   const canGoNext = useMemo(() => {
@@ -1082,15 +1105,30 @@ export default function Statistics() {
         />
 
         <PerformanceMetric
-          label="Média por faixa ativa"
-          value={money(averagePerActiveRange)}
-          icon="activity"
-          color="#6E56A6"
-          background="#F2EEFA"
-          helper={`${activeBars.length} ${activeBars.length === 1 ? 'faixa com movimento' : 'faixas com movimento'}`}
+          label={dre?.quality?.historical_cogs_complete ? 'Margem bruta' : 'Margem bruta parcial'}
+          value={dre?.quality?.gross_margin_percent == null ? 'Indisponível' : `${Number(dre.quality.gross_margin_percent).toFixed(1).replace('.', ',')}%`}
+          icon="percent"
+          color={Number(dre?.quality?.gross_margin_percent || 0) >= 0 ? '#247A4D' : '#C84E4E'}
+          background={Number(dre?.quality?.gross_margin_percent || 0) >= 0 ? '#EAF6EF' : '#FFF0F0'}
+          helper={dre?.quality?.historical_cogs_complete ? 'CMV histórico completo' : 'Confira a cobertura de custos no DRE'}
         />
       </View>
 
+      <View style={styles.sectionTabs}>
+        {([
+          ['overview', 'Visão geral', 'bar-chart-2'],
+          ['sales', 'Vendas', 'shopping-bag'],
+          ['products', 'Produtos', 'package'],
+          ['customers', 'Clientes', 'users'],
+        ] as Array<[StatisticsSection, string, FeatherIconName]>).map(([value, label, icon]) => (
+          <Pressable key={value} onPress={() => setActiveSection(value)} style={[styles.sectionTab, activeSection === value && styles.sectionTabActive]}>
+            <Feather name={icon} size={15} color={activeSection === value ? '#285DA9' : theme.colors.muted} />
+            <Text style={[styles.sectionTabText, activeSection === value && styles.sectionTabTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {(activeSection === 'overview' || activeSection === 'sales') && (
       <View style={styles.chartCard}>
         <View style={styles.chartHeader}>
           <View style={styles.chartHeaderMain}>
@@ -1192,28 +1230,9 @@ export default function Statistics() {
           </View>
         )}
       </View>
+      )}
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: detailsOpen }}
-        onPress={() => setDetailsOpen((current) => !current)}
-        style={styles.detailsToggle}
-      >
-        <View style={styles.detailsToggleMain}>
-          <View style={styles.detailsToggleIcon}>
-            <Feather name="bar-chart-2" size={16} color="#3568B8" />
-          </View>
-          <View style={styles.detailsToggleCopy}>
-            <Text style={styles.detailsToggleTitle}>Análises detalhadas</Text>
-            <Text style={styles.detailsToggleText}>
-              Destaques, ranking, formas de pagamento e produtos do período
-            </Text>
-          </View>
-        </View>
-        <Feather name={detailsOpen ? 'chevron-up' : 'chevron-down'} size={19} color="#3568B8" />
-      </Pressable>
-
-      {detailsOpen && <View style={styles.periodHighlights}>
+      {activeSection === 'overview' && <View style={styles.periodHighlights}>
         <HighlightItem
           icon="award"
           label="Melhor desempenho"
@@ -1234,7 +1253,7 @@ export default function Statistics() {
         />
       </View>}
 
-      {detailsOpen && rankedBars.length > 0 && (
+      {activeSection === 'sales' && rankedBars.length > 0 && (
         <View style={styles.detailCard}>
           <View style={styles.detailHeader}>
             <View style={styles.sectionTitleGroup}>
@@ -1303,7 +1322,7 @@ export default function Statistics() {
         </View>
       )}
 
-      {detailsOpen && (periodInsights.payments.length > 0 || periodInsights.products.length > 0) && (
+      {((activeSection === 'sales' && periodInsights.payments.length > 0) || (activeSection === 'products' && periodInsights.products.length > 0)) && (
         <View style={styles.insightsSection}>
           <View style={styles.contentSectionHeader}>
             <View>
@@ -1314,7 +1333,7 @@ export default function Statistics() {
           </View>
 
           <View style={styles.insightsGrid}>
-          {periodInsights.payments.length > 0 && (
+          {activeSection === 'sales' && periodInsights.payments.length > 0 && (
             <View style={styles.insightCard}>
               <View style={styles.insightHeader}>
                 <View style={[styles.insightIcon, styles.paymentIcon]}>
@@ -1347,7 +1366,7 @@ export default function Statistics() {
             </View>
           )}
 
-          {periodInsights.products.length > 0 && (
+          {activeSection === 'products' && periodInsights.products.length > 0 && (
             <View style={styles.insightCard}>
               <View style={styles.insightHeader}>
                 <View style={[styles.insightIcon, styles.productIcon]}>
@@ -1380,6 +1399,26 @@ export default function Statistics() {
             </View>
           )}
           </View>
+        </View>
+      )}
+
+      {activeSection === 'customers' && (
+        <View style={styles.detailCard}>
+          <View style={styles.detailHeader}>
+            <View style={styles.sectionTitleGroup}>
+              <View style={styles.sectionIcon}><Feather name="users" size={15} color="#3568B8" /></View>
+              <View><Text style={styles.detailTitle}>Clientes no período</Text><Text style={styles.sectionSubtitle}>Ranking por faturamento identificado</Text></View>
+            </View>
+            <Text style={styles.detailHeaderMeta}>{periodInsights.unidentifiedSales} venda(s) sem identificação</Text>
+          </View>
+          {periodInsights.customers.map((customer, index) => (
+            <View key={customer.name} style={styles.detailRow}>
+              <View style={[styles.rankBadge, index === 0 && styles.rankBadgeFirst]}><Text style={[styles.rankBadgeText, index === 0 && styles.rankBadgeTextFirst]}>{index + 1}</Text></View>
+              <View style={styles.detailMain}><Text style={styles.detailName}>{customer.name}</Text><Text style={styles.detailMeta}>{customer.sales} compra(s) • Ticket {money(customer.ticket)}</Text></View>
+              <Text style={styles.detailAmount}>{money(customer.total)}</Text>
+            </View>
+          ))}
+          {periodInsights.customers.length === 0 && <View style={styles.inlineCustomerEmpty}><Text style={styles.emptyTitle}>Nenhuma venda identificada</Text><Text style={styles.emptyText}>Vincule o cliente à venda para acompanhar recorrência e ticket.</Text></View>}
         </View>
       )}
     </AdminShell>
@@ -1923,6 +1962,32 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     gap: 12,
   },
 
+  sectionTabs: {
+    backgroundColor: '#FFFFFF',
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    padding: 5,
+  },
+
+  sectionTab: {
+    alignItems: 'center',
+    borderRadius: 9,
+    flexDirection: 'row',
+    gap: 7,
+    justifyContent: 'center',
+    minHeight: 39,
+    minWidth: 130,
+    paddingHorizontal: 14,
+  },
+
+  sectionTabActive: { backgroundColor: '#EDF3FC' },
+  sectionTabText: { color: theme.colors.muted, fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },
+  sectionTabTextActive: { color: '#285DA9', fontFamily: 'Inter_700Bold' },
+
   metricCard: {
     flexGrow: 1,
     flexBasis: 210,
@@ -2147,8 +2212,8 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   chartTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 17,
+    fontFamily: 'Sora_700Bold',
     color: theme.colors.text,
   },
 
@@ -2246,14 +2311,14 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 3,
-    backgroundColor: '#738496',
+    backgroundColor: '#5F91A8',
   },
 
   legendHighlightDot: {
     width: 8,
     height: 8,
     borderRadius: 3,
-    backgroundColor: '#244D70',
+    backgroundColor: '#18597A',
   },
 
   legendText: {
@@ -2272,6 +2337,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
+    justifyContent: 'space-around',
     paddingTop: 16,
     position: 'relative',
   },
@@ -2297,7 +2363,9 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   barColumn: {
-    width: 50,
+    flexGrow: 1,
+    minWidth: 54,
+    maxWidth: 92,
     alignItems: 'center',
     zIndex: 1,
   },
@@ -2323,12 +2391,12 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   barFill: {
     width: '100%',
-    backgroundColor: '#738496',
+    backgroundColor: '#5F91A8',
     borderRadius: 6,
   },
 
   barFillHighlight: {
-    backgroundColor: '#244D70',
+    backgroundColor: '#18597A',
   },
 
   barLabel: {
@@ -2613,4 +2681,6 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     borderRadius: 4,
     height: '100%',
   },
+
+  inlineCustomerEmpty: { minHeight: 150, alignItems: 'center', justifyContent: 'center', padding: 22 },
 });

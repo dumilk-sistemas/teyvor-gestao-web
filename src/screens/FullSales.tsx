@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
@@ -57,6 +57,7 @@ export default function FullSales() {
   const [, setPeriodPreset] = useState<PeriodPreset>('today');
   const [search, setSearch] = useState('');
   const [actionSaleId, setActionSaleId] = useState<string | null>(null);
+  const [receiptSale, setReceiptSale] = useState<any | null>(null);
 
   const range = useMemo(() => ({ start: periodStart, end: periodEnd }), [periodStart, periodEnd]);
   const periodLabel = formatPeriodLabel(periodStart, periodEnd);
@@ -497,9 +498,12 @@ export default function FullSales() {
             )}
 
             {visibleRows.map((row: any) => (
-              <View
+              <Pressable
                 key={String(row.id)}
-                style={s.row}
+                accessibilityRole="button"
+                accessibilityLabel={`Abrir cupom da venda ${row.number}`}
+                onPress={() => setReceiptSale(row)}
+                style={({ pressed }) => [s.row, salesStyles.saleRow, pressed && salesStyles.saleRowPressed]}
               >
                 <View style={s.main}>
                   <Text style={s.name}>Venda #{row.number}</Text>
@@ -529,24 +533,85 @@ export default function FullSales() {
 
                   {row.status === 'Concluída' && (
                     <View style={salesStyles.actionWrap}>
-                      <Pressable style={salesStyles.actionTrigger} onPress={() => setActionSaleId((current) => current === String(row.id) ? null : String(row.id))}>
+                      <Pressable style={salesStyles.actionTrigger} onPress={(event) => { event.stopPropagation(); setActionSaleId((current) => current === String(row.id) ? null : String(row.id)); }}>
                         <Feather name="more-horizontal" size={18} color={theme.colors.text} />
                         <Text style={salesStyles.actionTriggerText}>Ações</Text>
                       </Pressable>
                       {actionSaleId === String(row.id) && (
                         <View style={salesStyles.actionMenu}>
-                          <Pressable style={salesStyles.actionItem} onPress={() => { setActionSaleId(null); edit(row); }}><Feather name="edit-2" size={14} color={theme.colors.text} /><Text style={salesStyles.actionItemText}>Editar venda</Text></Pressable>
-                          <Pressable style={salesStyles.actionItem} onPress={() => { setActionSaleId(null); cancel(row); }}><Feather name="x-circle" size={14} color={theme.colors.danger} /><Text style={salesStyles.actionDangerText}>Cancelar venda</Text></Pressable>
+                          <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); edit(row); }}><Feather name="edit-2" size={14} color={theme.colors.text} /><Text style={salesStyles.actionItemText}>Editar venda</Text></Pressable>
+                          <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); cancel(row); }}><Feather name="x-circle" size={14} color={theme.colors.danger} /><Text style={salesStyles.actionDangerText}>Cancelar venda</Text></Pressable>
                         </View>
                       )}
                     </View>
                   )}
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         </>
       )}
+
+      <Modal visible={!!receiptSale} transparent animationType="fade" onRequestClose={() => setReceiptSale(null)}>
+        <View style={salesStyles.receiptBackdrop}>
+          <View style={salesStyles.receiptModal}>
+            <View style={salesStyles.receiptHeader}>
+              <View>
+                <Text style={salesStyles.receiptEyebrow}>COMPROVANTE DE VENDA</Text>
+                <Text style={salesStyles.receiptTitle}>Venda #{receiptSale?.number}</Text>
+                <Text style={salesStyles.receiptSubtitle}>{formatDateBR(receiptSale?.date)} às {receiptSale?.time || '—'}</Text>
+              </View>
+              <Pressable style={salesStyles.receiptClose} onPress={() => setReceiptSale(null)}><Feather name="x" size={20} color={theme.colors.muted} /></Pressable>
+            </View>
+
+            <ScrollView style={salesStyles.receiptScroll} contentContainerStyle={salesStyles.receiptBody}>
+              <View style={salesStyles.receiptInfoGrid}>
+                <ReceiptInfo label="Cliente" value={receiptSale?.customer || 'Cliente não identificado'} />
+                <ReceiptInfo label="Operador" value={receiptSale?.operator || 'Não informado'} />
+                <ReceiptInfo label="Caixa" value={receiptSale?.cash_session || 'Não informado'} />
+              </View>
+
+              <View style={salesStyles.receiptSectionHeader}>
+                <Text style={salesStyles.receiptSectionTitle}>Produtos</Text>
+                <Text style={salesStyles.receiptItemCount}>{(receiptSale?.items_detail || []).length} item(ns)</Text>
+              </View>
+              {(receiptSale?.items_detail || []).map((item: any, index: number) => (
+                <View key={`${item.id || item.code || item.name}-${index}`} style={salesStyles.receiptItem}>
+                  <View style={salesStyles.receiptItemMain}>
+                    <Text style={salesStyles.receiptItemName}>{item.name || 'Produto'}</Text>
+                    <Text style={salesStyles.receiptItemMeta}>{Number(item.qty || 0).toLocaleString('pt-BR')} {item.unit || 'un'} × {money(item.price)}</Text>
+                    {Number(item.discount || 0) > 0 && <Text style={salesStyles.receiptDiscount}>Desconto do item: {money(item.discount)}</Text>}
+                  </View>
+                  <Text style={salesStyles.receiptItemTotal}>{money(item.total ?? (Number(item.qty || 0) * Number(item.price || 0) - Number(item.discount || 0)))}</Text>
+                </View>
+              ))}
+              {(receiptSale?.items_detail || []).length === 0 && <Text style={salesStyles.receiptEmpty}>Itens não disponíveis nesta venda.</Text>}
+
+              <View style={salesStyles.receiptTotals}>
+                <ReceiptTotal label="Subtotal" value={money(receiptSale?.subtotal || (Number(receiptSale?.total || 0) + Number(receiptSale?.discount || 0)))} />
+                {Number(receiptSale?.discount || 0) > 0 && <ReceiptTotal label="Descontos" value={`− ${money(receiptSale.discount)}`} danger />}
+                <ReceiptTotal label="Total da venda" value={money(receiptSale?.total || 0)} strong />
+              </View>
+
+              <View style={salesStyles.receiptPayments}>
+                <Text style={salesStyles.receiptSectionTitle}>Pagamento</Text>
+                {(receiptSale?.payment_details?.length ? receiptSale.payment_details : [{ method: receiptSale?.payment || 'Outros', value: receiptSale?.total || 0 }]).map((payment: any, index: number) => (
+                  <View key={`${payment.method}-${index}`} style={salesStyles.receiptPaymentRow}>
+                    <View><Text style={salesStyles.receiptPaymentMethod}>{payment.method || 'Outros'}</Text>{Number(payment.installments || 1) > 1 && <Text style={salesStyles.receiptPaymentMeta}>{payment.installments} parcelas</Text>}</View>
+                    <Text style={salesStyles.receiptPaymentValue}>{money(payment.value)}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={salesStyles.receiptStatusRow}><Text style={salesStyles.receiptStatusLabel}>Status</Text><Text style={[salesStyles.receiptStatus, receiptSale?.status !== 'Concluída' && salesStyles.receiptStatusCancelled]}>{receiptSale?.status || 'Concluída'}</Text></View>
+            </ScrollView>
+
+            <View style={salesStyles.receiptFooter}>
+              <Pressable style={salesStyles.receiptCloseButton} onPress={() => setReceiptSale(null)}><Text style={salesStyles.receiptCloseButtonText}>Fechar</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <FormModal
         visible={open}
@@ -725,6 +790,14 @@ export default function FullSales() {
   );
 }
 
+function ReceiptInfo({ label, value }: { label: string; value: string }) {
+  return <View style={salesStyles.receiptInfo}><Text style={salesStyles.receiptInfoLabel}>{label}</Text><Text style={salesStyles.receiptInfoValue}>{value}</Text></View>;
+}
+
+function ReceiptTotal({ label, value, strong = false, danger = false }: { label: string; value: string; strong?: boolean; danger?: boolean }) {
+  return <View style={[salesStyles.receiptTotalRow, strong && salesStyles.receiptTotalStrong]}><Text style={[salesStyles.receiptTotalLabel, strong && salesStyles.receiptTotalLabelStrong]}>{label}</Text><Text style={[salesStyles.receiptTotalValue, strong && salesStyles.receiptTotalValueStrong, danger && salesStyles.receiptTotalDanger]}>{value}</Text></View>;
+}
+
 const paymentChartStyles = StyleSheet.create({
   header: {
     alignItems: 'center',
@@ -811,6 +884,8 @@ const paymentChartStyles = StyleSheet.create({
 });
 
 const salesStyles = StyleSheet.create({
+  saleRow: { cursor: 'pointer' as any },
+  saleRowPressed: { backgroundColor: '#F7FAFD' },
   periodRow: {
     paddingHorizontal: 16,
     paddingVertical: 13,
@@ -899,4 +974,47 @@ const salesStyles = StyleSheet.create({
   actionItem: { minHeight: 42, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: '#F0EFEA' },
   actionItemText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.text },
   actionDangerText: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.danger },
+  receiptBackdrop: { flex: 1, backgroundColor: 'rgba(10,14,20,.52)', alignItems: 'center', justifyContent: 'center', padding: 18 },
+  receiptModal: { width: '100%', maxWidth: 720, maxHeight: '92%', overflow: 'hidden', backgroundColor: '#FFF', borderRadius: 18 },
+  receiptHeader: { padding: 18, borderBottomWidth: 1, borderBottomColor: theme.colors.border, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  receiptEyebrow: { fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .7, color: '#3568B8' },
+  receiptTitle: { marginTop: 3, fontFamily: 'Sora_700Bold', fontSize: 20, color: theme.colors.text },
+  receiptSubtitle: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
+  receiptClose: { width: 36, height: 36, borderRadius: 9, backgroundColor: '#F3F5F7', alignItems: 'center', justifyContent: 'center' },
+  receiptScroll: { maxHeight: 590 },
+  receiptBody: { padding: 18, gap: 14 },
+  receiptInfoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  receiptInfo: { minWidth: 150, flex: 1, padding: 11, borderRadius: 10, backgroundColor: '#F6F8FA' },
+  receiptInfoLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10.5, color: theme.colors.muted, textTransform: 'uppercase' },
+  receiptInfoValue: { marginTop: 4, fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.text },
+  receiptSectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  receiptSectionTitle: { fontFamily: 'Sora_700Bold', fontSize: 15, color: theme.colors.text },
+  receiptItemCount: { fontFamily: 'Inter_600SemiBold', fontSize: 11.5, color: theme.colors.muted },
+  receiptItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#EEF0F2' },
+  receiptItemMain: { flex: 1, minWidth: 0 },
+  receiptItemName: { fontFamily: 'Inter_600SemiBold', fontSize: 13, color: theme.colors.text },
+  receiptItemMeta: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 11.5, color: theme.colors.muted },
+  receiptDiscount: { marginTop: 2, fontFamily: 'Inter_400Regular', fontSize: 11, color: theme.colors.danger },
+  receiptItemTotal: { fontFamily: 'Inter_700Bold', fontSize: 13, color: theme.colors.text },
+  receiptEmpty: { paddingVertical: 18, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted, textAlign: 'center' },
+  receiptTotals: { borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: 8 },
+  receiptTotalRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 5 },
+  receiptTotalStrong: { marginTop: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.colors.border },
+  receiptTotalLabel: { fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
+  receiptTotalLabelStrong: { fontFamily: 'Inter_700Bold', fontSize: 14, color: theme.colors.text },
+  receiptTotalValue: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.text },
+  receiptTotalValueStrong: { fontFamily: 'Sora_700Bold', fontSize: 18 },
+  receiptTotalDanger: { color: theme.colors.danger },
+  receiptPayments: { padding: 13, borderRadius: 11, backgroundColor: '#F6F8FA', gap: 7 },
+  receiptPaymentRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 7 },
+  receiptPaymentMethod: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.text },
+  receiptPaymentMeta: { marginTop: 2, fontFamily: 'Inter_400Regular', fontSize: 11, color: theme.colors.muted },
+  receiptPaymentValue: { fontFamily: 'Inter_700Bold', fontSize: 13, color: theme.colors.text },
+  receiptStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  receiptStatusLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.muted },
+  receiptStatus: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999, overflow: 'hidden', backgroundColor: '#EAF7EF', fontFamily: 'Inter_700Bold', fontSize: 11, color: theme.colors.success },
+  receiptStatusCancelled: { backgroundColor: '#FFF0F0', color: theme.colors.danger },
+  receiptFooter: { padding: 14, borderTopWidth: 1, borderTopColor: theme.colors.border, flexDirection: 'row', justifyContent: 'flex-end' },
+  receiptCloseButton: { minHeight: 40, paddingHorizontal: 17, borderRadius: 9, backgroundColor: theme.colors.black, alignItems: 'center', justifyContent: 'center' },
+  receiptCloseButtonText: { fontFamily: 'Inter_700Bold', fontSize: 13, color: '#FFF' },
 });

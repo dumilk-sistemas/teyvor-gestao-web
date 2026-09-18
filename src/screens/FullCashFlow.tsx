@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -39,22 +39,6 @@ const isoFromDate = (date: Date) => {
 
 const currentMonthString = () => new Date().toISOString().slice(0, 7);
 
-const monthLabel = (month: string) => {
-  const [y, m] = month.split('-').map(Number);
-  const date = new Date(y, m - 1, 1);
-  const label = date.toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-};
-
-const shiftMonth = (month: string, delta: number) => {
-  const [y, m] = month.split('-').map(Number);
-  const date = new Date(y, m - 1 + delta, 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-};
-
 const monthRange = (month: string) => {
   const [y, m] = month.split('-').map(Number);
   return {
@@ -77,27 +61,6 @@ const isoToBR = (value: string) => {
   if (!match) return value;
   return `${match[3]}/${match[2]}/${match[1]}`;
 };
-
-const brToIso = (value: string) => {
-  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!match) return '';
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  const parsed = new Date(year, month - 1, day);
-  if (
-    parsed.getFullYear() !== year ||
-    parsed.getMonth() !== month - 1 ||
-    parsed.getDate() !== day
-  ) {
-    return '';
-  }
-  return `${match[3]}-${match[2]}-${match[1]}`;
-};
-
-const inputToIso = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : brToIso(value);
-
-type Mode = 'month' | 'custom';
 
 type FlowItem = {
   kind: 'in' | 'out';
@@ -144,23 +107,23 @@ export default function FullCashFlow() {
   const mobile = width < 700;
   const compact = width < 1040;
   const colors = useThemeColors();
-  const [mode, setMode] = useState<Mode>('month');
-  const [month, setMonth] = useState(currentMonthString());
   const initialRange = monthRange(currentMonthString());
-  const [startInput, setStartInput] = useState(isoToBR(initialRange.start));
-  const [endInput, setEndInput] = useState(isoToBR(initialRange.end));
-  const [periodError, setPeriodError] = useState('');
+  const [appliedStart, setAppliedStart] = useState(initialRange.start);
+  const [appliedEnd, setAppliedEnd] = useState(initialRange.end);
   const [data, setData] = useState<CashFlowData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [accountId, setAccountId] = useState<number | null>(null);
   const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
+  const requestSequence = useRef(0);
 
   async function load(start: string, end: string, accId: number | null = accountId) {
+    const sequence = ++requestSequence.current;
     try {
       setLoading(true);
       setError('');
       const result = await getCashFlow(start, end, accId);
+      if (sequence !== requestSequence.current) return;
       setData(result);
       setExpandedDays(Object.fromEntries(
         (result.rows || [])
@@ -168,49 +131,21 @@ export default function FullCashFlow() {
           .map((day: FlowDay) => [day.date, true])
       ));
     } catch (e: any) {
+      if (sequence !== requestSequence.current) return;
       setError(e?.message || 'Não foi possível carregar o fluxo de caixa.');
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
   }
 
   useEffect(() => {
-    const { start, end } = monthRange(month);
-    load(start, end);
+    load(appliedStart, appliedEnd, accountId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month]);
-
-  function changeMonth(delta: number) {
-    setMode('month');
-    setMonth((m) => shiftMonth(m, delta));
-  }
-
-  function applyCustomPeriod() {
-    const start = inputToIso(startInput.trim());
-    const end = inputToIso(endInput.trim());
-    if (!start || !end) {
-      setPeriodError('Datas inválidas. Use o formato DD/MM/AAAA.');
-      return;
-    }
-    if (start > end) {
-      setPeriodError('A data inicial precisa ser antes da data final.');
-      return;
-    }
-    setPeriodError('');
-    load(start, end);
-  }
+  }, [appliedStart, appliedEnd, accountId]);
 
   function changeAccount(value: string) {
     const nextId = value ? Number(value) : null;
     setAccountId(nextId);
-    if (mode === 'month') {
-      const { start, end } = monthRange(month);
-      load(start, end, nextId);
-    } else {
-      const start = inputToIso(startInput.trim());
-      const end = inputToIso(endInput.trim());
-      if (start && end) load(start, end, nextId);
-    }
   }
 
   const totalIn = data ? data.totals.realized_in + data.totals.forecast_in : 0;
@@ -302,14 +237,7 @@ export default function FullCashFlow() {
           : 'Aguardando sincronização'
       }
       refreshing={loading}
-      onRefresh={() => {
-        if (mode === 'month') {
-          const { start, end } = monthRange(month);
-          load(start, end);
-        } else {
-          applyCustomPeriod();
-        }
-      }}
+      onRefresh={() => load(appliedStart, appliedEnd, accountId)}
       headerActions={null}
     >
       {!!error && <Notice text={error} tone="error" />}
@@ -329,16 +257,13 @@ export default function FullCashFlow() {
           </View>
 
           <PeriodCalendar
-            start={data?.start || monthRange(month).start}
-            end={data?.end || monthRange(month).end}
+            start={appliedStart}
+            end={appliedEnd}
             label="Período do fluxo"
             compact
             onApply={(start, end) => {
-              setMode('custom');
-              setStartInput(isoToBR(start));
-              setEndInput(isoToBR(end));
-              setPeriodError('');
-              load(start, end);
+              setAppliedStart(start);
+              setAppliedEnd(end);
             }}
           />
         </View>
@@ -356,7 +281,6 @@ export default function FullCashFlow() {
           />
         )}
 
-        {!!periodError && <Text style={styles.periodError}>{periodError}</Text>}
       </View>
 
       {!!data && !data.no_accounts && data.clamped && (
