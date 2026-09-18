@@ -3,8 +3,9 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { Feather } from '@expo/vector-icons';
 
 import { AccountPicker } from '@/components/AccountPicker';
-import { ActionButton, Choice, DateField, Field, Notice, formStyles as s } from '@/components/FormKit';
+import { ActionButton, Choice, DateField, Field, FormModal, Notice, formStyles as s } from '@/components/FormKit';
 import {
+  adjustAccountBalance,
   createAccount,
   createTransfer,
   deleteAccount,
@@ -53,6 +54,9 @@ const PAYMENT_METHODS = [
   'Boleto',
   'Cheque',
   'Transferência',
+  'Débito automático',
+  'Cartão de débito',
+  'Cartão de crédito',
   'Depósito',
   'Outros',
 ];
@@ -127,6 +131,11 @@ export function AccountsModal({
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [adjustTarget, setAdjustTarget] = useState<any>(null);
+  const [adjustBalance, setAdjustBalance] = useState('');
+  const [adjustReason, setAdjustReason] = useState('');
+  const [adjustError, setAdjustError] = useState('');
+  const [adjustBusy, setAdjustBusy] = useState(false);
 
   const [transferForm, setTransferForm] = useState<any>(emptyTransferForm);
   const [transferBusy, setTransferBusy] = useState(false);
@@ -276,8 +285,6 @@ export function AccountsModal({
       await updateAccount(editingId, {
         name: editForm.name.trim(),
         account_type: editForm.account_type,
-        initial_balance: toNumber(editForm.initial_balance),
-        opening_date: editForm.opening_date,
       });
       cancelEdit();
       showToast('Conta atualizada.');
@@ -287,6 +294,37 @@ export function AccountsModal({
       showError(e?.message || 'Não foi possível salvar as alterações.');
     } finally {
       setEditBusy(false);
+    }
+  }
+
+  function startAdjustment(account: any) {
+    setAdjustTarget(account);
+    setAdjustBalance(String(Number(account.current_balance || 0).toFixed(2)).replace('.', ','));
+    setAdjustReason('');
+    setAdjustError('');
+  }
+
+  async function saveAdjustment() {
+    if (!adjustTarget) return;
+    if (adjustReason.trim().length < 5) {
+      setAdjustError('Explique o motivo do ajuste com pelo menos cinco caracteres.');
+      return;
+    }
+    try {
+      setAdjustBusy(true);
+      setAdjustError('');
+      await adjustAccountBalance(adjustTarget.id, {
+        new_balance: toNumber(adjustBalance),
+        reason: adjustReason.trim(),
+      });
+      setAdjustTarget(null);
+      showToast('Saldo ajustado e registrado no histórico de auditoria.');
+      await load();
+      onChanged?.();
+    } catch (e: any) {
+      setAdjustError(e?.message || 'Não foi possível ajustar o saldo.');
+    } finally {
+      setAdjustBusy(false);
     }
   }
 
@@ -503,6 +541,10 @@ export function AccountsModal({
                           </Text>
                         </Pressable>
 
+                        <Pressable onPress={() => startAdjustment(acc)}>
+                          <Text style={styles.linkAction}>Ajustar saldo</Text>
+                        </Pressable>
+
                         <Pressable onPress={() => toggleActive(acc)}>
                           <Text style={styles.linkAction}>
                             {acc.active ? 'Desativar' : 'Ativar'}
@@ -529,19 +571,7 @@ export function AccountsModal({
                             onChange={(v) => setEditForm({ ...editForm, account_type: v })}
                           />
 
-                          <Field
-                            label="Saldo inicial"
-                            value={String(editForm.initial_balance)}
-                            onChangeText={(v) => setEditForm({ ...editForm, initial_balance: v })}
-                            placeholder="0,00"
-                            keyboardType="decimal-pad"
-                          />
-
-                          <DateField
-                            label="Data do saldo inicial"
-                            value={editForm.opening_date}
-                            onChangeText={(v) => setEditForm({ ...editForm, opening_date: v })}
-                          />
+                          <Notice text="Para corrigir o saldo, use Ajustar saldo. O sistema exigirá justificativa e preservará o histórico." />
 
                           <ActionButton label="Salvar alterações" onPress={saveEdit} disabled={editBusy} />
                         </View>
@@ -553,6 +583,11 @@ export function AccountsModal({
                       <Text style={[styles.balanceValue, acc.current_balance < 0 && styles.negativeValue]}>
                         {money(acc.current_balance)}
                       </Text>
+                      {!!acc.last_adjustment && (
+                        <Text style={styles.adjustmentMeta}>
+                          Último ajuste: {money(acc.last_adjustment.difference)} • {acc.last_adjustment.reason}
+                        </Text>
+                      )}
                     </View>
                   </View>
                 ))
@@ -654,6 +689,20 @@ export function AccountsModal({
         </View>
       </View>
     </Modal>
+
+    <FormModal
+      visible={!!adjustTarget}
+      title="Ajustar saldo da conta"
+      onCancel={() => setAdjustTarget(null)}
+      onSave={saveAdjustment}
+      saveLabel="Confirmar ajuste"
+      busy={adjustBusy}
+      errorText={adjustError}
+    >
+      <Notice text={`Saldo calculado atual de ${adjustTarget?.name || 'conta'}: ${money(Number(adjustTarget?.current_balance || 0))}. A diferença será registrada como ajuste auditável.`} />
+      <Field label="Novo saldo correto *" value={adjustBalance} onChangeText={setAdjustBalance} keyboardType="decimal-pad" placeholder="0,00" />
+      <Field label="Justificativa obrigatória *" value={adjustReason} onChangeText={setAdjustReason} multiline placeholder="Ex.: conciliação com extrato bancário de 17/09/2026" />
+    </FormModal>
 
     <Modal
       visible={!!deleteTarget}
@@ -969,6 +1018,7 @@ const styles = StyleSheet.create({
   balanceArea: { alignItems: 'flex-end', minWidth: 135 },
   balanceLabel: { color: theme.colors.muted, fontSize: 8.5, fontWeight: '900', letterSpacing: 0.4 },
   balanceValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 15, marginTop: 3 },
+  adjustmentMeta: { color: theme.colors.muted, fontSize: 9.5, marginTop: 5, maxWidth: 220, textAlign: 'right' },
   transferRow: { alignItems: 'center', borderTopColor: theme.colors.border, borderTopWidth: 1, flexDirection: 'row', gap: 12, paddingHorizontal: 14, paddingVertical: 10 },
   transferAmount: { color: theme.colors.text, fontSize: 12.5, fontWeight: '900' },
 });

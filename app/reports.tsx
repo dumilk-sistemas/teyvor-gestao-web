@@ -12,7 +12,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
-import { Notice } from '@/components/FormKit';
+import { DateField, Notice } from '@/components/FormKit';
 import { theme } from '@/constants/theme';
 import { useBranding } from '@/contexts/BrandingContext';
 import { getReports } from '@/services/api';
@@ -99,19 +99,7 @@ const brToIso = (value: string) => {
   return `${match[3]}-${match[2]}-${match[1]}`;
 };
 
-const formatDateInput = (value: string) => {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-
-  if (digits.length <= 2) {
-    return digits;
-  }
-
-  if (digits.length <= 4) {
-    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  }
-
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-};
+const inputToIso = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : brToIso(value);
 
 function csvCell(value: string | number) {
   const str = String(value ?? '');
@@ -302,6 +290,17 @@ type DetailMode = 'sales' | 'cash' | 'products' | 'payments' | 'customers' | 'fi
 
 type ReportCategory = 'all' | 'sales' | 'finance' | 'operation';
 
+function reportRowKey(mode: DetailMode, row: any, index: number) {
+  if (mode === 'sales') return `sales:${row.date || index}`;
+  if (mode === 'cash') return `cash:${row.id || row.code || row.date || index}`;
+  if (mode === 'products') return `products:${row.id || row.name || 'item'}:${index}`;
+  if (mode === 'payments') return `payments:${row.method || index}`;
+  if (mode === 'customers') return `customers:${row.id || row.name || 'cliente'}:${index}`;
+  if (mode === 'purchases') return `purchases:${row.id || row.document || row.date || index}`;
+  if (mode === 'stock') return `stock:${row.code || row.id || row.name || index}`;
+  return `${mode || 'report'}:${index}`;
+}
+
 type AbcTier = 'A' | 'B' | 'C';
 
 type CashClosing = {
@@ -360,6 +359,8 @@ export default function Reports() {
   >('category');
   const [reportCategory, setReportCategory] = useState<ReportCategory>('all');
   const [reportSearch, setReportSearch] = useState('');
+  const [financeSelected, setFinanceSelected] = useState<Record<string, boolean>>({});
+  const [reportSelected, setReportSelected] = useState<Record<string, boolean>>({});
 
   const today = isoFromDate(new Date());
 
@@ -496,8 +497,8 @@ export default function Reports() {
   }
 
   function applyCustomPeriod() {
-    const start = brToIso(startInput.trim());
-    const end = brToIso(endInput.trim());
+    const start = inputToIso(startInput.trim());
+    const end = inputToIso(endInput.trim());
 
     if (!start || !end) {
       setPeriodError(
@@ -689,6 +690,34 @@ export default function Reports() {
     return [];
   }, [finance, financeReportMode, appliedStart, appliedEnd]);
 
+  const financeCategoryRows = useMemo(() => [
+    ...financeByCategory.payables.map((row) => ({ ...row, reportType: 'Despesa', selectionKey: `expense:${row.category}` })),
+    ...financeByCategory.receivables.map((row) => ({ ...row, reportType: 'Receita', selectionKey: `revenue:${row.category}` })),
+  ], [financeByCategory]);
+
+  const financeSelectionKeys = useMemo(
+    () => financeReportMode === 'category'
+      ? financeCategoryRows.map((row) => row.selectionKey)
+      : financeFlatRows.map((row) => String(row.id)),
+    [financeCategoryRows, financeFlatRows, financeReportMode]
+  );
+
+  useEffect(() => {
+    if (detailMode !== 'finance') return;
+    setFinanceSelected(Object.fromEntries(financeSelectionKeys.map((key) => [key, true])));
+  }, [detailMode, financeReportMode, financeSelectionKeys.join('|')]);
+
+  const selectedFinanceCategoryRows = financeCategoryRows.filter((row) => financeSelected[row.selectionKey]);
+  const selectedFinanceFlatRows = financeFlatRows.filter((row) => financeSelected[String(row.id)]);
+
+  function toggleFinanceSelection(key: string) {
+    setFinanceSelected((current) => ({ ...current, [key]: !current[key] }));
+  }
+
+  function selectAllFinance(selected: boolean) {
+    setFinanceSelected(Object.fromEntries(financeSelectionKeys.map((key) => [key, selected])));
+  }
+
   const stockAlerts = useMemo(() => {
     const rows = (stock?.rows || []).filter((r) => r.status !== 'OK');
 
@@ -798,6 +827,40 @@ export default function Reports() {
       .filter((row) => row.value > 0)
       .sort((a, b) => b.value - a.value);
   }, [data]);
+
+  const selectableRows = useMemo<any[]>(() => {
+    if (detailMode === 'sales') return periodDays;
+    if (detailMode === 'cash') return cashClosings;
+    if (detailMode === 'products') return productsAbc;
+    if (detailMode === 'payments') return paymentBreakdown;
+    if (detailMode === 'customers') return customerRanking;
+    if (detailMode === 'purchases') return purchaseRows;
+    if (detailMode === 'stock') return stockAlerts;
+    return [];
+  }, [detailMode, periodDays, cashClosings, productsAbc, paymentBreakdown, customerRanking, purchaseRows, stockAlerts]);
+
+  const selectableKeys = useMemo(
+    () => selectableRows.map((row, index) => reportRowKey(detailMode, row, index)),
+    [detailMode, selectableRows]
+  );
+
+  useEffect(() => {
+    if (!detailMode || detailMode === 'finance') return;
+    setReportSelected(Object.fromEntries(selectableKeys.map((key) => [key, true])));
+  }, [detailMode, selectableKeys.join('|')]);
+
+  const selectedReportRows = selectableRows.filter((row, index) =>
+    reportSelected[reportRowKey(detailMode, row, index)]
+  );
+
+  function toggleReportSelection(row: any, index: number) {
+    const key = reportRowKey(detailMode, row, index);
+    setReportSelected((current) => ({ ...current, [key]: !current[key] }));
+  }
+
+  function selectAllReportRows(selected: boolean) {
+    setReportSelected(Object.fromEntries(selectableKeys.map((key) => [key, selected])));
+  }
 
   const periodLabel =
     appliedStart === appliedEnd
@@ -1046,41 +1109,19 @@ export default function Reports() {
           <View style={styles.customArea}>
             <View style={styles.dateFields}>
               <View style={styles.dateField}>
-                <Text style={styles.dateLabel}>
-                  Data inicial
-                </Text>
-
-                <TextInput
-                  value={startInput}
-                  onChangeText={(value) => {
-                    setStartInput(formatDateInput(value));
-                    setPeriodError('');
-                    setAppliedNotice('');
-                  }}
-                  placeholder="DD/MM/AAAA"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  style={styles.input}
-                />
+                <DateField label="Data inicial" value={startInput} onChangeText={(value) => {
+                  setStartInput(value);
+                  setPeriodError('');
+                  setAppliedNotice('');
+                }} />
               </View>
 
               <View style={styles.dateField}>
-                <Text style={styles.dateLabel}>
-                  Data final
-                </Text>
-
-                <TextInput
-                  value={endInput}
-                  onChangeText={(value) => {
-                    setEndInput(formatDateInput(value));
-                    setPeriodError('');
-                    setAppliedNotice('');
-                  }}
-                  placeholder="DD/MM/AAAA"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  style={styles.input}
-                />
+                <DateField label="Data final" value={endInput} onChangeText={(value) => {
+                  setEndInput(value);
+                  setPeriodError('');
+                  setAppliedNotice('');
+                }} />
               </View>
             </View>
 
@@ -1242,7 +1283,7 @@ export default function Reports() {
                   'Relatório de vendas',
                   periodLabel,
                   ['Data', 'Vendas', 'Faturamento'],
-                  periodDays.map((r) => [
+                  selectedReportRows.map((r) => [
                     dateBR(r.date),
                     r.sales,
                     money(r.total),
@@ -1253,7 +1294,7 @@ export default function Reports() {
                 downloadCsv(
                   `relatorio_vendas_${appliedStart}_${appliedEnd}.csv`,
                   ['Data', 'Vendas', 'Faturamento'],
-                  periodDays.map((r) => [
+                  selectedReportRows.map((r) => [
                     dateBR(r.date),
                     r.sales,
                     r.total,
@@ -1261,6 +1302,8 @@ export default function Reports() {
                 )
               }
             />
+
+            <ReportSelectionBar selected={selectedReportRows.length} total={selectableKeys.length} onSelectAll={() => selectAllReportRows(true)} onClear={() => selectAllReportRows(false)} />
 
             <ScrollView
               style={styles.modalScroll}
@@ -1310,6 +1353,7 @@ export default function Reports() {
                           styles.dayRow
                         }
                       >
+                        <ReportCheckbox selected={!!reportSelected[reportRowKey('sales', row, index)]} onPress={() => toggleReportSelection(row, index)} />
                         <View
                           style={
                             styles.dayMain
@@ -1409,7 +1453,7 @@ export default function Reports() {
                           'Contado',
                           'Diferença',
                         ],
-                        cashClosings.map((c) => [
+                        selectedReportRows.map((c) => [
                           c.code || '',
                           dateBR(c.date || ''),
                           c.sales || 0,
@@ -1435,7 +1479,7 @@ export default function Reports() {
                           'Contado',
                           'Diferença',
                         ],
-                        cashClosings.map((c) => [
+                        selectedReportRows.map((c) => [
                           c.code || '',
                           dateBR(c.date || ''),
                           c.sales || 0,
@@ -1447,6 +1491,8 @@ export default function Reports() {
                       )
               }
             />
+
+            {!selectedClosing && <ReportSelectionBar selected={selectedReportRows.length} total={selectableKeys.length} onSelectAll={() => selectAllReportRows(true)} onClear={() => selectAllReportRows(false)} />}
 
             <ScrollView
               style={styles.modalScroll}
@@ -1593,6 +1639,7 @@ export default function Reports() {
                               )
                             }
                           >
+                            <ReportCheckbox selected={!!reportSelected[reportRowKey('cash', closing, index)]} onPress={(event?: any) => { event?.stopPropagation?.(); toggleReportSelection(closing, index); }} />
                             <View
                               style={
                                 styles.dayMain
@@ -1685,7 +1732,7 @@ export default function Reports() {
                   'Produtos mais vendidos — Curva ABC',
                   periodLabel,
                   ['Produto', 'Quantidade', 'Faturamento', '% individual', '% acumulado', 'Curva'],
-                  productsAbc.map((p) => [
+                  selectedReportRows.map((p) => [
                     p.name,
                     qtyLabel(p.qty),
                     money(p.revenue),
@@ -1699,7 +1746,7 @@ export default function Reports() {
                 downloadCsv(
                   `relatorio_produtos_${appliedStart}_${appliedEnd}.csv`,
                   ['Produto', 'Quantidade', 'Faturamento', '% individual', '% acumulado', 'Curva'],
-                  productsAbc.map((p) => [
+                  selectedReportRows.map((p) => [
                     p.name,
                     p.qty,
                     p.revenue,
@@ -1710,6 +1757,8 @@ export default function Reports() {
                 )
               }
             />
+
+            <ReportSelectionBar selected={selectedReportRows.length} total={selectableKeys.length} onSelectAll={() => selectAllReportRows(true)} onClear={() => selectAllReportRows(false)} />
 
             <ScrollView
               style={styles.modalScroll}
@@ -1726,6 +1775,7 @@ export default function Reports() {
                       key={`${product.name}-${index}`}
                       style={styles.dayRow}
                     >
+                      <ReportCheckbox selected={!!reportSelected[reportRowKey('products', product, index)]} onPress={() => toggleReportSelection(product, index)} />
                       <AbcBadge tier={product.tier} />
 
                       <View style={styles.dayMain}>
@@ -1771,7 +1821,7 @@ export default function Reports() {
                   'Formas de pagamento',
                   periodLabel,
                   ['Forma de pagamento', 'Valor', 'Percentual'],
-                  paymentBreakdown.map((row) => [
+                  selectedReportRows.map((row) => [
                     row.method,
                     money(row.value),
                     `${row.percent.toFixed(1)}%`,
@@ -1782,7 +1832,7 @@ export default function Reports() {
                 downloadCsv(
                   `relatorio_pagamentos_${appliedStart}_${appliedEnd}.csv`,
                   ['Forma de pagamento', 'Valor', 'Percentual'],
-                  paymentBreakdown.map((row) => [
+                  selectedReportRows.map((row) => [
                     row.method,
                     row.value,
                     row.percent.toFixed(1),
@@ -1791,17 +1841,22 @@ export default function Reports() {
               }
             />
 
+            <ReportSelectionBar selected={selectedReportRows.length} total={selectableKeys.length} onSelectAll={() => selectAllReportRows(true)} onClear={() => selectAllReportRows(false)} />
+
             <ScrollView
               style={styles.modalScroll}
               contentContainerStyle={styles.modalBody}
             >
               {paymentBreakdown.length > 0 ? (
-                paymentBreakdown.map((row) => (
-                  <SummaryRow
-                    key={row.method}
-                    label={row.method}
-                    value={`${money(row.value)} • ${row.percent.toFixed(1)}%`}
-                  />
+                paymentBreakdown.map((row, index) => (
+                  <View key={row.method} style={styles.dayRow}>
+                    <ReportCheckbox selected={!!reportSelected[reportRowKey('payments', row, index)]} onPress={() => toggleReportSelection(row, index)} />
+                    <View style={styles.dayMain}>
+                      <Text style={styles.dayTitle}>{row.method}</Text>
+                      <Text style={styles.dayMeta}>{row.percent.toFixed(1)}% do faturamento selecionado</Text>
+                    </View>
+                    <Text style={styles.dayAmount}>{money(row.value)}</Text>
+                  </View>
                 ))
               ) : (
                 <Text style={styles.emptyText}>
@@ -1830,7 +1885,7 @@ export default function Reports() {
                   'Ranking de clientes — Curva ABC',
                   periodLabel,
                   ['Cliente', 'Compras', 'Total gasto', 'Ticket médio', '% individual', '% acumulado', 'Curva'],
-                  customerRanking.map((c) => [
+                  selectedReportRows.map((c) => [
                     c.name,
                     c.purchases,
                     money(c.total),
@@ -1845,7 +1900,7 @@ export default function Reports() {
                 downloadCsv(
                   `relatorio_clientes_${appliedStart}_${appliedEnd}.csv`,
                   ['Cliente', 'Compras', 'Total gasto', 'Ticket médio', '% individual', '% acumulado', 'Curva'],
-                  customerRanking.map((c) => [
+                  selectedReportRows.map((c) => [
                     c.name,
                     c.purchases,
                     c.total,
@@ -1857,6 +1912,8 @@ export default function Reports() {
                 )
               }
             />
+
+            <ReportSelectionBar selected={selectedReportRows.length} total={selectableKeys.length} onSelectAll={() => selectAllReportRows(true)} onClear={() => selectAllReportRows(false)} />
 
             <ScrollView
               style={styles.modalScroll}
@@ -1872,6 +1929,7 @@ export default function Reports() {
                     key={`${customer.name}-${index}`}
                     style={styles.dayRow}
                   >
+                    <ReportCheckbox selected={!!reportSelected[reportRowKey('customers', customer, index)]} onPress={() => toggleReportSelection(customer, index)} />
                     <AbcBadge tier={customer.tier} />
 
                     <View style={styles.dayMain}>
@@ -1920,16 +1978,8 @@ export default function Reports() {
                       periodLabel,
                       ['Tipo', 'Categoria', 'Lançamentos', 'Total', 'Realizado', 'Pendente'],
                       [
-                        ...financeByCategory.payables.map((r) => [
-                          'Despesa',
-                          r.category,
-                          r.count,
-                          money(r.total),
-                          money(r.realized),
-                          money(r.pending),
-                        ]),
-                        ...financeByCategory.receivables.map((r) => [
-                          'Receita',
+                        ...selectedFinanceCategoryRows.map((r) => [
+                          r.reportType,
                           r.category,
                           r.count,
                           money(r.total),
@@ -1942,7 +1992,7 @@ export default function Reports() {
                       financeModeLabel(financeReportMode),
                       periodLabel,
                       ['Descrição', 'Categoria', 'Data', 'Status', 'Valor'],
-                      financeFlatRows.map((r) => [
+                      selectedFinanceFlatRows.map((r) => [
                         r.description,
                         r.category,
                         dateBR(
@@ -1961,16 +2011,8 @@ export default function Reports() {
                       `relatorio_financeiro_${appliedStart}_${appliedEnd}.csv`,
                       ['Tipo', 'Categoria', 'Lançamentos', 'Total', 'Realizado', 'Pendente'],
                       [
-                        ...financeByCategory.payables.map((r) => [
-                          'Despesa',
-                          r.category,
-                          r.count,
-                          r.total,
-                          r.realized,
-                          r.pending,
-                        ]),
-                        ...financeByCategory.receivables.map((r) => [
-                          'Receita',
+                        ...selectedFinanceCategoryRows.map((r) => [
+                          r.reportType,
                           r.category,
                           r.count,
                           r.total,
@@ -1982,7 +2024,7 @@ export default function Reports() {
                   : downloadCsv(
                       `relatorio_${financeReportMode}_${appliedStart}_${appliedEnd}.csv`,
                       ['Descrição', 'Categoria', 'Data', 'Status', 'Valor'],
-                      financeFlatRows.map((r) => [
+                      selectedFinanceFlatRows.map((r) => [
                         r.description,
                         r.category,
                         r.status === 'paid' || r.status === 'received'
@@ -2023,6 +2065,16 @@ export default function Reports() {
               />
             </View>
 
+            <View style={styles.selectionBar}>
+              <Text style={styles.selectionText}>
+                {financeReportMode === 'category' ? selectedFinanceCategoryRows.length : selectedFinanceFlatRows.length} de {financeSelectionKeys.length} item(ns) selecionado(s)
+              </Text>
+              <View style={styles.selectionActions}>
+                <Pressable onPress={() => selectAllFinance(true)}><Text style={styles.selectionLink}>Selecionar todos</Text></Pressable>
+                <Pressable onPress={() => selectAllFinance(false)}><Text style={styles.selectionLink}>Limpar seleção</Text></Pressable>
+              </View>
+            </View>
+
             <ScrollView
               style={styles.modalScroll}
               contentContainerStyle={styles.modalBody}
@@ -2037,6 +2089,9 @@ export default function Reports() {
                     {financeByCategory.payables.length > 0 ? (
                       financeByCategory.payables.map((row) => (
                         <View key={row.category} style={styles.dayRow}>
+                          <Pressable onPress={() => toggleFinanceSelection(`expense:${row.category}`)} style={[styles.checkbox, financeSelected[`expense:${row.category}`] && styles.checkboxActive]}>
+                            <Text style={styles.checkboxText}>{financeSelected[`expense:${row.category}`] ? '✓' : ''}</Text>
+                          </Pressable>
                           <View style={styles.dayMain}>
                             <Text style={styles.dayTitle}>
                               {row.category}
@@ -2068,6 +2123,9 @@ export default function Reports() {
                     {financeByCategory.receivables.length > 0 ? (
                       financeByCategory.receivables.map((row) => (
                         <View key={row.category} style={styles.dayRow}>
+                          <Pressable onPress={() => toggleFinanceSelection(`revenue:${row.category}`)} style={[styles.checkbox, financeSelected[`revenue:${row.category}`] && styles.checkboxActive]}>
+                            <Text style={styles.checkboxText}>{financeSelected[`revenue:${row.category}`] ? '✓' : ''}</Text>
+                          </Pressable>
                           <View style={styles.dayMain}>
                             <Text style={styles.dayTitle}>
                               {row.category}
@@ -2100,6 +2158,9 @@ export default function Reports() {
                   {financeFlatRows.length > 0 ? (
                     financeFlatRows.map((row) => (
                       <View key={row.id} style={styles.dayRow}>
+                        <Pressable onPress={() => toggleFinanceSelection(String(row.id))} style={[styles.checkbox, financeSelected[String(row.id)] && styles.checkboxActive]}>
+                          <Text style={styles.checkboxText}>{financeSelected[String(row.id)] ? '✓' : ''}</Text>
+                        </Pressable>
                         <View style={styles.dayMain}>
                           <Text style={styles.dayTitle}>{row.description}</Text>
                           <Text style={styles.dayMeta}>
@@ -2140,7 +2201,7 @@ export default function Reports() {
                   'Relatório de compras e recebimentos',
                   periodLabel,
                   ['Data', 'Fornecedor', 'Documento', 'Itens', 'Total', 'Conta a pagar'],
-                  purchaseRows.map((row) => [
+                  selectedReportRows.map((row) => [
                     dateBR(row.date),
                     row.supplier,
                     row.document || '—',
@@ -2154,7 +2215,7 @@ export default function Reports() {
                 downloadCsv(
                   `relatorio_compras_${appliedStart}_${appliedEnd}.csv`,
                   ['Data', 'Fornecedor', 'Documento', 'Itens', 'Total', 'Conta a pagar'],
-                  purchaseRows.map((row) => [
+                  selectedReportRows.map((row) => [
                     row.date,
                     row.supplier,
                     row.document || '',
@@ -2165,6 +2226,8 @@ export default function Reports() {
                 )
               }
             />
+
+            <ReportSelectionBar selected={selectedReportRows.length} total={selectableKeys.length} onSelectAll={() => selectAllReportRows(true)} onClear={() => selectAllReportRows(false)} />
 
             <ScrollView
               style={styles.modalScroll}
@@ -2179,6 +2242,7 @@ export default function Reports() {
                 {purchaseRows.length > 0 ? (
                   purchaseRows.map((row, index) => (
                     <View key={String(row.id || index)} style={styles.dayRow}>
+                      <ReportCheckbox selected={!!reportSelected[reportRowKey('purchases', row, index)]} onPress={() => toggleReportSelection(row, index)} />
                       <View style={styles.dayMain}>
                         <Text style={styles.dayTitle}>{row.supplier}</Text>
                         <Text style={styles.dayMeta}>
@@ -2214,7 +2278,7 @@ export default function Reports() {
                   'Alertas de estoque',
                   `Situação em ${dateBR(today)}`,
                   ['Código', 'Produto', 'Estoque', 'Mínimo', 'Situação'],
-                  stockAlerts.map((r) => [
+                  selectedReportRows.map((r) => [
                     r.code,
                     r.name,
                     `${qtyLabel(r.stock)} ${r.unit}`,
@@ -2227,7 +2291,7 @@ export default function Reports() {
                 downloadCsv(
                   `relatorio_estoque_${today}.csv`,
                   ['Código', 'Produto', 'Estoque', 'Mínimo', 'Situação'],
-                  stockAlerts.map((r) => [
+                  selectedReportRows.map((r) => [
                     r.code,
                     r.name,
                     r.stock,
@@ -2238,13 +2302,16 @@ export default function Reports() {
               }
             />
 
+            <ReportSelectionBar selected={selectedReportRows.length} total={selectableKeys.length} onSelectAll={() => selectAllReportRows(true)} onClear={() => selectAllReportRows(false)} />
+
             <ScrollView
               style={styles.modalScroll}
               contentContainerStyle={styles.modalBody}
             >
               {stockAlerts.length > 0 ? (
-                stockAlerts.map((row) => (
+                stockAlerts.map((row, index) => (
                   <View key={row.code} style={styles.dayRow}>
+                    <ReportCheckbox selected={!!reportSelected[reportRowKey('stock', row, index)]} onPress={() => toggleReportSelection(row, index)} />
                     <View style={styles.dayMain}>
                       <Text style={styles.dayTitle}>{row.name}</Text>
 
@@ -2465,6 +2532,36 @@ function ModalHeader({
         </Text>
       </Pressable>
     </View>
+  );
+}
+
+function ReportSelectionBar({
+  selected,
+  total,
+  onSelectAll,
+  onClear,
+}: {
+  selected: number;
+  total: number;
+  onSelectAll: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <View style={styles.selectionBar}>
+      <Text style={styles.selectionText}>{selected} de {total} item(ns) selecionado(s)</Text>
+      <View style={styles.selectionActions}>
+        <Pressable onPress={onSelectAll}><Text style={styles.selectionLink}>Selecionar todos</Text></Pressable>
+        <Pressable onPress={onClear}><Text style={styles.selectionLink}>Limpar seleção</Text></Pressable>
+      </View>
+    </View>
+  );
+}
+
+function ReportCheckbox({ selected, onPress }: { selected: boolean; onPress: (event?: any) => void }) {
+  return (
+    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected }} onPress={onPress} style={[styles.checkbox, selected && styles.checkboxActive]}>
+      <Text style={styles.checkboxText}>{selected ? '✓' : ''}</Text>
+    </Pressable>
   );
 }
 
@@ -2820,6 +2917,24 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  selectionBar: {
+    alignItems: 'center',
+    backgroundColor: '#F7F6F2',
+    borderBottomColor: theme.colors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  selectionText: { color: theme.colors.text, fontSize: 12, fontWeight: '800' },
+  selectionActions: { flexDirection: 'row', gap: 14 },
+  selectionLink: { color: '#9A6B12', fontSize: 12, fontWeight: '900' },
+  checkbox: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: 5, borderWidth: 1, height: 22, justifyContent: 'center', width: 22 },
+  checkboxActive: { backgroundColor: '#B88A32', borderColor: '#B88A32' },
+  checkboxText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
 
   periodButton: {
     paddingHorizontal: 12,

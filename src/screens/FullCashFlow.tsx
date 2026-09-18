@@ -3,7 +3,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -11,7 +10,7 @@ import { Feather } from '@expo/vector-icons';
 
 import { AccountPicker } from '@/components/AccountPicker';
 import { AdminShell } from '@/components/AdminShell';
-import { Notice, formStyles as s } from '@/components/FormKit';
+import { DateField, Notice, formStyles as s } from '@/components/FormKit';
 import { getCashFlow } from '@/services/fullApi';
 import { theme, useThemeColors } from '@/constants/theme';
 
@@ -95,12 +94,7 @@ const brToIso = (value: string) => {
   return `${match[3]}-${match[2]}-${match[1]}`;
 };
 
-const formatDateInput = (value: string) => {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-};
+const inputToIso = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : brToIso(value);
 
 type Mode = 'month' | 'custom';
 
@@ -167,6 +161,11 @@ export default function FullCashFlow() {
       setError('');
       const result = await getCashFlow(start, end, accId);
       setData(result);
+      setExpandedDays(Object.fromEntries(
+        (result.rows || [])
+          .filter((day: FlowDay) => (day.items || []).length > 0)
+          .map((day: FlowDay) => [day.date, true])
+      ));
     } catch (e: any) {
       setError(e?.message || 'Não foi possível carregar o fluxo de caixa.');
     } finally {
@@ -186,8 +185,8 @@ export default function FullCashFlow() {
   }
 
   function applyCustomPeriod() {
-    const start = brToIso(startInput.trim());
-    const end = brToIso(endInput.trim());
+    const start = inputToIso(startInput.trim());
+    const end = inputToIso(endInput.trim());
     if (!start || !end) {
       setPeriodError('Datas inválidas. Use o formato DD/MM/AAAA.');
       return;
@@ -207,8 +206,8 @@ export default function FullCashFlow() {
       const { start, end } = monthRange(month);
       load(start, end, nextId);
     } else {
-      const start = brToIso(startInput.trim());
-      const end = brToIso(endInput.trim());
+      const start = inputToIso(startInput.trim());
+      const end = inputToIso(endInput.trim());
       if (start && end) load(start, end, nextId);
     }
   }
@@ -389,32 +388,16 @@ export default function FullCashFlow() {
           <View style={styles.customArea}>
             <View style={styles.dateFields}>
               <View style={styles.dateField}>
-                <Text style={styles.dateLabel}>Data inicial</Text>
-                <TextInput
-                  value={startInput}
-                  onChangeText={(value) => {
-                    setStartInput(formatDateInput(value));
-                    setPeriodError('');
-                  }}
-                  placeholder="DD/MM/AAAA"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  style={styles.input}
-                />
+                <DateField label="Data inicial" value={startInput} onChangeText={(value) => {
+                  setStartInput(value);
+                  setPeriodError('');
+                }} />
               </View>
               <View style={styles.dateField}>
-                <Text style={styles.dateLabel}>Data final</Text>
-                <TextInput
-                  value={endInput}
-                  onChangeText={(value) => {
-                    setEndInput(formatDateInput(value));
-                    setPeriodError('');
-                  }}
-                  placeholder="DD/MM/AAAA"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  style={styles.input}
-                />
+                <DateField label="Data final" value={endInput} onChangeText={(value) => {
+                  setEndInput(value);
+                  setPeriodError('');
+                }} />
               </View>
               <Pressable style={[styles.applyButton, { backgroundColor: colors.primary }]} onPress={applyCustomPeriod}>
                 <Text style={styles.applyButtonText}>Aplicar período</Text>

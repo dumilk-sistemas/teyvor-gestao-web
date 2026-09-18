@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { theme, useThemeColors } from '@/constants/theme';
-import { brDateToISO, formatDateBR, maskDateBR } from '@/utils/date';
+import { brDateToISO, formatDateBR } from '@/utils/date';
 
 export function ActionButton({label,onPress,tone='dark',disabled=false}:{label:string;onPress:()=>void;tone?:'dark'|'gold'|'danger'|'plain';disabled?:boolean}){
   const c = useThemeColors();
@@ -15,25 +15,40 @@ export function Field({label,value,onChangeText,placeholder='',keyboardType='def
 }
 
 export function DateField({label,value,onChangeText}:{label:string;value:string;onChangeText:(v:string)=>void}){
-  const [displayValue, setDisplayValue] = useState(formatDateBR(value));
+  const split = (source: string) => {
+    const formatted = formatDateBR(source);
+    const match = formatted.match(/^(\d{0,2})\/?(\d{0,2})?\/?(\d{0,4})?/);
+    return { day: match?.[1] || '', month: match?.[2] || '', year: match?.[3] || '' };
+  };
+  const [parts, setParts] = useState(() => split(value));
   const lastEmittedValue = useRef<string | null>(null);
   useEffect(() => {
-    // Nao reposiciona o texto enquanto o proprio campo esta emitindo uma
-    // data parcial. Isso permite apagar e redigitar sem a data anterior voltar.
     if (lastEmittedValue.current === value) {
       lastEmittedValue.current = null;
       return;
     }
-    setDisplayValue(formatDateBR(value));
+    setParts(split(value));
   }, [value]);
-  function change(rawValue: string) {
-    const masked = maskDateBR(rawValue);
-    const nextValue = brDateToISO(masked) || masked;
-    setDisplayValue(masked);
+
+  function change(part: 'day' | 'month' | 'year', rawValue: string) {
+    const max = part === 'year' ? 4 : 2;
+    const nextParts = { ...parts, [part]: rawValue.replace(/\D/g, '').slice(0, max) };
+    const display = `${nextParts.day}/${nextParts.month}/${nextParts.year}`;
+    const nextValue = brDateToISO(display) || display;
+    setParts(nextParts);
     lastEmittedValue.current = nextValue;
     onChangeText(nextValue);
   }
-  return <Field label={label} value={displayValue} onChangeText={change} placeholder="DD/MM/AAAA" keyboardType="number-pad" />;
+  return <View style={styles.field}>
+    <Text style={styles.label}>{label}</Text>
+    <View style={styles.dateInput}>
+      <TextInput value={parts.day} onChangeText={(v)=>change('day',v)} placeholder="DD" keyboardType="number-pad" selectTextOnFocus maxLength={2} style={[styles.datePart,styles.datePartShort]}/>
+      <Text style={styles.dateSeparator}>/</Text>
+      <TextInput value={parts.month} onChangeText={(v)=>change('month',v)} placeholder="MM" keyboardType="number-pad" selectTextOnFocus maxLength={2} style={[styles.datePart,styles.datePartShort]}/>
+      <Text style={styles.dateSeparator}>/</Text>
+      <TextInput value={parts.year} onChangeText={(v)=>change('year',v)} placeholder="AAAA" keyboardType="number-pad" selectTextOnFocus maxLength={4} style={[styles.datePart,styles.datePartYear]}/>
+    </View>
+  </View>;
 }
 
 export function Choice({label,options,value,onChange}:{label:string;options:Array<{label:string;value:string}>;value:string;onChange:(v:string)=>void}){
@@ -185,6 +200,7 @@ const styles=StyleSheet.create({
   backdrop:{flex:1,backgroundColor:'rgba(0,0,0,.48)',alignItems:'center',justifyContent:'center',padding:18},modal:{width:'100%',maxWidth:620,maxHeight:'92%',backgroundColor:'#FFF',borderRadius:18,overflow:'hidden'},wide:{maxWidth:900},
   head:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',padding:18,borderBottomWidth:1,borderBottomColor:theme.colors.border},title:{fontSize:21,fontWeight:'900',color:theme.colors.text},close:{fontSize:30,lineHeight:30,color:theme.colors.muted},body:{padding:18,gap:13},footerError:{paddingHorizontal:16,paddingTop:12},actions:{flexDirection:'row',justifyContent:'flex-end',gap:9,padding:16,borderTopWidth:1,borderTopColor:theme.colors.border},
   field:{gap:6},label:{fontSize:12,fontWeight:'700',color:theme.colors.muted},input:{borderWidth:1,borderColor:theme.colors.border,borderRadius:10,paddingHorizontal:12,paddingVertical:11,fontSize:15,color:theme.colors.text,backgroundColor:'#FFF'},multiline:{minHeight:82,textAlignVertical:'top'},
+  dateInput:{minHeight:48,borderWidth:1,borderColor:theme.colors.border,borderRadius:10,paddingHorizontal:10,backgroundColor:'#FFF',flexDirection:'row',alignItems:'center'},datePart:{paddingVertical:10,paddingHorizontal:4,fontSize:15,color:theme.colors.text,textAlign:'center',outlineStyle:'none' as any},datePartShort:{width:42},datePartYear:{width:62},dateSeparator:{fontSize:16,fontWeight:'800',color:theme.colors.muted},
   choices:{flexDirection:'row',flexWrap:'wrap',gap:7},choice:{borderWidth:1,borderColor:theme.colors.border,borderRadius:9,paddingHorizontal:11,paddingVertical:7,backgroundColor:'#FAFAF8'},choiceText:{fontSize:12.5,fontWeight:'600',color:theme.colors.text},
   pickerButton:{minHeight:48,borderWidth:1,borderColor:theme.colors.border,borderRadius:10,paddingHorizontal:12,paddingVertical:9,backgroundColor:'#FFF',flexDirection:'row',alignItems:'center',gap:10},pickerTextArea:{flex:1,minWidth:0},pickerValue:{fontSize:14,fontWeight:'700',color:theme.colors.text},pickerPlaceholder:{fontSize:14,color:theme.colors.muted},pickerDescription:{fontSize:11.5,color:theme.colors.muted,marginTop:2},pickerChevron:{fontSize:18,color:theme.colors.muted},pickerPanel:{borderWidth:1,borderColor:theme.colors.border,borderRadius:10,backgroundColor:'#FFF',overflow:'hidden'},pickerSearch:{margin:10,borderWidth:1,borderColor:theme.colors.border,borderRadius:8,paddingHorizontal:11,paddingVertical:9,fontSize:14,color:theme.colors.text,backgroundColor:'#FAFAF8'},pickerList:{maxHeight:230},pickerOption:{minHeight:48,paddingHorizontal:12,paddingVertical:9,borderTopWidth:1,borderTopColor:'#F0EFEA',flexDirection:'row',alignItems:'center',gap:10},pickerOptionLabel:{fontSize:13.5,fontWeight:'700',color:theme.colors.text},pickerEmpty:{padding:16,fontSize:13,color:theme.colors.muted,textAlign:'center'},
   button:{borderRadius:9,paddingHorizontal:14,paddingVertical:9,alignItems:'center',justifyContent:'center'},button_dark:{backgroundColor:theme.colors.black},button_danger:{backgroundColor:theme.colors.danger},button_plain:{backgroundColor:'#FFF',borderWidth:1,borderColor:theme.colors.border},buttonText:{color:'#FFF',fontSize:13,fontWeight:'700'},plainText:{color:theme.colors.text},disabled:{opacity:.55},

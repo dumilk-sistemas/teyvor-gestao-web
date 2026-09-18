@@ -98,6 +98,46 @@ export async function getMonthlyFinanceReport(month: string) {
   return fullRequest<any>(`/admin/finance/monthly-report?month=${encodeURIComponent(month)}`);
 }
 
+export async function getFinancialCategories() {
+  return fullRequest<any>('/admin/finance-management/categories');
+}
+
+export async function createFinancialCategory(payload: {
+  name: string;
+  category_type: 'expense' | 'revenue' | 'non_operating';
+  parent_id?: number | null;
+  active: boolean;
+}) {
+  return fullRequest<any>('/admin/finance-management/categories', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateFinancialCategory(id: number, payload: Record<string, unknown>) {
+  return fullRequest<any>(`/admin/finance-management/categories/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteFinancialCategory(id: number, transferToId?: number | null) {
+  return fullRequest<any>(`/admin/finance-management/categories/${id}/delete`, {
+    method: 'POST',
+    body: JSON.stringify({ transfer_to_id: transferToId ?? null }),
+  });
+}
+
+export async function deleteFinancialEntry(
+  id: string,
+  payload: { reason: string; stop_recurring?: boolean }
+) {
+  return fullRequest<any>(`/admin/finance-management/entries/${encodeURIComponent(id)}/delete`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getCashFlow(start: string, end: string, accountId?: number | null) {
   const accountParam = accountId ? `&account_id=${accountId}` : '';
   return fullRequest<any>(
@@ -135,6 +175,20 @@ export async function deleteAccount(id: number) {
   return fullRequest<any>(`/admin/accounts/${id}/delete`, {
     method: 'POST',
   });
+}
+
+export async function adjustAccountBalance(
+  id: number,
+  payload: { new_balance: number; reason: string }
+) {
+  return fullRequest<any>(`/admin/accounts/${id}/adjust-balance`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAccountAdjustments(id: number) {
+  return fullRequest<any>(`/admin/accounts/${id}/adjustments`);
 }
 
 export async function getPaymentMapping() {

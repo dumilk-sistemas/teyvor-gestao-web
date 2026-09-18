@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AccountPicker } from '@/components/AccountPicker';
+import { FinancialCategoriesModal } from '@/components/FinancialCategoriesModal';
 import { AdminShell } from '@/components/AdminShell';
 import { MetricCard } from '@/components/MetricCard';
 import { SearchBar } from '@/components/SearchBar';
@@ -12,12 +13,14 @@ import {
   Field,
   FormModal,
   Notice,
+  SearchablePicker,
   confirmAction,
   formStyles as s,
 } from '@/components/FormKit';
 import {
   commandMessage,
   createRecurringRule,
+  deleteFinancialEntry,
   enqueue,
   getFull,
   getMonthlyFinanceReport,
@@ -147,6 +150,11 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const pendingEntriesRef = useRef<any[]>([]);
   const [search, setSearch] = useState('');
   const [listMonth, setListMonth] = useState(currentMonthString());
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteStopRecurring, setDeleteStopRecurring] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const [monthlyOpen, setMonthlyOpen] = useState(false);
   const [monthlyMonth, setMonthlyMonth] = useState(currentMonthString());
@@ -674,11 +682,40 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
     }
   }
 
+  async function removeEntry() {
+    if (!deleteTarget) return;
+    if (deleteReason.trim().length < 5) {
+      setDeleteError('Informe uma justificativa com pelo menos cinco caracteres.');
+      return;
+    }
+    try {
+      setBusy(true);
+      setDeleteError('');
+      await deleteFinancialEntry(String(deleteTarget.id), {
+        reason: deleteReason.trim(),
+        stop_recurring: Boolean(deleteTarget.recurring_rule_id && deleteStopRecurring),
+      });
+      setData((current: any) => current ? {
+        ...current,
+        entries: (current.entries || []).filter((row: any) => String(row.id) !== String(deleteTarget.id)),
+      } : current);
+      setDeleteTarget(null);
+      setDeleteReason('');
+      setDeleteStopRecurring(false);
+      showToast('Exclusão solicitada com segurança. O lançamento sairá definitivamente após a sincronização.');
+      refreshAfterSync();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Não foi possível excluir o lançamento.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const categories = (
     data?.categories || []
   ).filter(
     (category: any) =>
-      category.type === form.type
+      category.type === form.type && category.active !== false && !category.deleted
   );
 
   return (
@@ -703,6 +740,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       syncNote
       headerActions={
         <>
+          <ActionButton label="Gerenciar categorias" tone="plain" onPress={() => setCategoriesOpen(true)} />
           {view !== 'receivable' && (
             <ActionButton label="+ Nova conta a pagar" tone="gold" onPress={() => startEntry('payable')} />
           )}
@@ -956,6 +994,18 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                             }
                           />
                         )}
+                        {['open', 'overdue'].includes(row.status) && (
+                          <ActionButton
+                            label="Excluir"
+                            tone="danger"
+                            onPress={() => {
+                              setDeleteError('');
+                              setDeleteReason('');
+                              setDeleteStopRecurring(false);
+                              setDeleteTarget(row);
+                            }}
+                          />
+                        )}
                         </View>
                       )}
                     </View>
@@ -1160,10 +1210,11 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               />
             )}
 
-            <Choice
-              label="Forma prevista de pagamento *"
+            <SearchablePicker
+              label={form.type === 'receivable' ? 'Forma prevista de recebimento *' : 'Forma prevista de pagamento *'}
               value={form.plannedPaymentMethod || ''}
               onChange={(value) => set('plannedPaymentMethod', value)}
+              placeholder="Selecione a forma"
               options={PAYMENT_METHODS.map((value) => ({ label: value, value }))}
             />
 
@@ -1176,27 +1227,22 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               keyboardType="decimal-pad"
             />
 
-            <DateField
-              label="Competência"
-              value={form.competenceDate || ''}
-              onChangeText={(value) =>
-                set(
-                  'competenceDate',
-                  value
-                )
-              }
-            />
-
-            <DateField
-              label="Vencimento *"
-              value={form.dueDate || ''}
-              onChangeText={(value) =>
-                set(
-                  'dueDate',
-                  value
-                )
-              }
-            />
+            <View style={monthlyStyles.dateRow}>
+              <View style={monthlyStyles.dateColumn}>
+                <DateField
+                  label="Competência"
+                  value={form.competenceDate || ''}
+                  onChangeText={(value) => set('competenceDate', value)}
+                />
+              </View>
+              <View style={monthlyStyles.dateColumn}>
+                <DateField
+                  label="Vencimento *"
+                  value={form.dueDate || ''}
+                  onChangeText={(value) => set('dueDate', value)}
+                />
+              </View>
+            </View>
 
             <Field
               label="Observações"
@@ -1339,6 +1385,49 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               keyboardType="decimal-pad"
             />
           </>
+        )}
+      </FormModal>
+
+      <FinancialCategoriesModal
+        visible={categoriesOpen}
+        onClose={() => setCategoriesOpen(false)}
+        onChanged={load}
+      />
+
+      <FormModal
+        visible={!!deleteTarget}
+        title="Excluir lançamento financeiro?"
+        onCancel={() => {
+          setDeleteTarget(null);
+          setDeleteReason('');
+          setDeleteError('');
+        }}
+        onSave={removeEntry}
+        saveLabel="Confirmar exclusão"
+        busy={busy}
+        errorText={deleteError}
+      >
+        <Notice
+          tone="error"
+          text={`Você está prestes a excluir ${deleteTarget?.description || 'este lançamento'}. Esta ação ficará registrada e exige atenção.`}
+        />
+        <Field
+          label="Justificativa da exclusão *"
+          value={deleteReason}
+          onChangeText={setDeleteReason}
+          placeholder="Ex.: lançamento duplicado ou cadastrado por engano"
+          multiline
+        />
+        {!!deleteTarget?.recurring_rule_id && (
+          <Choice
+            label="Esta conta faz parte de uma recorrência"
+            value={deleteStopRecurring ? 'all' : 'one'}
+            onChange={(value) => setDeleteStopRecurring(value === 'all')}
+            options={[
+              { label: 'Excluir somente esta parcela', value: 'one' },
+              { label: 'Excluir esta parcela e parar as próximas', value: 'all' },
+            ]}
+          />
         )}
       </FormModal>
 
@@ -1630,6 +1719,8 @@ function SummaryLine({
 }
 
 const monthlyStyles = StyleSheet.create({
+  dateRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  dateColumn: { flex: 1, minWidth: 210 },
   compactSummaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

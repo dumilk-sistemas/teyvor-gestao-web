@@ -4,12 +4,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
+import { DateField } from '@/components/FormKit';
 import { theme, useThemeColors } from '@/constants/theme';
 import { getReports } from '@/services/api';
 import { getFull } from '@/services/fullApi';
@@ -135,19 +135,7 @@ const brToIso = (value: string) => {
   return `${match[3]}-${match[2]}-${match[1]}`;
 };
 
-const formatDateInput = (value: string) => {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-
-  if (digits.length <= 2) {
-    return digits;
-  }
-
-  if (digits.length <= 4) {
-    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  }
-
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-};
+const inputToIso = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : brToIso(value);
 
 const addDays = (date: Date, amount: number) => {
   const next = new Date(date);
@@ -829,8 +817,8 @@ export default function Statistics() {
   }, [tab, dayCursor, monthCursor, yearCursor]);
 
   function applyPeriod() {
-    const start = brToIso(periodStartInput.trim());
-    const end = brToIso(periodEndInput.trim());
+    const start = inputToIso(periodStartInput.trim());
+    const end = inputToIso(periodEndInput.trim());
 
     if (!start || !end) {
       setPeriodError(
@@ -1030,39 +1018,19 @@ export default function Statistics() {
 
           <View style={styles.dateFields}>
             <View style={styles.dateField}>
-              <Text style={styles.dateLabel}>Data inicial</Text>
-
-              <TextInput
-                value={periodStartInput}
-                onChangeText={(value) => {
-                  setPeriodStartInput(
-                    formatDateInput(value)
-                  );
-                  setPeriodError('');
-                  setPeriodNotice('');
-                }}
-                placeholder="DD/MM/AAAA"
-                keyboardType="number-pad"
-                maxLength={10}
-                style={styles.input}
-              />
+              <DateField label="Data inicial" value={periodStartInput} onChangeText={(value) => {
+                setPeriodStartInput(value);
+                setPeriodError('');
+                setPeriodNotice('');
+              }} />
             </View>
 
             <View style={styles.dateField}>
-              <Text style={styles.dateLabel}>Data final</Text>
-
-              <TextInput
-                value={periodEndInput}
-                onChangeText={(value) => {
-                  setPeriodEndInput(formatDateInput(value));
-                  setPeriodError('');
-                  setPeriodNotice('');
-                }}
-                placeholder="DD/MM/AAAA"
-                keyboardType="number-pad"
-                maxLength={10}
-                style={styles.input}
-              />
+              <DateField label="Data final" value={periodEndInput} onChangeText={(value) => {
+                setPeriodEndInput(value);
+                setPeriodError('');
+                setPeriodNotice('');
+              }} />
             </View>
           </View>
 
