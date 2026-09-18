@@ -6,13 +6,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { AdminShell } from '@/components/AdminShell';
-import { DateField, Notice } from '@/components/FormKit';
+import { DateField, Notice, SearchablePicker } from '@/components/FormKit';
 import { theme } from '@/constants/theme';
 import { useBranding } from '@/contexts/BrandingContext';
 import { getReports } from '@/services/api';
@@ -288,8 +287,6 @@ type PeriodKey =
 
 type DetailMode = 'sales' | 'cash' | 'products' | 'payments' | 'customers' | 'finance' | 'dre' | 'purchases' | 'stock' | null;
 
-type ReportCategory = 'all' | 'sales' | 'finance' | 'cash' | 'purchases' | 'stock';
-
 function reportRowKey(mode: DetailMode, row: any, index: number) {
   if (mode === 'sales') return `sales:${row.date || index}`;
   if (mode === 'cash') return `cash:${row.id || row.code || row.date || index}`;
@@ -359,8 +356,7 @@ export default function Reports() {
   const [financeReportMode, setFinanceReportMode] = useState<
     'category' | 'payable_open' | 'receivable_open' | 'payable_paid' | 'receivable_paid'
   >('category');
-  const [reportCategory, setReportCategory] = useState<ReportCategory>('all');
-  const [reportSearch, setReportSearch] = useState('');
+  const [selectedReportId, setSelectedReportId] = useState('sales-performance');
   const [financeSelected, setFinanceSelected] = useState<Record<string, boolean>>({});
   const [reportSelected, setReportSelected] = useState<Record<string, boolean>>({});
 
@@ -1047,23 +1043,12 @@ export default function Reports() {
     },
   ];
 
-  const normalizedReportSearch = reportSearch.trim().toLocaleLowerCase('pt-BR');
-  const visibleReports = reportCatalog.filter((report) => {
-    const matchesCategory = reportCategory === 'all' || report.category === reportCategory;
-    const matchesSearch = !normalizedReportSearch ||
-      [report.title, report.description, report.group]
-        .join(' ')
-        .toLocaleLowerCase('pt-BR')
-        .includes(normalizedReportSearch);
-    return matchesCategory && matchesSearch;
-  });
-
-  const reportGroups = ['Vendas e clientes', 'Financeiro', 'Caixa', 'Compras', 'Estoque']
-    .map((group) => ({
-      group,
-      reports: visibleReports.filter((report) => report.group === group),
-    }))
-    .filter((section) => section.reports.length > 0);
+  const selectedReport = reportCatalog.find((report) => report.id === selectedReportId) || reportCatalog[0];
+  const reportOptions = reportCatalog.map((report) => ({
+    label: report.title,
+    value: report.id,
+    description: `${report.group} • ${report.description}`,
+  }));
 
   return (
     <AdminShell
@@ -1182,66 +1167,48 @@ export default function Reports() {
       </View>
 
       {!!data && (
-        <>
-          <View style={styles.catalogPanel}>
-            <View style={styles.catalogHeader}>
-              <View style={styles.catalogIntro}>
-                <Text style={styles.catalogEyebrow}>CENTRAL DE RELATÓRIOS</Text>
-                <Text style={styles.catalogTitle}>Qual relatório você precisa?</Text>
-                <Text style={styles.catalogSubtitle}>
-                  1. Escolha uma área · 2. Abra o relatório · 3. Selecione os itens e exporte.
-                </Text>
-              </View>
-              <View style={styles.catalogCount}>
-                <Feather name="file-text" size={15} color={theme.colors.muted} />
-                <Text style={styles.catalogCountText}>{visibleReports.length} relatório(s)</Text>
-              </View>
+        <View style={styles.reportFlow}>
+          <View style={styles.flowHeader}>
+            <View style={styles.catalogIntro}>
+              <Text style={styles.catalogEyebrow}>GERAR RELATÓRIO</Text>
+              <Text style={styles.catalogTitle}>Escolha o relatório e abra</Text>
+              <Text style={styles.catalogSubtitle}>O período acima será aplicado automaticamente. Na próxima janela você escolhe os itens e exporta.</Text>
             </View>
-
-            <View style={styles.catalogTools}>
-              <View style={styles.searchBox}>
-                <Feather name="search" size={16} color={theme.colors.muted} />
-                <TextInput
-                  value={reportSearch}
-                  onChangeText={setReportSearch}
-                  placeholder="Buscar relatório por nome ou assunto"
-                  placeholderTextColor="#8A8A8A"
-                  style={styles.searchInput}
-                />
-              </View>
-              <View style={styles.catalogFilters}>
-                <CatalogFilter label="Todos" active={reportCategory === 'all'} onPress={() => setReportCategory('all')} />
-                <CatalogFilter label="Vendas" active={reportCategory === 'sales'} onPress={() => setReportCategory('sales')} />
-                <CatalogFilter label="Financeiro" active={reportCategory === 'finance'} onPress={() => setReportCategory('finance')} />
-                <CatalogFilter label="Caixa" active={reportCategory === 'cash'} onPress={() => setReportCategory('cash')} />
-                <CatalogFilter label="Compras" active={reportCategory === 'purchases'} onPress={() => setReportCategory('purchases')} />
-                <CatalogFilter label="Estoque" active={reportCategory === 'stock'} onPress={() => setReportCategory('stock')} />
-              </View>
+            <View style={styles.flowSteps}>
+              <View style={styles.flowStepDone}><Text style={styles.flowStepNumber}>1</Text><Text style={styles.flowStepText}>Período definido</Text></View>
+              <View style={styles.flowStepActive}><Text style={styles.flowStepNumberActive}>2</Text><Text style={styles.flowStepTextActive}>Escolher relatório</Text></View>
+              <View style={styles.flowStep}><Text style={styles.flowStepNumberMuted}>3</Text><Text style={styles.flowStepText}>Selecionar e exportar</Text></View>
             </View>
           </View>
 
-          {reportGroups.map((section) => (
-            <View key={section.group} style={styles.reportSection}>
-              <View style={styles.reportSectionHead}>
-                <Text style={styles.reportSectionTitle}>{section.group}</Text>
-                <Text style={styles.reportSectionCount}>{section.reports.length}</Text>
-              </View>
-              <View style={styles.reportCards}>
-                {section.reports.map((report) => (
-                  <ReportCard key={report.id} {...report} />
-                ))}
-              </View>
+          <View style={styles.reportChooser}>
+            <View style={styles.reportPickerColumn}>
+              <SearchablePicker
+                label="Relatório"
+                value={selectedReportId}
+                onChange={setSelectedReportId}
+                options={reportOptions}
+                placeholder="Selecione o relatório desejado"
+              />
+              <Text style={styles.chooserHelp}>Clique no campo acima para ver todos os relatórios disponíveis.</Text>
             </View>
-          ))}
 
-          {visibleReports.length === 0 && (
-            <View style={styles.catalogEmpty}>
-              <Feather name="search" size={22} color={theme.colors.muted} />
-              <Text style={styles.catalogEmptyTitle}>Nenhum relatório encontrado</Text>
-              <Text style={styles.catalogEmptyText}>Tente outro termo ou selecione uma área diferente.</Text>
+            <View style={styles.selectedReportCard}>
+              <View style={[styles.iconCircle, { backgroundColor: selectedReport.background }]}>
+                <Feather name={selectedReport.icon} size={22} color={selectedReport.color} />
+              </View>
+              <View style={styles.selectedReportMain}>
+                <Text style={styles.selectedReportGroup}>{selectedReport.group}</Text>
+                <Text style={styles.selectedReportTitle}>{selectedReport.title}</Text>
+                <Text style={styles.selectedReportDescription}>{selectedReport.description}</Text>
+              </View>
+              <Pressable style={styles.openReportButton} onPress={selectedReport.onPress}>
+                <Text style={styles.openReportButtonText}>Abrir relatório</Text>
+                <Feather name="arrow-right" size={17} color="#FFF" />
+              </Pressable>
             </View>
-          )}
-        </>
+          </View>
+        </View>
       )}
 
       <Modal
@@ -3166,6 +3133,168 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 12,
     padding: 14,
+  },
+
+  reportFlow: {
+    backgroundColor: '#FFF',
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 18,
+    padding: 18,
+  },
+
+  flowHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 18,
+    justifyContent: 'space-between',
+  },
+
+  flowSteps: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  flowStep: {
+    alignItems: 'center',
+    backgroundColor: '#F5F6F7',
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+
+  flowStepDone: {
+    alignItems: 'center',
+    backgroundColor: '#EAF7F0',
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+
+  flowStepActive: {
+    alignItems: 'center',
+    backgroundColor: '#EEF4FC',
+    borderColor: '#BED0EA',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  flowStepNumber: {
+    color: theme.colors.success,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+  },
+
+  flowStepNumberActive: {
+    color: '#3568B8',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+  },
+
+  flowStepNumberMuted: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+  },
+
+  flowStepText: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+
+  flowStepTextActive: {
+    color: '#285A9D',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+  },
+
+  reportChooser: {
+    alignItems: 'stretch',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+
+  reportPickerColumn: {
+    flex: 1,
+    minWidth: 280,
+  },
+
+  chooserHelp: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 7,
+  },
+
+  selectedReportCard: {
+    alignItems: 'center',
+    backgroundColor: '#F7F8F9',
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    borderWidth: 1,
+    flex: 1.35,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    minWidth: 340,
+    padding: 14,
+  },
+
+  selectedReportMain: {
+    flex: 1,
+    minWidth: 190,
+  },
+
+  selectedReportGroup: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11.5,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+
+  selectedReportTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 16,
+    marginTop: 3,
+  },
+
+  selectedReportDescription: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+
+  openReportButton: {
+    alignItems: 'center',
+    backgroundColor: '#17202A',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 11,
+  },
+
+  openReportButtonText: {
+    color: '#FFF',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
   },
 
   catalogHeader: {
