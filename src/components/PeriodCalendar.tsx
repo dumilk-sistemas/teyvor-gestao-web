@@ -67,11 +67,12 @@ const PRESETS: Array<{ label: string; value: PeriodPreset; description: string }
   { label: 'Período personalizado', value: 'custom', description: 'Selecione a data inicial e final' },
 ];
 
-function presetForRange(start: string, end: string): PeriodPreset {
+function presetForRange(start: string, end: string, maxDate?: string): PeriodPreset {
   const match = PRESETS.find((option) => {
     if (option.value === 'custom') return false;
     const range = rangeForPreset(option.value);
-    return range.start === start && range.end === end;
+    const limitedEnd = maxDate && range.end > maxDate ? maxDate : range.end;
+    return range.start === start && limitedEnd === end;
   });
   return match?.value || 'custom';
 }
@@ -120,15 +121,15 @@ export function PeriodCalendar({
     if (!open) return;
     setDraftStart(start);
     setDraftEnd(end);
-    setPreset(presetForRange(start, end));
+    setPreset(presetForRange(start, end, maxDate));
     setError('');
-  }, [open, start, end]);
+  }, [open, start, end, maxDate]);
 
   const display = useMemo(() => formatPeriodLabel(start, end), [start, end]);
   const selectedPresetLabel = useMemo(() => {
-    const selected = presetForRange(start, end);
+    const selected = presetForRange(start, end, maxDate);
     return PRESETS.find((option) => option.value === selected)?.label || 'Período personalizado';
-  }, [start, end]);
+  }, [start, end, maxDate]);
 
   function choose(next: string) {
     const selected = next as PeriodPreset;
@@ -137,7 +138,7 @@ export function PeriodCalendar({
     if (selected !== 'custom') {
       const range = rangeForPreset(selected);
       setDraftStart(range.start);
-      setDraftEnd(range.end);
+      setDraftEnd(maxDate && range.end > maxDate ? maxDate : range.end);
     }
   }
 
