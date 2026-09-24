@@ -313,6 +313,22 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
     });
   }, [data, listStart, listEnd, listStatus, view]);
 
+  const salesReceivablesSummary = useMemo(() => {
+    const rows = (data?.card_receivables || []).filter((row: any) =>
+      row.date && row.date >= listStart && row.date <= listEnd
+    );
+    const forecastRows = rows.filter((row: any) => row.status === 'Previsto');
+    const realizedRows = rows.filter((row: any) => ['Liquidado', 'Antecipado'].includes(row.status));
+    return {
+      forecastGross: forecastRows.reduce((sum: number, row: any) => sum + Number(row.gross || 0), 0),
+      forecastFees: forecastRows.reduce((sum: number, row: any) => sum + Number(row.fee || 0), 0),
+      forecast: forecastRows.reduce((sum: number, row: any) => sum + Number(row.net || 0), 0),
+      forecastCount: forecastRows.length,
+      realized: realizedRows.reduce((sum: number, row: any) => sum + Number(row.net || 0), 0),
+      realizedCount: realizedRows.length,
+    };
+  }, [data, listStart, listEnd]);
+
   const nearTerm = useMemo(() => {
     const entries = data?.entries || [];
     const todayIso = today();
@@ -862,31 +878,43 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             </View>
           )}
 
+          {view === 'receivable' && (
+            <Notice text="Vendas e contas a receber usam bases diferentes: Vendas mostra o faturamento bruto na data da venda; aqui os recebíveis são apresentados pela data prevista ou realizada, com parcelas e valor líquido. Dinheiro e outros valores recebidos imediatamente não permanecem como conta a receber." />
+          )}
+
           <View style={monthlyStyles.compactSummaryGrid}>
             {view !== 'all' ? (
               <>
                 <CompactFinanceMetric
-                  label={view === 'payable' ? 'A pagar no mês' : 'A receber no mês'}
+                  label={view === 'payable' ? 'A pagar no período' : 'Contas a receber no período'}
                   value={money(periodSummary.open)}
-                  note="Somente lançamentos do período selecionado"
+                  note={view === 'payable' ? 'Inclui as recorrências exibidas ao lado' : 'Lançamentos financeiros; vendas aparecem separadas'}
                   tone={view === 'payable' ? 'out' : 'in'}
                 />
                 <CompactFinanceMetric
-                  label="Vencido no mês"
+                  label="Vencido no período"
                   value={money(periodSummary.overdue)}
                   tone={periodSummary.overdue > 0 ? 'danger' : 'neutral'}
                 />
                 <CompactFinanceMetric
-                  label={view === 'payable' ? 'Pago no mês' : 'Recebido no mês'}
+                  label={view === 'payable' ? 'Pago no período' : 'Contas recebidas no período'}
                   value={money(periodSummary.settled)}
                   tone="settled"
                 />
                 {view === 'payable' && (
                   <CompactFinanceMetric
-                    label="Recorrentes do mês"
+                    label="Recorrentes no período"
                     value={money(periodSummary.recurring)}
-                    note="Cada recorrência é contada apenas uma vez no mês"
+                    note="Já incluídas no total a pagar; não somar novamente"
                     tone="neutral"
+                  />
+                )}
+                {view === 'receivable' && (
+                  <CompactFinanceMetric
+                    label="Vendas a receber no período"
+                    value={money(salesReceivablesSummary.forecast)}
+                    note={`Líquido de ${money(salesReceivablesSummary.forecastGross)} bruto, menos ${money(salesReceivablesSummary.forecastFees)} em taxas • ${salesReceivablesSummary.forecastCount} prevista(s)`}
+                    tone="forecast"
                   />
                 )}
               </>

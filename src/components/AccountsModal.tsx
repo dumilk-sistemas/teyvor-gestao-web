@@ -573,7 +573,7 @@ export function AccountsModal({
                             </Pressable>
                             <Pressable style={styles.menuAction} onPress={() => { setAccountMenuId(null); startAdjustment(acc); }}>
                               <Feather name="sliders" size={14} color={theme.colors.text} />
-                              <Text style={styles.menuActionText}>Ajustar saldo</Text>
+                              <Text style={styles.menuActionText}>Reconciliar saldo de hoje</Text>
                             </Pressable>
                             <Pressable style={styles.menuAction} onPress={() => openAdjustmentHistory(acc)}>
                               <Feather name="clock" size={14} color={theme.colors.text} />
@@ -606,7 +606,7 @@ export function AccountsModal({
                             onChange={(v) => setEditForm({ ...editForm, account_type: v })}
                           />
 
-                          <Notice text="Para corrigir o saldo, use Ajustar saldo. O sistema exigirá justificativa e preservará o histórico." />
+                          <Notice text="Para corrigir o saldo, use Reconciliar saldo de hoje. Informe o saldo real do extrato; a diferença será auditada sem apagar o histórico." />
 
                           <ActionButton label="Salvar alterações" onPress={saveEdit} disabled={editBusy} />
                         </View>
@@ -727,15 +727,15 @@ export function AccountsModal({
 
     <FormModal
       visible={!!adjustTarget}
-      title="Ajustar saldo da conta"
+      title="Reconciliar saldo de hoje"
       onCancel={() => setAdjustTarget(null)}
       onSave={saveAdjustment}
-      saveLabel="Confirmar ajuste"
+      saveLabel="Confirmar conciliação"
       busy={adjustBusy}
       errorText={adjustError}
     >
       <Notice text={`Saldo calculado atual de ${adjustTarget?.name || 'conta'}: ${money(Number(adjustTarget?.current_balance || 0))}. A diferença será registrada hoje como movimentação auditável, sem alterar o saldo inicial nem o histórico anterior.`} />
-      <Field label="Novo saldo correto *" value={adjustBalance} onChangeText={setAdjustBalance} keyboardType="decimal-pad" placeholder="0,00" />
+      <Field label="Saldo real de hoje *" value={adjustBalance} onChangeText={setAdjustBalance} keyboardType="decimal-pad" placeholder="0,00" />
       <Field label="Justificativa obrigatória *" value={adjustReason} onChangeText={setAdjustReason} multiline placeholder="Ex.: conciliação com extrato bancário de 17/09/2026" />
     </FormModal>
 

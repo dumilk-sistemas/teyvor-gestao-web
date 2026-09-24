@@ -172,7 +172,8 @@ function printRows(
   subtitle: string,
   headers: string[],
   rows: Array<Array<string | number>>,
-  branding: Branding
+  branding: Branding,
+  recordCount = rows.length
 ) {
   if (Platform.OS !== 'web') {
     return;
@@ -257,7 +258,7 @@ function printRows(
       <div><h1>${escapeHtml(title)}</h1><p>Informações consolidadas para acompanhamento e tomada de decisão.</p></div>
       <div class="issue-meta"><strong>Emitido em</strong>${escapeHtml(generatedAt)}</div>
     </section>
-    <section class="summary"><span><strong>Período / referência:</strong> ${escapeHtml(subtitle)}</span><span class="record-count">${rows.length} ${rows.length === 1 ? 'registro' : 'registros'}</span></section>
+    <section class="summary"><span><strong>Período / referência:</strong> ${escapeHtml(subtitle)}</span><span class="record-count">${recordCount} ${recordCount === 1 ? 'registro' : 'registros'}</span></section>
     ${rows.length > 0 ? `<table><thead>${head}</thead><tbody>${body}</tbody></table>` : '<div class="empty">Nenhuma informação encontrada para o período selecionado.</div>'}
     <footer class="footer"><span><strong>${brandName} GESTÃO 360</strong> · Documento gerado pelo sistema</span><span>${escapeHtml(title)} · Página <span class="page-number"></span></span></footer>
   </body></html>`;
@@ -428,8 +429,9 @@ export default function Reports() {
     title: string,
     subtitle: string,
     headers: string[],
-    rows: Array<Array<string | number>>
-  ) => printRows(title, subtitle, headers, rows, branding);
+    rows: Array<Array<string | number>>,
+    recordCount?: number
+  ) => printRows(title, subtitle, headers, rows, branding, recordCount);
 
   const [period, setPeriod] = useState<PeriodKey>('30days');
   const [appliedStart, setAppliedStart] = useState(
@@ -1189,7 +1191,8 @@ export default function Reports() {
         [
           ...rows.map((row) => [dateBR(row.date), row.sales || 0, money(row.total), money(row.ticket)]),
           ['TOTAL SELECIONADO', selectedSales, money(selectedRevenue), money(selectedSales > 0 ? selectedRevenue / selectedSales : 0)],
-        ]
+        ],
+        rows.length
       );
       return;
     }
@@ -1211,7 +1214,37 @@ export default function Reports() {
         [
           ...rows.map((row) => [dateBR(row.date), money(row.realized_in), money(row.forecast_in), money(row.realized_out), money(row.forecast_out), money(row.realized_balance ?? row.balance), money(row.projected_balance ?? row.balance)]),
           ['TOTAL / SALDO FINAL SELECIONADO', money(selectedTotals.realizedIn), money(selectedTotals.forecastIn), money(selectedTotals.realizedOut), money(selectedTotals.forecastOut), money(lastSelected?.realized_balance ?? lastSelected?.balance ?? 0), money(lastSelected?.projected_balance ?? lastSelected?.balance ?? 0)],
-        ]
+        ],
+        rows.length
+      );
+      return;
+    }
+    if (selectedReportId === 'payables' || selectedReportId === 'receivables') {
+      const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
+      const type = selectedReportId === 'payables' ? 'payable' : 'receivable';
+      const rows = (finance?.entries || []).filter((row: any) =>
+        selectedIds.has(String(row.id)) &&
+        row.type === type &&
+        ['open', 'overdue'].includes(row.status) &&
+        row.due_date >= appliedStart &&
+        row.due_date <= appliedEnd
+      );
+      const total = rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+      printReport(
+        selectedReport.title,
+        periodLabel,
+        ['Descrição', 'Categoria', 'Vencimento', 'Situação', 'Valor'],
+        [
+          ...rows.map((row: any) => [
+            row.description || (type === 'payable' ? 'Conta a pagar' : 'Conta a receber'),
+            row.category || 'Sem categoria',
+            dateBR(row.due_date),
+            statusLabelPt(row.status),
+            money(row.amount),
+          ]),
+          ['TOTAL SELECIONADO', '', '', `${rows.length} registro(s)`, money(total)],
+        ],
+        rows.length
       );
       return;
     }
@@ -1251,6 +1284,33 @@ export default function Reports() {
         [
           ...rows.map((row) => [dateBR(row.date), row.realized_in, row.forecast_in, row.realized_out, row.forecast_out, row.realized_balance ?? row.balance, row.projected_balance ?? row.balance]),
           ['TOTAL / SALDO FINAL SELECIONADO', selectedTotals.realizedIn, selectedTotals.forecastIn, selectedTotals.realizedOut, selectedTotals.forecastOut, lastSelected?.realized_balance ?? lastSelected?.balance ?? 0, lastSelected?.projected_balance ?? lastSelected?.balance ?? 0],
+        ]
+      );
+      return;
+    }
+    if (selectedReportId === 'payables' || selectedReportId === 'receivables') {
+      const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
+      const type = selectedReportId === 'payables' ? 'payable' : 'receivable';
+      const rows = (finance?.entries || []).filter((row: any) =>
+        selectedIds.has(String(row.id)) &&
+        row.type === type &&
+        ['open', 'overdue'].includes(row.status) &&
+        row.due_date >= appliedStart &&
+        row.due_date <= appliedEnd
+      );
+      const total = rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+      downloadCsv(
+        `relatorio_${selectedReportId}_${appliedStart}_${appliedEnd}.csv`,
+        ['Descrição', 'Categoria', 'Vencimento', 'Situação', 'Valor'],
+        [
+          ...rows.map((row: any) => [
+            row.description || (type === 'payable' ? 'Conta a pagar' : 'Conta a receber'),
+            row.category || 'Sem categoria',
+            row.due_date,
+            statusLabelPt(row.status),
+            row.amount,
+          ]),
+          ['TOTAL SELECIONADO', '', '', `${rows.length} registro(s)`, total],
         ]
       );
       return;
