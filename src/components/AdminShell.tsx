@@ -216,18 +216,18 @@ export function AdminShell({
                   </Pressable>
                 );
               })}
-
-              <View style={styles.sidebarBottom}>
-                <Pressable
-                  style={styles.sidebarLogout}
-                  onPress={exit}
-                >
-                  <Text style={styles.sidebarLogoutText}>
-                    Sair
-                  </Text>
-                </Pressable>
-              </View>
             </ScrollView>
+
+            <View style={styles.sidebarBottom}>
+              <Pressable
+                style={styles.sidebarLogout}
+                onPress={exit}
+              >
+                <Text style={styles.sidebarLogoutText}>
+                  Sair
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.mainColumn}>
