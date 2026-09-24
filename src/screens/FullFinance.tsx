@@ -6,6 +6,7 @@ import { FinancialCategoriesModal } from '@/components/FinancialCategoriesModal'
 import { AdminShell } from '@/components/AdminShell';
 import { MetricCard } from '@/components/MetricCard';
 import { SearchBar } from '@/components/SearchBar';
+import { PeriodCalendar } from '@/components/PeriodCalendar';
 import {
   ActionButton,
   Choice,
@@ -41,6 +42,20 @@ const today = () =>
   new Date().toISOString().slice(0, 10);
 
 const currentMonthString = () => new Date().toISOString().slice(0, 7);
+
+const monthRange = (month: string) => {
+  const [year, monthNumber] = month.split('-').map(Number);
+  const toIso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return {
+    start: toIso(new Date(year, monthNumber - 1, 1)),
+    end: toIso(new Date(year, monthNumber, 0)),
+  };
+};
+
+const dateRangeLabel = (start: string, end: string) =>
+  start === end ? formatDateBR(start) : `${formatDateBR(start)} a ${formatDateBR(end)}`;
+
+const settlementReferenceDate = (row: any) => row.settlement_date || row.due_date || '';
 
 const monthLabel = (month: string) => {
   const [y, m] = month.split('-').map(Number);
@@ -149,7 +164,9 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [modalError, setModalError] = useState('');
   const pendingEntriesRef = useRef<any[]>([]);
   const [search, setSearch] = useState('');
-  const [listMonth, setListMonth] = useState(currentMonthString());
+  const initialListRange = monthRange(currentMonthString());
+  const [listStart, setListStart] = useState(initialListRange.start);
+  const [listEnd, setListEnd] = useState(initialListRange.end);
   const [listStatus, setListStatus] = useState<'open' | 'settled'>('open');
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
@@ -244,8 +261,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
         const isSettled = ['paid', 'received'].includes(row.status);
         if (listStatus === 'open' && (isSettled || !['open', 'overdue', 'pending_sync'].includes(row.status))) return false;
         if (listStatus === 'settled' && !isSettled) return false;
-        const referenceDate = listStatus === 'settled' ? row.settlement_date : row.due_date;
-        if (String(referenceDate || '').slice(0, 7) !== listMonth) return false;
+        const referenceDate = listStatus === 'settled' ? settlementReferenceDate(row) : row.due_date;
+        if (!referenceDate || referenceDate < listStart || referenceDate > listEnd) return false;
       }
       if (!term) return true;
       return [
@@ -258,18 +275,19 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
         .filter(Boolean)
         .some((field) => String(field).toLocaleLowerCase('pt-BR').includes(term));
     });
-  }, [customers, data, listMonth, listStatus, search, suppliers, view]);
+  }, [customers, data, listStart, listEnd, listStatus, search, suppliers, view]);
 
   const periodSummary = useMemo(() => {
     const typedEntries = (data?.entries || []).filter((row: any) =>
       view === 'all' || row.type === view
     );
     const dueEntries = typedEntries.filter((row: any) =>
-      String(row.due_date || '').slice(0, 7) === listMonth
+      row.due_date >= listStart && row.due_date <= listEnd
     );
-    const settledEntries = typedEntries.filter((row: any) =>
-      String(row.settlement_date || '').slice(0, 7) === listMonth
-    );
+    const settledEntries = typedEntries.filter((row: any) => {
+      const referenceDate = settlementReferenceDate(row);
+      return referenceDate >= listStart && referenceDate <= listEnd;
+    });
     const open = dueEntries
       .filter((row: any) => ['open', 'overdue', 'pending_sync'].includes(row.status))
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
@@ -283,17 +301,17 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       .filter((row: any) => row.recurring_rule_id && ['open', 'overdue', 'pending_sync'].includes(row.status))
       .reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
     return { open, overdue, settled, recurring };
-  }, [data, listMonth, view]);
+  }, [data, listStart, listEnd, view]);
 
   const visibleCardReceivables = useMemo(() => {
     const rows = data?.card_receivables || [];
     if (view !== 'receivable') return rows;
     return rows.filter((row: any) => {
-      if (String(row.date || '').slice(0, 7) !== listMonth) return false;
+      if (!row.date || row.date < listStart || row.date > listEnd) return false;
       const settled = ['Liquidado', 'Antecipado'].includes(row.status);
       return listStatus === 'settled' ? settled : !settled;
     });
-  }, [data, listMonth, listStatus, view]);
+  }, [data, listStart, listEnd, listStatus, view]);
 
   const nearTerm = useMemo(() => {
     const entries = data?.entries || [];
@@ -805,21 +823,20 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                     ? view === 'payable' ? 'PERÍODO DOS PAGAMENTOS' : 'PERÍODO DOS RECEBIMENTOS'
                     : 'PERÍODO DOS VENCIMENTOS'}
                 </Text>
-                <Text style={monthlyStyles.periodTitle}>{monthLabel(listMonth)}</Text>
-                <Text style={monthlyStyles.periodHint}>Use as setas para selecionar o mês desejado.</Text>
+                <Text style={monthlyStyles.periodTitle}>{dateRangeLabel(listStart, listEnd)}</Text>
+                <Text style={monthlyStyles.periodHint}>Selecione qualquer intervalo, inclusive datas futuras.</Text>
               </View>
               <View style={monthlyStyles.periodActions}>
-                <Pressable style={monthlyStyles.monthArrow} onPress={() => setListMonth((value) => shiftMonth(value, -1))}>
-                  <Text style={monthlyStyles.monthArrowText}>‹</Text>
-                </Pressable>
-                <Pressable style={monthlyStyles.monthArrow} onPress={() => setListMonth((value) => shiftMonth(value, 1))}>
-                  <Text style={monthlyStyles.monthArrowText}>›</Text>
-                </Pressable>
-                {listMonth !== currentMonthString() && (
-                  <Pressable style={monthlyStyles.currentMonthButton} onPress={() => setListMonth(currentMonthString())}>
-                    <Text style={monthlyStyles.currentMonthButtonText}>Mês atual</Text>
-                  </Pressable>
-                )}
+                <PeriodCalendar
+                  start={listStart}
+                  end={listEnd}
+                  label="Período"
+                  compact
+                  onApply={(start, end) => {
+                    setListStart(start);
+                    setListEnd(end);
+                  }}
+                />
               </View>
             </View>
           )}
@@ -839,7 +856,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                 style={[monthlyStyles.statusTab, listStatus === 'settled' && monthlyStyles.statusTabActive]}
               >
                 <Text style={[monthlyStyles.statusTabText, listStatus === 'settled' && monthlyStyles.statusTabTextActive]}>
-                  {view === 'payable' ? `Pagas em ${monthLabel(listMonth)}` : `Recebidas em ${monthLabel(listMonth)}`}
+                  {view === 'payable' ? 'Pagas no período' : 'Recebidas no período'}
                 </Text>
               </Pressable>
             </View>
@@ -943,9 +960,9 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           <View style={monthlyStyles.entriesCard}>
             <Text style={monthlyStyles.entriesTitle}>
               {view === 'payable'
-                ? `${listStatus === 'open' ? 'Contas a pagar' : 'Contas pagas'} — ${monthLabel(listMonth)}`
+                ? `${listStatus === 'open' ? 'Contas a pagar' : 'Contas pagas'} — ${dateRangeLabel(listStart, listEnd)}`
                 : view === 'receivable'
-                  ? `${listStatus === 'open' ? 'Contas a receber' : 'Contas recebidas'} — ${monthLabel(listMonth)}`
+                  ? `${listStatus === 'open' ? 'Contas a receber' : 'Contas recebidas'} — ${dateRangeLabel(listStart, listEnd)}`
                   : 'Lançamentos'}
             </Text>
 
@@ -970,13 +987,18 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                         {counterparty
                           ? `${row.description} • `
                           : `${row.type === 'payable' ? 'Fornecedor' : 'Cliente'} não vinculado • `}
-                        {row.category} • vence{' '}
-                        {formatDateBR(row.due_date)} •{' '}
-                        {row.type ===
-                        'payable'
-                          ? 'A pagar'
-                          : 'A receber'}
+                        {row.category} •{' '}
+                        {['paid', 'received'].includes(row.status)
+                          ? `${row.type === 'payable' ? 'pago' : 'recebido'} em ${formatDateBR(settlementReferenceDate(row))}`
+                          : `vence ${formatDateBR(row.due_date)}`} •{' '}
+                        {statusLabel(row.status)}
                       </Text>
+
+                      {!!row.settlement_date_inferred && (
+                        <Text style={monthlyStyles.entryMeta}>
+                          Data da baixa não informada na origem; vencimento usado como referência.
+                        </Text>
+                      )}
 
                       <Text style={monthlyStyles.entryMeta}>
                         {['paid', 'received'].includes(row.status) && row.payment_method

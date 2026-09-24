@@ -2283,7 +2283,7 @@ export default function Reports() {
                           <Text style={styles.dayMeta}>
                             {row.category} •{' '}
                             {row.status === 'paid' || row.status === 'received'
-                              ? `baixado em ${dateBR(row.settlement_date)}`
+                              ? `baixado em ${dateBR(row.settlement_date)}${row.settlement_date_inferred ? ' (data de referência)' : ''}`
                               : `vence ${dateBR(row.due_date)}`}
                           </Text>
                         </View>

@@ -170,9 +170,11 @@ export function PeriodCalendar({
 
   const activeValue = calendarTarget === 'start' ? draftStart : draftEnd;
   const calendarMin = calendarTarget === 'end' ? draftStart : undefined;
-  const calendarMax = calendarTarget === 'start'
-    ? [draftEnd, maxDate].filter(Boolean).sort()[0]
-    : maxDate;
+  // A data final existente não pode bloquear a escolha de uma nova data
+  // inicial. Se o usuário avançar a data inicial além do fim atual, o fim
+  // acompanha a seleção. `maxDate` continua sendo o único limite superior
+  // quando uma tela realmente precisa restringir o período.
+  const calendarMax = maxDate;
 
   function openCalendar(target: 'start' | 'end') {
     const value = target === 'start' ? draftStart : draftEnd;
@@ -182,7 +184,10 @@ export function PeriodCalendar({
   }
 
   function selectDate(value: string) {
-    if (calendarTarget === 'start') setDraftStart(value);
+    if (calendarTarget === 'start') {
+      setDraftStart(value);
+      if (!draftEnd || value > draftEnd) setDraftEnd(value);
+    }
     if (calendarTarget === 'end') setDraftEnd(value);
     setPreset('custom');
     setCalendarTarget(null);

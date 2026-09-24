@@ -106,6 +106,7 @@ export type FinanceData = {
     competence_date?: string;
     status: string;
     settlement_date: string;
+    settlement_date_inferred?: boolean;
     payment_method: string;
     planned_payment_method?: string;
     notes?: string;

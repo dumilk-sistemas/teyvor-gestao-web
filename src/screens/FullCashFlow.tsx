@@ -132,11 +132,9 @@ export default function FullCashFlow() {
       const result = await getCashFlow(start, end, accId);
       if (sequence !== requestSequence.current) return;
       setData(result);
-      setExpandedDays(Object.fromEntries(
-        (result.rows || [])
-          .filter((day: FlowDay) => (day.items || []).length > 0)
-          .map((day: FlowDay) => [day.date, true])
-      ));
+      // A visão principal deve ser a grade diária compacta. Os lançamentos
+      // ficam recolhidos e são abertos somente quando o usuário solicitar.
+      setExpandedDays({});
     } catch (e: any) {
       if (sequence !== requestSequence.current) return;
       setError(e?.message || 'Não foi possível carregar o fluxo de caixa.');
@@ -231,6 +229,12 @@ export default function FullCashFlow() {
   );
 
   const maxExpenseCategory = expenseCategories[0]?.totalOut || 1;
+  const periodIsWholeMonth = Boolean(
+    data &&
+    data.start.slice(0, 7) === data.end.slice(0, 7) &&
+    data.start.endsWith('-01') &&
+    data.end === monthRange(data.end.slice(0, 7)).end
+  );
 
   function toggleDay(date: string) {
     setExpandedDays((current) => ({ ...current, [date]: !current[date] }));
@@ -317,7 +321,7 @@ export default function FullCashFlow() {
                   </Text>
                 </View>
               </View>
-              <Text style={styles.heroLabel}>Saldo projetado no fim do período</Text>
+              <Text style={styles.heroLabel}>{periodIsWholeMonth ? 'Saldo previsto no final do mês' : 'Saldo previsto no final do período'}</Text>
               <Text style={[styles.heroValue, data.closing_balance < 0 && styles.heroValueDanger]}>
                 {money(data.closing_balance)}
               </Text>
@@ -567,6 +571,24 @@ export default function FullCashFlow() {
                 );
               })
             )}
+            <View style={[styles.tableTotalRow, mobile && styles.tableTotalRowMobile]}>
+              <View style={styles.tableTotalMain}>
+                <Text style={styles.tableTotalLabel}>RESULTADO DO PERÍODO</Text>
+                <Text style={styles.tableTotalHint}>{data.rows.length} dia(s) • realizado e previsto separados</Text>
+              </View>
+              <View style={styles.tableTotalMetric}>
+                <Text style={styles.tableTotalMetricLabel}>ENTRADAS</Text>
+                <Text style={styles.tableTotalIn}>{money(totalIn)}</Text>
+              </View>
+              <View style={styles.tableTotalMetric}>
+                <Text style={styles.tableTotalMetricLabel}>SAÍDAS</Text>
+                <Text style={styles.tableTotalOut}>{money(totalOut)}</Text>
+              </View>
+              <View style={styles.tableTotalMetric}>
+                <Text style={styles.tableTotalMetricLabel}>{periodIsWholeMonth ? 'SALDO FINAL PREVISTO' : 'SALDO FINAL PROJETADO'}</Text>
+                <Text style={[styles.tableTotalBalance, data.closing_balance < 0 && styles.negative]}>{money(data.closing_balance)}</Text>
+              </View>
+            </View>
             <View style={styles.tableFoot}>
               <Feather name="info" size={14} color={theme.colors.muted} />
               <Text style={styles.tableFootText}>O saldo final considera valores realizados e previstos até cada data.</Text>
@@ -776,7 +798,7 @@ const styles = StyleSheet.create({
   tableHeadText: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.3 },
   tableGroup: { borderBottomColor: '#ECEAE5', borderBottomWidth: 1 },
   todayGroup: { borderLeftColor: '#C9A548', borderLeftWidth: 3 },
-  tableRow: { alignItems: 'center', flexDirection: 'row', minHeight: 68, paddingHorizontal: 16, paddingVertical: 10 },
+  tableRow: { alignItems: 'center', flexDirection: 'row', minHeight: 52, paddingHorizontal: 16, paddingVertical: 7 },
   tableRowMobile: { alignItems: 'stretch', flexDirection: 'column', gap: 12 },
   dateColumn: { flex: 1.35, minWidth: 130 },
   mobileDateColumn: { minWidth: 0, width: '100%' },
@@ -813,4 +835,14 @@ const styles = StyleSheet.create({
   itemAmountOut: { color: theme.colors.danger },
   tableFoot: { alignItems: 'center', backgroundColor: '#FAF9F6', flexDirection: 'row', gap: 7, paddingHorizontal: 16, paddingVertical: 11 },
   tableFootText: { color: theme.colors.muted, flex: 1, fontSize: 10.5 },
+  tableTotalRow: { alignItems: 'center', backgroundColor: '#F2F5F8', borderTopColor: '#D9DEE4', borderTopWidth: 1, flexDirection: 'row', gap: 18, paddingHorizontal: 16, paddingVertical: 13 },
+  tableTotalRowMobile: { alignItems: 'stretch', flexDirection: 'column', gap: 10 },
+  tableTotalMain: { flex: 1, minWidth: 190 },
+  tableTotalLabel: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.7 },
+  tableTotalHint: { color: theme.colors.muted, fontSize: 10.5, marginTop: 3 },
+  tableTotalMetric: { minWidth: 120 },
+  tableTotalMetricLabel: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 9.5, letterSpacing: 0.5 },
+  tableTotalIn: { color: theme.colors.success, fontFamily: 'Inter_700Bold', fontSize: 14, marginTop: 3 },
+  tableTotalOut: { color: theme.colors.danger, fontFamily: 'Inter_700Bold', fontSize: 14, marginTop: 3 },
+  tableTotalBalance: { color: flowColors.balance, fontFamily: 'Sora_700Bold', fontSize: 15, marginTop: 3 },
 });
