@@ -125,7 +125,7 @@ export function AdminShell({
 
   function navigate(href: string) {
     setMoreOpen(false);
-    router.push(href as never);
+    router.replace(href as never);
   }
 
   function goBack() {
@@ -172,7 +172,7 @@ export function AdminShell({
     // esquerda, ações da tela à direita, mesma linha) — só ativa
     // quando a própria tela passa `headerActions`. As demais telas
     // continuam com o layout antigo, sem nenhuma mudança visual.
-    if (headerActions !== undefined) {
+    if (headerActions !== undefined || !mobile) {
       return (
         <View style={styles.sidebarShell}>
           <View style={styles.sidebar}>
@@ -230,10 +230,7 @@ export function AdminShell({
             </ScrollView>
           </View>
 
-          <ScrollView
-            style={styles.mainArea}
-            contentContainerStyle={styles.mainAreaContent}
-          >
+          <View style={styles.mainColumn}>
             <View style={styles.pageHeadRow}>
               <View style={styles.titleArea}>
                 {backButton}
@@ -249,25 +246,31 @@ export function AdminShell({
                 {defaultRefreshButton}
               </View>
             </View>
+            <ScrollView
+              style={styles.mainArea}
+              contentContainerStyle={styles.mainAreaContent}
+              showsVerticalScrollIndicator
+            >
+              {!!syncText && (
+                <View style={styles.sync}>
+                  <View style={styles.dot} />
 
-            {!!syncText && (
-              <View style={styles.sync}>
-                <View style={styles.dot} />
+                  <Text style={styles.syncText}>
+                    {syncText}
+                  </Text>
+                </View>
+              )}
 
-                <Text style={styles.syncText}>
-                  {syncText}
-                </Text>
-              </View>
-            )}
-
-            {children}
-            {syncNote && (
+              {children}
+            </ScrollView>
+            <View style={styles.fixedFooter}>
               <Text style={styles.controlSmall}>
-                🔒 Sincronização protegida — as alterações são enviadas
-                ao caixa de forma identificada e sem repetição.
+                {syncNote
+                  ? '🔒 Sincronização protegida — alterações identificadas e sem repetição.'
+                  : `${c.brandName} Gestão 360 • Ambiente administrativo`}
               </Text>
-            )}
-          </ScrollView>
+            </View>
+          </View>
         </View>
       );
     }
@@ -683,8 +686,14 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     flex: 1,
   },
 
+  mainColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+
   mainAreaContent: {
-    padding: 28,
+    paddingHorizontal: 28,
+    paddingTop: 18,
     paddingBottom: 52,
     gap: 22,
     maxWidth: 1180,
@@ -692,11 +701,25 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   pageHeadRow: {
+    backgroundColor: c.bg,
+    borderBottomColor: c.border,
+    borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 14,
     flexWrap: 'wrap',
+    paddingHorizontal: 28,
+    paddingVertical: 18,
+    zIndex: 10,
+  },
+
+  fixedFooter: {
+    backgroundColor: c.bg,
+    borderTopColor: c.border,
+    borderTopWidth: 1,
+    paddingHorizontal: 28,
+    paddingVertical: 8,
   },
 
   pageHeadActions: {

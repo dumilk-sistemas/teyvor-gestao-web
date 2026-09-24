@@ -17,7 +17,7 @@ import { PeriodCalendar, type PeriodPreset } from '@/components/PeriodCalendar';
 import { theme } from '@/constants/theme';
 import { useBranding } from '@/contexts/BrandingContext';
 import { getReports } from '@/services/api';
-import { getFull, getManagerialDre } from '@/services/fullApi';
+import { getCashFlow, getFull, getManagerialDre } from '@/services/fullApi';
 import type { Branding, CustomersData, FinanceData, PurchasesData, ReportsData, StockData } from '@/types/api';
 
 const money = (value: number) =>
@@ -180,6 +180,7 @@ function printRows(
 
   const primary = safePrintColor(branding.color_primary, '#C49A3A');
   const secondary = safePrintColor(branding.color_secondary, '#1F2933');
+  const pageOrientation = headers.length >= 6 ? 'landscape' : 'portrait';
   const brandName = escapeHtml(branding.brand_name || 'TEYVOR');
   const generatedAt = new Date().toLocaleString('pt-BR');
   const safeLogoUrl = branding.logo_url && /^https?:\/\//i.test(branding.logo_url)
@@ -210,7 +211,7 @@ function printRows(
   )}</title><style>
     :root{--primary:${primary};--secondary:${secondary};--ink:#17202a;--muted:#66717d;--line:#dfe3e6;--soft:#f5f6f4}
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    @page{size:A4 portrait;margin:15mm 11mm 18mm}
+    @page{size:A4 ${pageOrientation};margin:15mm 11mm 18mm}
     html,body{margin:0;padding:0;background:#fff;color:var(--ink);font-family:Inter,"Segoe UI",Arial,sans-serif}
     body{font-size:10px;line-height:1.4}
     .brand-header{display:flex;align-items:center;justify-content:space-between;border-top:5px solid var(--primary);border-bottom:1px solid var(--line);padding:12px 2px 11px;margin-bottom:22px}
@@ -240,8 +241,13 @@ function printRows(
     td.numeric{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     .empty{padding:28px;text-align:center;border:1px solid var(--line);border-radius:6px;color:var(--muted)}
     .footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:14px;padding-top:7px;color:#7a838c;font-size:7px;break-inside:avoid;page-break-inside:avoid}
+    .page-number:after{content:counter(page)}
     .footer strong{color:var(--primary);letter-spacing:.06em}
-    @media print{.brand-header,.summary,th{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+    @media print{
+      body{padding-bottom:10mm}
+      .brand-header,.summary,th{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+      .footer{position:fixed;left:0;right:0;bottom:-10mm;background:#fff;margin:0}
+    }
   </style></head><body>
     <header class="brand-header">
       <div class="brand-lockup">${brandLogo}<div><div class="brand-name">${brandName}</div><div class="brand-sub">GESTÃO 360</div></div></div>
@@ -253,7 +259,7 @@ function printRows(
     </section>
     <section class="summary"><span><strong>Período / referência:</strong> ${escapeHtml(subtitle)}</span><span class="record-count">${rows.length} ${rows.length === 1 ? 'registro' : 'registros'}</span></section>
     ${rows.length > 0 ? `<table><thead>${head}</thead><tbody>${body}</tbody></table>` : '<div class="empty">Nenhuma informação encontrada para o período selecionado.</div>'}
-    <footer class="footer"><span><strong>${brandName} GESTÃO 360</strong> · Documento gerado pelo sistema</span><span>${escapeHtml(title)}</span></footer>
+    <footer class="footer"><span><strong>${brandName} GESTÃO 360</strong> · Documento gerado pelo sistema</span><span>${escapeHtml(title)} · Página <span class="page-number"></span></span></footer>
   </body></html>`;
 
   const iframe = document.createElement('iframe');
@@ -360,6 +366,38 @@ type CashData = {
   last_sync_at?: string;
 };
 
+type CashFlowDay = {
+  date: string;
+  realized_in: number;
+  forecast_in: number;
+  realized_out: number;
+  forecast_out: number;
+  balance: number;
+  realized_balance?: number;
+  projected_balance?: number;
+  items?: Array<{
+    kind: 'in' | 'out';
+    realized: boolean;
+    label: string;
+    amount: number;
+    category?: string;
+  }>;
+};
+
+type CashFlowData = {
+  opening_balance: number;
+  closing_balance: number;
+  totals: {
+    realized_in: number;
+    forecast_in: number;
+    realized_out: number;
+    forecast_out: number;
+    net: number;
+  };
+  rows: CashFlowDay[];
+  last_sync_at?: string | null;
+};
+
 const METHODS = ['Dinheiro', 'Pix', 'Débito', 'Crédito', 'Outros'];
 
 export default function Reports() {
@@ -368,6 +406,7 @@ export default function Reports() {
   const { branding } = useBranding();
   const [data, setData] = useState<ReportsData | null>(null);
   const [cash, setCash] = useState<CashData | null>(null);
+  const [cashFlow, setCashFlow] = useState<CashFlowData | null>(null);
   const [customers, setCustomers] = useState<CustomersData | null>(null);
   const [finance, setFinance] = useState<FinanceData | null>(null);
   const [stock, setStock] = useState<StockData | null>(null);
@@ -418,6 +457,7 @@ export default function Reports() {
       const [
         reportsResult,
         cashResult,
+        cashFlowResult,
         customersResult,
         financeResult,
         stockResult,
@@ -426,6 +466,7 @@ export default function Reports() {
       ] = await Promise.all([
         getReports(appliedStart, appliedEnd),
         getFull<CashData>('cash').catch(() => null),
+        getCashFlow(appliedStart, appliedEnd).catch(() => null),
         getFull<CustomersData>('customers').catch(() => null),
         getFull<FinanceData>('finance').catch(() => null),
         getFull<StockData>('stock').catch(() => null),
@@ -435,6 +476,7 @@ export default function Reports() {
 
       setData(reportsResult);
       setCash(cashResult);
+      setCashFlow(cashFlowResult);
       setCustomers(customersResult);
       setFinance(financeResult);
       setStock(stockResult);
@@ -834,6 +876,17 @@ export default function Reports() {
     );
   }, [cashClosings]);
 
+  const cashFlowSummary = useMemo(() => {
+    const totals = cashFlow?.totals;
+    return {
+      realizedIn: Number(totals?.realized_in || 0),
+      forecastIn: Number(totals?.forecast_in || 0),
+      realizedOut: Number(totals?.realized_out || 0),
+      forecastOut: Number(totals?.forecast_out || 0),
+      closingBalance: Number(cashFlow?.closing_balance || 0),
+    };
+  }, [cashFlow]);
+
   const paymentBreakdown = useMemo(() => {
     const totals = data?.payment_totals || {};
     const sum = Object.values(totals).reduce(
@@ -1030,11 +1083,9 @@ export default function Reports() {
       color: '#66717D',
       background: '#F2F4F5',
       title: 'Movimentação de caixa',
-      description: 'Aberturas, fechamentos, suprimentos, retiradas e diferenças.',
-      value: `${cashSummary.closings} fechamento(s)`,
-      subtitle: cash?.current
-        ? `Caixa aberto • ${cash.current.code || ''}`
-        : `Diferença ${money(cashSummary.difference)}`,
+      description: 'Entradas, saídas, saldo diário e saldo projetado ao final do período.',
+      value: money(cashFlowSummary.closingBalance),
+      subtitle: `Entradas ${money(cashFlowSummary.realizedIn + cashFlowSummary.forecastIn)} • saídas ${money(cashFlowSummary.realizedOut + cashFlowSummary.forecastOut)}`,
       onPress: () => setDetailMode('cash' as const),
     },
     {
@@ -1092,10 +1143,20 @@ export default function Reports() {
       statementKey: row.key,
       tone: Number(row.value) < 0 && ['subtotal', 'result'].includes(row.kind) ? 'danger' : row.kind === 'result' ? 'success' : 'default',
     }));
-    if (selectedReportId === 'cash') return cashClosings.map((row: any, index) => ({ id: String(row.id || `${row.code}-${index}`), primary: `Caixa ${row.code || ''}`, secondary: `${dateBR(row.date)} • ${row.sales || 0} venda(s)`, value: money(row.difference), tone: Number(row.difference || 0) < 0 ? 'danger' : 'default' }));
+    if (selectedReportId === 'cash') return (cashFlow?.rows || []).map((row: CashFlowDay) => {
+      const entries = Number(row.realized_in || 0) + Number(row.forecast_in || 0);
+      const exits = Number(row.realized_out || 0) + Number(row.forecast_out || 0);
+      return {
+        id: row.date,
+        primary: dateBR(row.date),
+        secondary: `Entradas ${money(entries)} • saídas ${money(exits)} • realizado ${money(row.realized_balance ?? row.balance)}`,
+        value: `Projetado ${money(row.projected_balance ?? row.balance)}`,
+        tone: Number(row.projected_balance ?? row.balance ?? 0) < 0 ? 'danger' : 'default',
+      };
+    });
     if (selectedReportId === 'purchases') return purchaseRows.map((row: any) => ({ id: String(row.id), primary: row.supplier || row.description || `Compra #${row.number || row.id}`, secondary: `${dateBR(row.date)} • ${row.status || 'Recebida'}`, value: money(row.total) }));
     return stockAlerts.map((row: any) => ({ id: String(row.id || row.code), primary: row.name, secondary: `${row.category || 'Sem categoria'} • mínimo ${row.minimum || 0}`, value: `${row.stock || 0} em estoque`, tone: row.status === 'Negativo' ? 'danger' : 'default' }));
-  }, [selectedReportId, periodDays, productsAbc, paymentBreakdown, customerRanking, finance, appliedStart, appliedEnd, financeCategoryRows, dre, cashClosings, purchaseRows, stockAlerts]);
+  }, [selectedReportId, periodDays, productsAbc, paymentBreakdown, customerRanking, finance, appliedStart, appliedEnd, financeCategoryRows, dre, cashFlow, purchaseRows, stockAlerts]);
 
   useEffect(() => {
     setReportSelected(Object.fromEntries(inlineRows.map((row: any) => [String(row.id), true])));
@@ -1105,10 +1166,31 @@ export default function Reports() {
   const reportGroups = ['Vendas e clientes', 'Financeiro', 'Caixa', 'Compras', 'Estoque'];
 
   function exportInlinePdf() {
+    if (selectedReportId === 'cash') {
+      const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
+      const rows = (cashFlow?.rows || []).filter((row) => selectedIds.has(row.date));
+      printReport(
+        selectedReport.title,
+        periodLabel,
+        ['Data', 'Entradas realizadas', 'Entradas previstas', 'Saídas realizadas', 'Saídas previstas', 'Saldo realizado', 'Saldo projetado'],
+        rows.map((row) => [dateBR(row.date), money(row.realized_in), money(row.forecast_in), money(row.realized_out), money(row.forecast_out), money(row.realized_balance ?? row.balance), money(row.projected_balance ?? row.balance)])
+      );
+      return;
+    }
     printReport(selectedReport.title, periodLabel, ['Descrição', 'Detalhes', 'Valor'], selectedInlineRows.map((row: any) => [row.primary, row.secondary, row.value]));
   }
 
   function exportInlineCsv() {
+    if (selectedReportId === 'cash') {
+      const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
+      const rows = (cashFlow?.rows || []).filter((row) => selectedIds.has(row.date));
+      downloadCsv(
+        `relatorio_fluxo_caixa_${appliedStart}_${appliedEnd}.csv`,
+        ['Data', 'Entradas realizadas', 'Entradas previstas', 'Saídas realizadas', 'Saídas previstas', 'Saldo realizado', 'Saldo projetado'],
+        rows.map((row) => [dateBR(row.date), row.realized_in, row.forecast_in, row.realized_out, row.forecast_out, row.realized_balance ?? row.balance, row.projected_balance ?? row.balance])
+      );
+      return;
+    }
     downloadCsv(`relatorio_${selectedReportId}_${appliedStart}_${appliedEnd}.csv`, ['Descrição', 'Detalhes', 'Valor'], selectedInlineRows.map((row: any) => [row.primary, row.secondary, row.value]));
   }
 
@@ -1158,7 +1240,6 @@ export default function Reports() {
                 <PeriodCalendar
                   start={appliedStart}
                   end={appliedEnd}
-                  maxDate={today}
                   compact
                   label="Período"
                   onApply={(start, end, preset: PeriodPreset) => {

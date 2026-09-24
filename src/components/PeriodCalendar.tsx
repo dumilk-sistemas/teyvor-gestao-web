@@ -38,14 +38,22 @@ export function rangeForPreset(preset: Exclude<PeriodPreset, 'custom'>) {
   }
   if (preset === '7days') return { start: iso(addDays(now, -6)), end };
   if (preset === '30days') return { start: iso(addDays(now, -29)), end };
-  if (preset === 'month') return { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end };
+  if (preset === 'month') {
+    return {
+      start: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+      end: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+    };
+  }
   if (preset === 'previous_month') {
     return {
       start: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
       end: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
     };
   }
-  return { start: iso(new Date(now.getFullYear(), 0, 1)), end };
+  return {
+    start: iso(new Date(now.getFullYear(), 0, 1)),
+    end: iso(new Date(now.getFullYear(), 11, 31)),
+  };
 }
 
 const PRESETS: Array<{ label: string; value: PeriodPreset; description: string }> = [
@@ -53,9 +61,9 @@ const PRESETS: Array<{ label: string; value: PeriodPreset; description: string }
   { label: 'Ontem', value: 'yesterday', description: 'Somente o dia anterior' },
   { label: 'Últimos 7 dias', value: '7days', description: 'Hoje e os seis dias anteriores' },
   { label: 'Últimos 30 dias', value: '30days', description: 'Hoje e os 29 dias anteriores' },
-  { label: 'Mês atual', value: 'month', description: 'Do primeiro dia do mês até hoje' },
+  { label: 'Mês atual', value: 'month', description: 'Do primeiro ao último dia do mês' },
   { label: 'Mês anterior', value: 'previous_month', description: 'Do primeiro ao último dia do mês anterior' },
-  { label: 'Ano atual', value: 'year', description: 'Do primeiro dia do ano até hoje' },
+  { label: 'Ano atual', value: 'year', description: 'Do primeiro ao último dia do ano' },
   { label: 'Período personalizado', value: 'custom', description: 'Selecione a data inicial e final' },
 ];
 
