@@ -4,5 +4,10 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {"@/*": ["src/*"]}
-  }
+  },
+  "exclude": [
+    "_BACKUP_*/**",
+    "**/*BACKUP*.tsx",
+    "dist-admin-windows/**"
+  ]
 }

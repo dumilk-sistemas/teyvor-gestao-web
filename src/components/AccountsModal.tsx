@@ -10,6 +10,7 @@ import {
   createTransfer,
   deleteAccount,
   getAccounts,
+  getAccountAdjustments,
   getPaymentMapping,
   getTransfers,
   setPaymentMapping,
@@ -137,6 +138,10 @@ export function AccountsModal({
   const [adjustReason, setAdjustReason] = useState('');
   const [adjustError, setAdjustError] = useState('');
   const [adjustBusy, setAdjustBusy] = useState(false);
+  const [adjustHistoryTarget, setAdjustHistoryTarget] = useState<any>(null);
+  const [adjustHistoryRows, setAdjustHistoryRows] = useState<any[]>([]);
+  const [adjustHistoryLoading, setAdjustHistoryLoading] = useState(false);
+  const [adjustHistoryError, setAdjustHistoryError] = useState('');
 
   const [transferForm, setTransferForm] = useState<any>(emptyTransferForm);
   const [transferBusy, setTransferBusy] = useState(false);
@@ -326,6 +331,22 @@ export function AccountsModal({
       setAdjustError(e?.message || 'Não foi possível ajustar o saldo.');
     } finally {
       setAdjustBusy(false);
+    }
+  }
+
+  async function openAdjustmentHistory(account: any) {
+    setAccountMenuId(null);
+    setAdjustHistoryTarget(account);
+    setAdjustHistoryRows([]);
+    setAdjustHistoryError('');
+    try {
+      setAdjustHistoryLoading(true);
+      const result = await getAccountAdjustments(account.id);
+      setAdjustHistoryRows(result.rows || []);
+    } catch (e: any) {
+      setAdjustHistoryError(e?.message || 'Não foi possível carregar o histórico de ajustes.');
+    } finally {
+      setAdjustHistoryLoading(false);
     }
   }
 
@@ -554,6 +575,10 @@ export function AccountsModal({
                               <Feather name="sliders" size={14} color={theme.colors.text} />
                               <Text style={styles.menuActionText}>Ajustar saldo</Text>
                             </Pressable>
+                            <Pressable style={styles.menuAction} onPress={() => openAdjustmentHistory(acc)}>
+                              <Feather name="clock" size={14} color={theme.colors.text} />
+                              <Text style={styles.menuActionText}>Histórico de ajustes</Text>
+                            </Pressable>
                             <Pressable style={styles.menuAction} onPress={() => { setAccountMenuId(null); toggleActive(acc); }}>
                               <Feather name={acc.active ? 'pause-circle' : 'play-circle'} size={14} color={theme.colors.text} />
                               <Text style={styles.menuActionText}>{acc.active ? 'Desativar conta' : 'Ativar conta'}</Text>
@@ -709,10 +734,65 @@ export function AccountsModal({
       busy={adjustBusy}
       errorText={adjustError}
     >
-      <Notice text={`Saldo calculado atual de ${adjustTarget?.name || 'conta'}: ${money(Number(adjustTarget?.current_balance || 0))}. A diferença será registrada como ajuste auditável.`} />
+      <Notice text={`Saldo calculado atual de ${adjustTarget?.name || 'conta'}: ${money(Number(adjustTarget?.current_balance || 0))}. A diferença será registrada hoje como movimentação auditável, sem alterar o saldo inicial nem o histórico anterior.`} />
       <Field label="Novo saldo correto *" value={adjustBalance} onChangeText={setAdjustBalance} keyboardType="decimal-pad" placeholder="0,00" />
       <Field label="Justificativa obrigatória *" value={adjustReason} onChangeText={setAdjustReason} multiline placeholder="Ex.: conciliação com extrato bancário de 17/09/2026" />
     </FormModal>
+
+    <Modal
+      visible={!!adjustHistoryTarget}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setAdjustHistoryTarget(null)}
+    >
+      <View style={styles.deleteBackdrop}>
+        <View style={[styles.deleteModal, styles.historyModal]}>
+          <View style={styles.historyHeader}>
+            <View style={styles.historyHeaderText}>
+              <Text style={styles.deleteTitle}>Histórico de ajustes</Text>
+              <Text style={styles.deleteText}>{adjustHistoryTarget?.name}</Text>
+            </View>
+            <Pressable onPress={() => setAdjustHistoryTarget(null)} style={styles.historyClose}>
+              <Feather name="x" size={20} color={theme.colors.muted} />
+            </Pressable>
+          </View>
+
+          {!!adjustHistoryError && <Notice text={adjustHistoryError} tone="error" />}
+          {adjustHistoryLoading ? (
+            <Text style={s.empty}>Carregando histórico...</Text>
+          ) : adjustHistoryRows.length === 0 ? (
+            <Text style={s.empty}>Nenhum ajuste registrado para esta conta.</Text>
+          ) : (
+            <ScrollView style={styles.historyScroll} contentContainerStyle={styles.historyList}>
+              {adjustHistoryRows.map((row) => (
+                <View key={row.id} style={styles.historyRow}>
+                  <View style={styles.historyRowTop}>
+                    <View>
+                      <Text style={styles.historyDate}>Ajuste em {isoToBR(row.effective_date)}</Text>
+                      <Text style={styles.historyUser}>{row.user_email || 'Usuário não informado'}</Text>
+                    </View>
+                    <Text style={[styles.historyDifference, Number(row.difference) < 0 && styles.negativeValue]}>
+                      {Number(row.difference) > 0 ? '+' : ''}{money(Number(row.difference || 0))}
+                    </Text>
+                  </View>
+                  <Text style={styles.historyBalance}>
+                    Saldo anterior {money(Number(row.previous_balance || 0))} → novo saldo {money(Number(row.new_balance || 0))}
+                  </Text>
+                  <Text style={styles.historyReason}>{row.reason}</Text>
+                  {!!row.included_in_initial_balance && (
+                    <Text style={styles.historyLegacy}>REGISTRO ANTERIOR — JÁ INCLUÍDO NO SALDO INICIAL</Text>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          <View style={styles.deleteActions}>
+            <ActionButton label="Fechar" tone="plain" onPress={() => setAdjustHistoryTarget(null)} />
+          </View>
+        </View>
+      </View>
+    </Modal>
 
     <Modal
       visible={!!deleteTarget}
@@ -1020,6 +1100,20 @@ const styles = StyleSheet.create({
   balanceLabel: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11.5, letterSpacing: 0.25 },
   balanceValue: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 16, marginTop: 3 },
   adjustmentMeta: { color: theme.colors.muted, fontSize: 11.5, lineHeight: 16, marginTop: 5, maxWidth: 240, textAlign: 'right' },
+  historyModal: { maxWidth: 620 },
+  historyHeader: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' },
+  historyHeaderText: { flex: 1 },
+  historyClose: { alignItems: 'center', backgroundColor: '#F4F3EF', borderRadius: 9, height: 34, justifyContent: 'center', width: 34 },
+  historyScroll: { maxHeight: 420, marginTop: 12 },
+  historyList: { gap: 9 },
+  historyRow: { backgroundColor: '#F8F7F4', borderColor: theme.colors.border, borderRadius: 11, borderWidth: 1, padding: 12 },
+  historyRowTop: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
+  historyDate: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 13 },
+  historyUser: { color: theme.colors.muted, fontSize: 11.5, marginTop: 2 },
+  historyDifference: { color: theme.colors.success, fontFamily: 'Inter_700Bold', fontSize: 14 },
+  historyBalance: { color: theme.colors.text, fontSize: 12, marginTop: 9 },
+  historyReason: { color: theme.colors.muted, fontSize: 12, lineHeight: 17, marginTop: 5 },
+  historyLegacy: { color: '#8A641D', fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.25, marginTop: 8 },
   transferRow: { alignItems: 'center', borderTopColor: theme.colors.border, borderTopWidth: 1, flexDirection: 'row', gap: 12, paddingHorizontal: 14, paddingVertical: 10 },
   transferAmount: { color: theme.colors.text, fontSize: 12.5, fontWeight: '900' },
 });

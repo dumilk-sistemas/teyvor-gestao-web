@@ -72,10 +72,16 @@ type FlowItem = {
 
 type FlowDay = {
   date: string;
+  opening_balance_realized?: number;
+  opening_balance_projected?: number;
   realized_in: number;
   forecast_in: number;
   realized_out: number;
   forecast_out: number;
+  realized_net?: number;
+  projected_net?: number;
+  realized_balance?: number;
+  projected_balance?: number;
   balance: number;
   items: FlowItem[];
 };
@@ -86,6 +92,7 @@ type CashFlowData = {
   clamped: boolean;
   opening_balance: number;
   opening_date: string;
+  realized_closing_balance?: number;
   closing_balance: number;
   has_negative_day: boolean;
   no_accounts?: boolean;
@@ -104,7 +111,7 @@ type CashFlowData = {
 
 export default function FullCashFlow() {
   const { width } = useWindowDimensions();
-  const mobile = width < 700;
+  const mobile = width < 1100;
   const compact = width < 1040;
   const colors = useThemeColors();
   const initialRange = monthRange(currentMonthString());
@@ -148,15 +155,16 @@ export default function FullCashFlow() {
     setAccountId(nextId);
   }
 
-  const totalIn = data ? data.totals.realized_in + data.totals.forecast_in : 0;
-  const totalOut = data ? data.totals.realized_out + data.totals.forecast_out : 0;
+  const totalIn = data?.totals ? data.totals.realized_in + data.totals.forecast_in : 0;
+  const totalOut = data?.totals ? data.totals.realized_out + data.totals.forecast_out : 0;
   const firstDay = data?.rows?.[0];
   const periodOpeningBalance = firstDay
-    ? firstDay.balance
-      - firstDay.realized_in
-      - firstDay.forecast_in
-      + firstDay.realized_out
-      + firstDay.forecast_out
+    ? firstDay.opening_balance_projected
+      ?? firstDay.balance
+        - firstDay.realized_in
+        - firstDay.forecast_in
+        + firstDay.realized_out
+        + firstDay.forecast_out
     : data?.opening_balance || 0;
   const todayIso = isoFromDate(new Date());
 
@@ -193,9 +201,10 @@ export default function FullCashFlow() {
 
   const periodInsights = useMemo(() => {
     const rows = data?.rows || [];
-    const negativeRows = rows.filter((row) => row.balance < 0);
+    const projectedBalance = (row: FlowDay) => row.projected_balance ?? row.balance;
+    const negativeRows = rows.filter((row) => projectedBalance(row) < 0);
     const lowest = rows.reduce<FlowDay | null>(
-      (current, row) => (!current || row.balance < current.balance ? row : current),
+      (current, row) => (!current || projectedBalance(row) < projectedBalance(current) ? row : current),
       null
     );
     const highestOut = rows.reduce<FlowDay | null>((current, row) => {
@@ -319,9 +328,9 @@ export default function FullCashFlow() {
                   <Text style={styles.heroMetaValue}>{money(periodOpeningBalance)}</Text>
                 </View>
                 <View style={styles.heroFooterRight}>
-                  <Text style={styles.heroMetaLabel}>Geração de caixa</Text>
-                  <Text style={[styles.heroMetaValue, data.totals.net < 0 && styles.heroValueDanger]}>
-                    {data.totals.net >= 0 ? '+' : ''}{money(data.totals.net)}
+                  <Text style={styles.heroMetaLabel}>Saldo realizado ao final</Text>
+                  <Text style={[styles.heroMetaValue, Number(data.realized_closing_balance ?? 0) < 0 && styles.heroValueDanger]}>
+                    {money(data.realized_closing_balance ?? data.opening_balance)}
                   </Text>
                 </View>
               </View>
@@ -359,7 +368,7 @@ export default function FullCashFlow() {
               <View style={styles.riskTextArea}>
                 <Text style={styles.riskTitle}>Risco de saldo negativo identificado</Text>
                 <Text style={styles.riskText}>
-                  O caixa fica negativo em {periodInsights.negativeRows.length} {periodInsights.negativeRows.length === 1 ? 'dia' : 'dias'} do período. O menor saldo projetado é {money(periodInsights.lowest?.balance || 0)} em {periodInsights.lowest ? isoToBR(periodInsights.lowest.date) : '—'}.
+                  O caixa fica negativo em {periodInsights.negativeRows.length} {periodInsights.negativeRows.length === 1 ? 'dia' : 'dias'} do período. O menor saldo projetado é {money(periodInsights.lowest ? (periodInsights.lowest.projected_balance ?? periodInsights.lowest.balance) : 0)} em {periodInsights.lowest ? isoToBR(periodInsights.lowest.date) : '—'}.
                 </Text>
               </View>
             </View>
@@ -427,7 +436,7 @@ export default function FullCashFlow() {
               <View style={styles.insightList}>
                 <View style={styles.insightRow}>
                   <View style={[styles.insightIcon, { backgroundColor: '#F1F0EC' }]}><Feather name="trending-down" size={17} color={theme.colors.text} /></View>
-                  <View style={styles.insightContent}><Text style={styles.insightLabel}>Menor saldo projetado</Text><Text style={[styles.insightValue, (periodInsights.lowest?.balance || 0) < 0 && styles.negative]}>{money(periodInsights.lowest?.balance || 0)}</Text><Text style={styles.insightDate}>{periodInsights.lowest ? isoToBR(periodInsights.lowest.date) : 'Sem dados'}</Text></View>
+                  <View style={styles.insightContent}><Text style={styles.insightLabel}>Menor saldo projetado</Text><Text style={[styles.insightValue, Number(periodInsights.lowest ? (periodInsights.lowest.projected_balance ?? periodInsights.lowest.balance) : 0) < 0 && styles.negative]}>{money(periodInsights.lowest ? (periodInsights.lowest.projected_balance ?? periodInsights.lowest.balance) : 0)}</Text><Text style={styles.insightDate}>{periodInsights.lowest ? isoToBR(periodInsights.lowest.date) : 'Sem dados'}</Text></View>
                 </View>
                 <View style={styles.insightRow}>
                   <View style={[styles.insightIcon, { backgroundColor: '#FDECEC' }]}><Feather name="alert-circle" size={17} color={theme.colors.danger} /></View>
@@ -483,8 +492,9 @@ export default function FullCashFlow() {
                 <Text style={[styles.tableHeadText, styles.dateColumn]}>DATA</Text>
                 <Text style={[styles.tableHeadText, styles.numberColumn]}>ENTRADAS</Text>
                 <Text style={[styles.tableHeadText, styles.numberColumn]}>SAÍDAS</Text>
-                <Text style={[styles.tableHeadText, styles.numberColumn]}>LÍQUIDO PREVISTO</Text>
-                <Text style={[styles.tableHeadText, styles.balanceColumn]}>SALDO FINAL</Text>
+                <Text style={[styles.tableHeadText, styles.numberColumn]}>RESULTADO DO DIA</Text>
+                <Text style={[styles.tableHeadText, styles.balanceColumn]}>SALDO REALIZADO</Text>
+                <Text style={[styles.tableHeadText, styles.balanceColumn]}>SALDO PROJETADO</Text>
                 <View style={styles.expandColumn} />
               </View>
             )}
@@ -495,7 +505,9 @@ export default function FullCashFlow() {
               data.rows.map((day) => {
                 const totalDayIn = day.realized_in + day.forecast_in;
                 const totalDayOut = day.realized_out + day.forecast_out;
-                const forecastNet = day.forecast_in - day.forecast_out;
+                const projectedNet = day.projected_net ?? totalDayIn - totalDayOut;
+                const realizedBalance = day.realized_balance ?? day.balance;
+                const projectedBalance = day.projected_balance ?? day.balance;
                 const items = day.items || [];
                 const expanded = !!expandedDays[day.date];
                 return (
@@ -513,14 +525,17 @@ export default function FullCashFlow() {
                         <View style={styles.mobileValues}>
                           <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Entradas</Text><Text style={styles.inValue}>{money(totalDayIn)}</Text></View>
                           <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Saídas</Text><Text style={styles.outValue}>{money(totalDayOut)}</Text></View>
-                          <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Saldo</Text><Text style={[styles.balanceValue, day.balance < 0 && styles.negative]}>{money(day.balance)}</Text></View>
+                          <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Resultado do dia</Text><Text style={[styles.balanceValue, projectedNet < 0 && styles.negative]}>{money(projectedNet)}</Text></View>
+                          <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Saldo realizado</Text><Text style={[styles.balanceValue, realizedBalance < 0 && styles.negative]}>{money(realizedBalance)}</Text></View>
+                          <View style={styles.mobileValue}><Text style={styles.mobileValueLabel}>Saldo projetado</Text><Text style={[styles.balanceValue, projectedBalance < 0 && styles.negative]}>{money(projectedBalance)}</Text></View>
                         </View>
                       ) : (
                         <>
                           <Text style={[styles.tableValue, styles.numberColumn, styles.inValue]}>{totalDayIn ? `+${money(totalDayIn)}` : '—'}</Text>
                           <Text style={[styles.tableValue, styles.numberColumn, styles.outValue]}>{totalDayOut ? `-${money(totalDayOut)}` : '—'}</Text>
-                          <Text style={[styles.tableValue, styles.numberColumn, forecastNet < 0 ? styles.negative : styles.forecastValue]}>{forecastNet ? `${forecastNet > 0 ? '+' : ''}${money(forecastNet)}` : '—'}</Text>
-                          <Text style={[styles.tableValue, styles.balanceColumn, styles.balanceValue, day.balance < 0 && styles.negative]}>{money(day.balance)}</Text>
+                          <Text style={[styles.tableValue, styles.numberColumn, projectedNet < 0 ? styles.negative : styles.forecastValue]}>{projectedNet ? `${projectedNet > 0 ? '+' : ''}${money(projectedNet)}` : '—'}</Text>
+                          <Text style={[styles.tableValue, styles.balanceColumn, styles.balanceValue, realizedBalance < 0 && styles.negative]}>{money(realizedBalance)}</Text>
+                          <Text style={[styles.tableValue, styles.balanceColumn, styles.balanceValue, projectedBalance < 0 && styles.negative]}>{money(projectedBalance)}</Text>
                         </>
                       )}
 

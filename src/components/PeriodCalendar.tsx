@@ -1,8 +1,8 @@
-import { createElement, useEffect, useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { DateField, SearchablePicker } from '@/components/FormKit';
+import { SearchablePicker } from '@/components/FormKit';
 import { theme, useThemeColors } from '@/constants/theme';
 
 export type PeriodPreset = 'today' | 'yesterday' | '7days' | '30days' | 'month' | 'previous_month' | 'year' | 'custom';
@@ -77,22 +77,47 @@ function presetForRange(start: string, end: string, maxDate?: string): PeriodPre
   return match?.value || 'custom';
 }
 
-function NativeDateInput({ value, onChange, min, max }: { value: string; onChange: (value: string) => void; min?: string; max?: string }) {
-  if (Platform.OS === 'web') {
-    return createElement('input', {
-      type: 'date',
-      value,
-      min,
-      max,
-      onChange: (event: any) => onChange(event.target.value),
-      style: {
-        width: '100%', height: 48, boxSizing: 'border-box', border: `1px solid ${theme.colors.border}`,
-        borderRadius: 10, padding: '0 12px', fontFamily: 'Inter_400Regular', fontSize: 14,
-        color: theme.colors.text, background: '#FFF', outline: 'none', colorScheme: 'light',
-      },
-    });
-  }
-  return <DateField label="" value={value} onChangeText={onChange} />;
+const parseIso = (value?: string) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+};
+
+const brDate = (value?: string) => {
+  const parsed = parseIso(value);
+  return parsed ? parsed.toLocaleDateString('pt-BR') : 'Selecione uma data';
+};
+
+const monthStart = (value?: string) => {
+  const parsed = parseIso(value) || new Date();
+  return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+};
+
+function CalendarField({
+  label,
+  value,
+  active,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <View style={styles.dateColumn}>
+      <Text style={styles.dateLabel}>{label}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${brDate(value)}`}
+        onPress={onPress}
+        style={[styles.dateButton, active && styles.dateButtonActive]}
+      >
+        <Text style={[styles.dateButtonText, !value && styles.dateButtonPlaceholder]}>{brDate(value)}</Text>
+        <Feather name="calendar" size={17} color={active ? theme.colors.black : theme.colors.muted} />
+      </Pressable>
+    </View>
+  );
 }
 
 export function PeriodCalendar({
@@ -116,6 +141,8 @@ export function PeriodCalendar({
   const [draftStart, setDraftStart] = useState(start);
   const [draftEnd, setDraftEnd] = useState(end);
   const [error, setError] = useState('');
+  const [calendarTarget, setCalendarTarget] = useState<'start' | 'end' | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(() => monthStart(start));
 
   useEffect(() => {
     if (!open) return;
@@ -123,6 +150,8 @@ export function PeriodCalendar({
     setDraftEnd(end);
     setPreset(presetForRange(start, end, maxDate));
     setError('');
+    setCalendarTarget(null);
+    setCalendarMonth(monthStart(start));
   }, [open, start, end, maxDate]);
 
   const display = useMemo(() => formatPeriodLabel(start, end), [start, end]);
@@ -131,10 +160,40 @@ export function PeriodCalendar({
     return PRESETS.find((option) => option.value === selected)?.label || 'Período personalizado';
   }, [start, end, maxDate]);
 
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstWeekday = new Date(year, month, 1).getDay();
+    const firstCell = new Date(year, month, 1 - firstWeekday);
+    return Array.from({ length: 42 }, (_, index) => addDays(firstCell, index));
+  }, [calendarMonth]);
+
+  const activeValue = calendarTarget === 'start' ? draftStart : draftEnd;
+  const calendarMin = calendarTarget === 'end' ? draftStart : undefined;
+  const calendarMax = calendarTarget === 'start'
+    ? [draftEnd, maxDate].filter(Boolean).sort()[0]
+    : maxDate;
+
+  function openCalendar(target: 'start' | 'end') {
+    const value = target === 'start' ? draftStart : draftEnd;
+    setCalendarTarget(target);
+    setCalendarMonth(monthStart(value));
+    setError('');
+  }
+
+  function selectDate(value: string) {
+    if (calendarTarget === 'start') setDraftStart(value);
+    if (calendarTarget === 'end') setDraftEnd(value);
+    setPreset('custom');
+    setCalendarTarget(null);
+    setError('');
+  }
+
   function choose(next: string) {
     const selected = next as PeriodPreset;
     setPreset(selected);
     setError('');
+    setCalendarTarget(null);
     if (selected !== 'custom') {
       const range = rangeForPreset(selected);
       setDraftStart(range.start);
@@ -176,7 +235,12 @@ export function PeriodCalendar({
               </Pressable>
             </View>
 
-            <View style={styles.body}>
+            <ScrollView
+              style={styles.bodyScroll}
+              contentContainerStyle={styles.body}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
               <SearchablePicker
                 label="Tipo de período"
                 value={preset}
@@ -185,26 +249,74 @@ export function PeriodCalendar({
               />
 
               <View style={styles.dateArea}>
-                <View style={styles.dateColumn}>
-                  <Text style={styles.dateLabel}>Data inicial</Text>
-                  <NativeDateInput
-                    value={draftStart}
-                    max={draftEnd && maxDate ? (draftEnd < maxDate ? draftEnd : maxDate) : draftEnd || maxDate}
-                    onChange={(value) => { setDraftStart(value); setPreset('custom'); }}
-                  />
-                </View>
-                <View style={styles.dateColumn}>
-                  <Text style={styles.dateLabel}>Data final</Text>
-                  <NativeDateInput
-                    value={draftEnd}
-                    min={draftStart}
-                    max={maxDate}
-                    onChange={(value) => { setDraftEnd(value); setPreset('custom'); }}
-                  />
-                </View>
+                <CalendarField label="Data inicial" value={draftStart} active={calendarTarget === 'start'} onPress={() => openCalendar('start')} />
+                <CalendarField label="Data final" value={draftEnd} active={calendarTarget === 'end'} onPress={() => openCalendar('end')} />
               </View>
+
+              {calendarTarget && (
+                <View style={styles.calendarPanel}>
+                  <View style={styles.calendarHeader}>
+                    <Pressable
+                      accessibilityLabel="Mês anterior"
+                      onPress={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
+                      style={styles.calendarNavButton}
+                    >
+                      <Feather name="chevron-left" size={19} color={theme.colors.text} />
+                    </Pressable>
+                    <Text style={styles.calendarTitle}>
+                      {calendarMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                    </Text>
+                    <Pressable
+                      accessibilityLabel="Próximo mês"
+                      onPress={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
+                      style={styles.calendarNavButton}
+                    >
+                      <Feather name="chevron-right" size={19} color={theme.colors.text} />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.calendarGrid}>
+                    {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((weekday, index) => (
+                      <View key={`${weekday}-${index}`} style={styles.calendarCell}>
+                        <Text style={styles.calendarWeekday}>{weekday}</Text>
+                      </View>
+                    ))}
+                    {calendarDays.map((date) => {
+                      const value = iso(date);
+                      const outside = date.getMonth() !== calendarMonth.getMonth();
+                      const selected = value === activeValue;
+                      const today = value === iso(new Date());
+                      const disabled = Boolean((calendarMin && value < calendarMin) || (calendarMax && value > calendarMax));
+                      return (
+                        <View key={value} style={styles.calendarCell}>
+                          <Pressable
+                            disabled={disabled}
+                            accessibilityLabel={date.toLocaleDateString('pt-BR')}
+                            onPress={() => selectDate(value)}
+                            style={[
+                              styles.calendarDay,
+                              today && styles.calendarToday,
+                              selected && styles.calendarDaySelected,
+                              disabled && styles.calendarDayDisabled,
+                            ]}
+                          >
+                            <Text style={[
+                              styles.calendarDayText,
+                              outside && styles.calendarDayOutside,
+                              selected && styles.calendarDayTextSelected,
+                              disabled && styles.calendarDayTextDisabled,
+                            ]}>
+                              {date.getDate()}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
               {!!error && <Text style={styles.error}>{error}</Text>}
-            </View>
+            </ScrollView>
 
             <View style={styles.footer}>
               <Pressable onPress={() => setOpen(false)} style={styles.cancel}><Text style={styles.cancelText}>Cancelar</Text></Pressable>
@@ -228,8 +340,28 @@ const styles = StyleSheet.create({
   header: { padding: 18, borderBottomWidth: 1, borderBottomColor: theme.colors.border, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   title: { fontFamily: 'Sora_700Bold', fontSize: 20, color: theme.colors.text }, subtitle: { marginTop: 4, fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.muted },
   close: { width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F6F5F2' },
+  bodyScroll: { flexShrink: 1 },
   body: { padding: 18, gap: 14 }, dateArea: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, padding: 12, borderRadius: 12, backgroundColor: '#F7F6F3' },
   dateColumn: { flex: 1, minWidth: 220, gap: 6 }, dateLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.muted },
+  dateButton: { alignItems: 'center', backgroundColor: '#FFF', borderColor: theme.colors.border, borderRadius: 10, borderWidth: 1, flexDirection: 'row', height: 48, justifyContent: 'space-between', paddingHorizontal: 12 },
+  dateButtonActive: { borderColor: theme.colors.black, borderWidth: 2 },
+  dateButtonText: { color: theme.colors.text, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  dateButtonPlaceholder: { color: theme.colors.muted, fontFamily: 'Inter_400Regular' },
+  calendarPanel: { alignSelf: 'center', backgroundColor: '#FFF', borderColor: theme.colors.border, borderRadius: 14, borderWidth: 1, maxWidth: 370, padding: 12, width: '100%' },
+  calendarHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  calendarNavButton: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
+  calendarTitle: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 14, textTransform: 'capitalize' },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarCell: { alignItems: 'center', justifyContent: 'center', width: '14.2857%' },
+  calendarWeekday: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 11, paddingVertical: 6 },
+  calendarDay: { alignItems: 'center', borderColor: 'transparent', borderRadius: 9, borderWidth: 1, height: 36, justifyContent: 'center', marginVertical: 1, width: 36 },
+  calendarToday: { borderColor: '#9BB4D1' },
+  calendarDaySelected: { backgroundColor: theme.colors.black, borderColor: theme.colors.black },
+  calendarDayDisabled: { opacity: 0.3 },
+  calendarDayText: { color: theme.colors.text, fontFamily: 'Inter_600SemiBold', fontSize: 12.5 },
+  calendarDayOutside: { color: '#AEB4BA' },
+  calendarDayTextSelected: { color: '#FFF', fontFamily: 'Inter_700Bold' },
+  calendarDayTextDisabled: { color: '#AEB4BA' },
   error: { fontFamily: 'Inter_600SemiBold', fontSize: 12.5, color: theme.colors.danger },
   footer: { padding: 16, borderTopWidth: 1, borderTopColor: theme.colors.border, flexDirection: 'row', justifyContent: 'flex-end', gap: 9 },
   cancel: { paddingHorizontal: 15, paddingVertical: 10, borderRadius: 9, borderWidth: 1, borderColor: theme.colors.border }, cancelText: { fontFamily: 'Inter_700Bold', fontSize: 13, color: theme.colors.text },

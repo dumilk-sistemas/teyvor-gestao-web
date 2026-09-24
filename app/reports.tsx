@@ -386,6 +386,7 @@ type CashFlowDay = {
 
 type CashFlowData = {
   opening_balance: number;
+  realized_closing_balance?: number;
   closing_balance: number;
   totals: {
     realized_in: number;
@@ -611,14 +612,22 @@ export default function Reports() {
       0
     );
 
+    const performanceEnd = appliedEnd < today ? appliedEnd : today;
+    const startDate = new Date(`${appliedStart}T00:00:00`);
+    const endDate = new Date(`${performanceEnd}T00:00:00`);
+    const calendarDays = performanceEnd >= appliedStart
+      ? Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1
+      : 0;
+
     return {
       sales,
       total,
       ticket: sales > 0 ? total / sales : 0,
       activeDays: periodDays.filter((row) => Number(row.sales || 0) > 0).length,
-      dailyAverage: periodDays.length > 0 ? total / periodDays.length : 0,
+      dailyAverage: calendarDays > 0 ? total / calendarDays : 0,
+      calendarDays,
     };
-  }, [periodDays]);
+  }, [periodDays, appliedStart, appliedEnd, today]);
 
   const cashClosings = useMemo(() => {
     return (cash?.closings || []).filter((closing) => {
@@ -1171,22 +1180,38 @@ export default function Reports() {
     if (selectedReportId === 'sales-performance') {
       const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
       const rows = periodDays.filter((row) => selectedIds.has(String(row.date)));
+      const selectedSales = rows.reduce((sum, row) => sum + Number(row.sales || 0), 0);
+      const selectedRevenue = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
       printReport(
         selectedReport.title,
         periodLabel,
         ['Data', 'Quantidade de vendas', 'Faturamento', 'Ticket médio'],
-        rows.map((row) => [dateBR(row.date), row.sales || 0, money(row.total), money(row.ticket)])
+        [
+          ...rows.map((row) => [dateBR(row.date), row.sales || 0, money(row.total), money(row.ticket)]),
+          ['TOTAL SELECIONADO', selectedSales, money(selectedRevenue), money(selectedSales > 0 ? selectedRevenue / selectedSales : 0)],
+        ]
       );
       return;
     }
     if (selectedReportId === 'cash') {
       const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
       const rows = (cashFlow?.rows || []).filter((row) => selectedIds.has(row.date));
+      const selectedTotals = rows.reduce((totals, row) => ({
+        realizedIn: totals.realizedIn + Number(row.realized_in || 0),
+        forecastIn: totals.forecastIn + Number(row.forecast_in || 0),
+        realizedOut: totals.realizedOut + Number(row.realized_out || 0),
+        forecastOut: totals.forecastOut + Number(row.forecast_out || 0),
+      }), { realizedIn: 0, forecastIn: 0, realizedOut: 0, forecastOut: 0 });
+      const sortedRows = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+      const lastSelected = sortedRows[sortedRows.length - 1];
       printReport(
         selectedReport.title,
         periodLabel,
         ['Data', 'Entradas realizadas', 'Entradas previstas', 'Saídas realizadas', 'Saídas previstas', 'Saldo realizado', 'Saldo projetado'],
-        rows.map((row) => [dateBR(row.date), money(row.realized_in), money(row.forecast_in), money(row.realized_out), money(row.forecast_out), money(row.realized_balance ?? row.balance), money(row.projected_balance ?? row.balance)])
+        [
+          ...rows.map((row) => [dateBR(row.date), money(row.realized_in), money(row.forecast_in), money(row.realized_out), money(row.forecast_out), money(row.realized_balance ?? row.balance), money(row.projected_balance ?? row.balance)]),
+          ['TOTAL / SALDO FINAL SELECIONADO', money(selectedTotals.realizedIn), money(selectedTotals.forecastIn), money(selectedTotals.realizedOut), money(selectedTotals.forecastOut), money(lastSelected?.realized_balance ?? lastSelected?.balance ?? 0), money(lastSelected?.projected_balance ?? lastSelected?.balance ?? 0)],
+        ]
       );
       return;
     }
@@ -1197,20 +1222,36 @@ export default function Reports() {
     if (selectedReportId === 'sales-performance') {
       const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
       const rows = periodDays.filter((row) => selectedIds.has(String(row.date)));
+      const selectedSales = rows.reduce((sum, row) => sum + Number(row.sales || 0), 0);
+      const selectedRevenue = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
       downloadCsv(
         `relatorio_desempenho_vendas_${appliedStart}_${appliedEnd}.csv`,
         ['Data', 'Quantidade de vendas', 'Faturamento', 'Ticket médio'],
-        rows.map((row) => [dateBR(row.date), row.sales || 0, row.total || 0, row.ticket || 0])
+        [
+          ...rows.map((row) => [dateBR(row.date), row.sales || 0, row.total || 0, row.ticket || 0]),
+          ['TOTAL SELECIONADO', selectedSales, selectedRevenue, selectedSales > 0 ? selectedRevenue / selectedSales : 0],
+        ]
       );
       return;
     }
     if (selectedReportId === 'cash') {
       const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
       const rows = (cashFlow?.rows || []).filter((row) => selectedIds.has(row.date));
+      const selectedTotals = rows.reduce((totals, row) => ({
+        realizedIn: totals.realizedIn + Number(row.realized_in || 0),
+        forecastIn: totals.forecastIn + Number(row.forecast_in || 0),
+        realizedOut: totals.realizedOut + Number(row.realized_out || 0),
+        forecastOut: totals.forecastOut + Number(row.forecast_out || 0),
+      }), { realizedIn: 0, forecastIn: 0, realizedOut: 0, forecastOut: 0 });
+      const sortedRows = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+      const lastSelected = sortedRows[sortedRows.length - 1];
       downloadCsv(
         `relatorio_fluxo_caixa_${appliedStart}_${appliedEnd}.csv`,
         ['Data', 'Entradas realizadas', 'Entradas previstas', 'Saídas realizadas', 'Saídas previstas', 'Saldo realizado', 'Saldo projetado'],
-        rows.map((row) => [dateBR(row.date), row.realized_in, row.forecast_in, row.realized_out, row.forecast_out, row.realized_balance ?? row.balance, row.projected_balance ?? row.balance])
+        [
+          ...rows.map((row) => [dateBR(row.date), row.realized_in, row.forecast_in, row.realized_out, row.forecast_out, row.realized_balance ?? row.balance, row.projected_balance ?? row.balance]),
+          ['TOTAL / SALDO FINAL SELECIONADO', selectedTotals.realizedIn, selectedTotals.forecastIn, selectedTotals.realizedOut, selectedTotals.forecastOut, lastSelected?.realized_balance ?? lastSelected?.balance ?? 0, lastSelected?.projected_balance ?? lastSelected?.balance ?? 0],
+        ]
       );
       return;
     }
@@ -1285,7 +1326,7 @@ export default function Reports() {
                   { label: 'Faturamento', value: money(salesSummary.total), note: periodLabel },
                   { label: 'Vendas', value: String(salesSummary.sales), note: `${salesSummary.activeDays} dia(s) com movimento` },
                   { label: 'Ticket médio', value: money(salesSummary.ticket), note: 'Valor médio por venda' },
-                  { label: 'Média diária', value: money(salesSummary.dailyAverage), note: 'Considera todos os dias do período' },
+                  { label: 'Média diária', value: money(salesSummary.dailyAverage), note: `Considera ${salesSummary.calendarDays} dia(s) decorridos no período` },
                 ].map((item) => (
                   <View key={item.label} style={styles.salesKpiCard}>
                     <Text style={styles.salesKpiLabel}>{item.label}</Text>
