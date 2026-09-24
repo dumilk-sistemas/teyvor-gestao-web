@@ -615,6 +615,8 @@ export default function Reports() {
       sales,
       total,
       ticket: sales > 0 ? total / sales : 0,
+      activeDays: periodDays.filter((row) => Number(row.sales || 0) > 0).length,
+      dailyAverage: periodDays.length > 0 ? total / periodDays.length : 0,
     };
   }, [periodDays]);
 
@@ -1166,6 +1168,17 @@ export default function Reports() {
   const reportGroups = ['Vendas e clientes', 'Financeiro', 'Caixa', 'Compras', 'Estoque'];
 
   function exportInlinePdf() {
+    if (selectedReportId === 'sales-performance') {
+      const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
+      const rows = periodDays.filter((row) => selectedIds.has(String(row.date)));
+      printReport(
+        selectedReport.title,
+        periodLabel,
+        ['Data', 'Quantidade de vendas', 'Faturamento', 'Ticket médio'],
+        rows.map((row) => [dateBR(row.date), row.sales || 0, money(row.total), money(row.ticket)])
+      );
+      return;
+    }
     if (selectedReportId === 'cash') {
       const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
       const rows = (cashFlow?.rows || []).filter((row) => selectedIds.has(row.date));
@@ -1181,6 +1194,16 @@ export default function Reports() {
   }
 
   function exportInlineCsv() {
+    if (selectedReportId === 'sales-performance') {
+      const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
+      const rows = periodDays.filter((row) => selectedIds.has(String(row.date)));
+      downloadCsv(
+        `relatorio_desempenho_vendas_${appliedStart}_${appliedEnd}.csv`,
+        ['Data', 'Quantidade de vendas', 'Faturamento', 'Ticket médio'],
+        rows.map((row) => [dateBR(row.date), row.sales || 0, row.total || 0, row.ticket || 0])
+      );
+      return;
+    }
     if (selectedReportId === 'cash') {
       const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
       const rows = (cashFlow?.rows || []).filter((row) => selectedIds.has(row.date));
@@ -1255,6 +1278,23 @@ export default function Reports() {
               <View><Text style={styles.inlineSummaryLabel}>RESULTADO PRINCIPAL</Text><Text style={styles.inlineSummaryValue}>{selectedReport.value}</Text><Text style={styles.inlineSummaryDetail}>{selectedReport.subtitle}</Text></View>
               <View style={styles.selectionActions}><Text style={styles.selectionCount}>{selectedInlineRows.length} de {inlineRows.length} selecionado(s)</Text><Pressable onPress={() => setReportSelected(Object.fromEntries(inlineRows.map((row: any) => [String(row.id), true])))}><Text style={styles.selectionLink}>Selecionar todos</Text></Pressable><Pressable onPress={() => setReportSelected({})}><Text style={styles.selectionLink}>Limpar</Text></Pressable></View>
             </View>
+
+            {selectedReportId === 'sales-performance' && (
+              <View style={styles.salesKpiGrid}>
+                {[
+                  { label: 'Faturamento', value: money(salesSummary.total), note: periodLabel },
+                  { label: 'Vendas', value: String(salesSummary.sales), note: `${salesSummary.activeDays} dia(s) com movimento` },
+                  { label: 'Ticket médio', value: money(salesSummary.ticket), note: 'Valor médio por venda' },
+                  { label: 'Média diária', value: money(salesSummary.dailyAverage), note: 'Considera todos os dias do período' },
+                ].map((item) => (
+                  <View key={item.label} style={styles.salesKpiCard}>
+                    <Text style={styles.salesKpiLabel}>{item.label}</Text>
+                    <Text style={styles.salesKpiValue}>{item.value}</Text>
+                    <Text style={styles.salesKpiNote}>{item.note}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {selectedReportId === 'managerial-dre' && (
               <View style={styles.dreInlineContext}>
@@ -2980,6 +3020,11 @@ const styles = StyleSheet.create({
   inlineExportButton: { minHeight: 42, paddingHorizontal: 11, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 6 }, inlineExportButtonText: { fontFamily: 'Inter_700Bold', fontSize: 12, color: theme.colors.text },
   inlineSummary: { padding: 15, backgroundColor: '#F8F8F6', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   inlineSummaryLabel: { fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .6, color: theme.colors.muted }, inlineSummaryValue: { marginTop: 4, fontFamily: 'Sora_700Bold', fontSize: 21, color: theme.colors.text }, inlineSummaryDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
+  salesKpiGrid: { backgroundColor: '#F8F8F6', borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 15 },
+  salesKpiCard: { backgroundColor: '#FFF', borderColor: theme.colors.border, borderRadius: 11, borderWidth: 1, flex: 1, minWidth: 165, paddingHorizontal: 12, paddingVertical: 11 },
+  salesKpiLabel: { color: theme.colors.muted, fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .45, textTransform: 'uppercase' },
+  salesKpiValue: { color: theme.colors.text, fontFamily: 'Sora_700Bold', fontSize: 17, marginTop: 4 },
+  salesKpiNote: { color: theme.colors.muted, fontFamily: 'Inter_400Regular', fontSize: 11.5, marginTop: 3 },
   dreInlineContext: { paddingHorizontal: 15, paddingTop: 12 },
   dreInlineQuality: { alignItems: 'flex-start', backgroundColor: '#FFF8E8', borderColor: '#E8D3A4', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 9, padding: 11 },
   dreInlineTitle: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
