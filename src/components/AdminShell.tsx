@@ -92,7 +92,7 @@ export function AdminShell({
   syncNote = false,
 }: Props) {
   const pathname = usePathname();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const mobile = width < 760;
   const c = useThemeColors();
   const styles = useMemo(() => makeStyles(c), [c]);
@@ -174,7 +174,7 @@ export function AdminShell({
     // continuam com o layout antigo, sem nenhuma mudança visual.
     if (headerActions !== undefined || !mobile) {
       return (
-        <View style={styles.sidebarShell}>
+        <View style={[styles.sidebarShell, { height }]}>
           <View style={styles.sidebar}>
             <View style={styles.sidebarBrand}>
               <Text style={styles.sidebarBrandName}>{c.brandName}</Text>
@@ -590,6 +590,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     backgroundColor: c.bg,
+    overflow: 'hidden',
   },
 
   sidebar: {
@@ -625,6 +626,7 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   sidebarNavScroll: {
     flex: 1,
+    minHeight: 0,
   },
 
   sidebarNav: {
@@ -684,11 +686,13 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
 
   mainArea: {
     flex: 1,
+    minHeight: 0,
   },
 
   mainColumn: {
     flex: 1,
     minWidth: 0,
+    minHeight: 0,
   },
 
   mainAreaContent: {

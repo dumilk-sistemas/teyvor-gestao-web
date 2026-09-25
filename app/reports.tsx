@@ -149,25 +149,31 @@ function downloadCsv(
   URL.revokeObjectURL(url);
 }
 
-function escapeHtml(value: string | number) {
-  return String(value ?? '').replace(
-    /[&<>"']/g,
-    (c) =>
-      ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;',
-      }[c] as string)
-  );
-}
-
 function safePrintColor(value: string | null | undefined, fallback: string) {
   return /^#[0-9a-f]{6}$/i.test(value || '') ? String(value) : fallback;
 }
 
-function printRows(
+function pdfColor(value: string) {
+  const hex = value.replace('#', '');
+  return [
+    Number.parseInt(hex.slice(0, 2), 16),
+    Number.parseInt(hex.slice(2, 4), 16),
+    Number.parseInt(hex.slice(4, 6), 16),
+  ] as [number, number, number];
+}
+
+function reportPdfFilename(title: string) {
+  const normalized = title
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  const date = new Date().toISOString().slice(0, 10);
+  return `${normalized || 'relatorio'}-${date}.pdf`;
+}
+
+async function printRows(
   title: string,
   subtitle: string,
   headers: string[],
@@ -179,135 +185,123 @@ function printRows(
     return;
   }
 
+  const [{ jsPDF }, autoTableModule] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+  const autoTable = autoTableModule.default;
+
   const primary = safePrintColor(branding.color_primary, '#C49A3A');
   const secondary = safePrintColor(branding.color_secondary, '#1F2933');
   const pageOrientation = headers.length >= 6 ? 'landscape' : 'portrait';
-  const brandName = escapeHtml(branding.brand_name || 'TEYVOR');
+  const brandName = branding.brand_name || 'TEYVOR';
   const generatedAt = new Date().toLocaleString('pt-BR');
-  const safeLogoUrl = branding.logo_url && /^https?:\/\//i.test(branding.logo_url)
-    ? escapeHtml(branding.logo_url)
-    : '';
-  const brandLogo = safeLogoUrl
-    ? `<img class="brand-logo" src="${safeLogoUrl}" alt="${brandName}">`
-    : `<div class="brand-mark" aria-hidden="true"></div>`;
+  const primaryRgb = pdfColor(primary);
+  const secondaryRgb = pdfColor(secondary);
+  const document = new jsPDF({
+    orientation: pageOrientation,
+    unit: 'mm',
+    format: 'a4',
+    compress: true,
+  });
+  const pageWidth = document.internal.pageSize.getWidth();
+  const pageHeight = document.internal.pageSize.getHeight();
 
-  const head = `<tr>${headers
-    .map((h) => `<th scope="col">${escapeHtml(h)}</th>`)
-    .join('')}</tr>`;
-  const body = rows
-    .map(
-      (row) =>
-        `<tr>${row
-          .map((cell) => {
-            const text = String(cell ?? '').trim();
-            const numeric = /^-?(?:R\$\s*)?[\d.]+(?:,\d+)?(?:\s*(?:un|kg|%))?$/i.test(text);
-            return `<td${numeric ? ' class="numeric"' : ''}>${escapeHtml(cell)}</td>`;
-          })
-          .join('')}</tr>`
-    )
-    .join('');
+  document.setProperties({
+    title,
+    subject: subtitle,
+    author: `${brandName} Gestão 360`,
+    creator: 'TEYVOR Gestão 360',
+  });
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(
-    title
-  )}</title><style>
-    :root{--primary:${primary};--secondary:${secondary};--ink:#17202a;--muted:#66717d;--line:#dfe3e6;--soft:#f5f6f4}
-    *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    @page{size:A4 ${pageOrientation};margin:15mm 11mm 18mm}
-    html,body{margin:0;padding:0;background:#fff;color:var(--ink);font-family:Inter,"Segoe UI",Arial,sans-serif}
-    body{font-size:10px;line-height:1.4}
-    .brand-header{display:flex;align-items:center;justify-content:space-between;border-top:5px solid var(--primary);border-bottom:1px solid var(--line);padding:12px 2px 11px;margin-bottom:22px}
-    .brand-lockup{display:flex;align-items:center;gap:10px;min-width:0}
-    .brand-logo{display:block;max-width:118px;max-height:38px;object-fit:contain}
-    .brand-mark{width:9px;height:34px;border-radius:3px;background:var(--primary);box-shadow:5px 0 0 var(--secondary)}
-    .brand-name{font-size:18px;font-weight:800;letter-spacing:.08em;color:#111820;line-height:1}
-    .brand-sub{margin-top:4px;color:var(--primary);font-size:8px;font-weight:800;letter-spacing:.22em}
-    .document-label{border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--muted);font-size:8px;font-weight:700;letter-spacing:.12em}
-    .report-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:14px}
-    .report-heading h1{font-size:21px;line-height:1.16;margin:0 0 7px;color:#111820;letter-spacing:-.02em}
-    .report-heading p{font-size:10px;color:var(--muted);margin:0}
-    .issue-meta{min-width:150px;text-align:right;color:var(--muted);font-size:8px;line-height:1.6}
-    .issue-meta strong{display:block;color:#27313a;font-size:9px}
-    .summary{display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--soft);border-left:4px solid var(--primary);border-radius:5px;padding:9px 11px;margin-bottom:14px;color:#39434c}
-    .summary strong{color:#151b21}
-    .record-count{white-space:nowrap;font-weight:700;color:var(--secondary)}
-    table{width:100%;border-collapse:separate;border-spacing:0;font-size:8.5px;table-layout:auto}
-    thead{display:table-header-group}
-    tr{break-inside:avoid;page-break-inside:avoid}
-    th{background:#17202a;color:#fff;font-weight:700;padding:7px 6px;text-align:left;border-right:1px solid rgba(255,255,255,.18);white-space:nowrap}
-    th:first-child{border-radius:5px 0 0 0}
-    th:last-child{border-radius:0 5px 0 0;border-right:0}
-    td{padding:6px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
-    td:first-child{border-left:1px solid var(--line)}
-    tbody tr:nth-child(even) td{background:#fafaf8}
-    td.numeric{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-    .empty{padding:28px;text-align:center;border:1px solid var(--line);border-radius:6px;color:var(--muted)}
-    .footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:14px;padding-top:7px;color:#7a838c;font-size:7px;break-inside:avoid;page-break-inside:avoid}
-    .page-number:after{content:counter(page)}
-    .footer strong{color:var(--primary);letter-spacing:.06em}
-    @media print{
-      body{padding-bottom:10mm}
-      .brand-header,.summary,th{print-color-adjust:exact;-webkit-print-color-adjust:exact}
-      .footer{position:fixed;left:0;right:0;bottom:-10mm;background:#fff;margin:0}
-    }
-  </style></head><body>
-    <header class="brand-header">
-      <div class="brand-lockup">${brandLogo}<div><div class="brand-name">${brandName}</div><div class="brand-sub">GESTÃO 360</div></div></div>
-      <div class="document-label">RELATÓRIO GERENCIAL</div>
-    </header>
-    <section class="report-heading">
-      <div><h1>${escapeHtml(title)}</h1><p>Informações consolidadas para acompanhamento e tomada de decisão.</p></div>
-      <div class="issue-meta"><strong>Emitido em</strong>${escapeHtml(generatedAt)}</div>
-    </section>
-    <section class="summary"><span><strong>Período / referência:</strong> ${escapeHtml(subtitle)}</span><span class="record-count">${recordCount} ${recordCount === 1 ? 'registro' : 'registros'}</span></section>
-    ${rows.length > 0 ? `<table><thead>${head}</thead><tbody>${body}</tbody></table>` : '<div class="empty">Nenhuma informação encontrada para o período selecionado.</div>'}
-    <footer class="footer"><span><strong>${brandName} GESTÃO 360</strong> · Documento gerado pelo sistema</span><span>${escapeHtml(title)} · Página <span class="page-number"></span></span></footer>
-  </body></html>`;
+  document.setFillColor(...primaryRgb);
+  document.rect(12, 11, pageWidth - 24, 1.8, 'F');
+  document.setFillColor(...secondaryRgb);
+  document.roundedRect(12, 17, 3.5, 13, 1, 1, 'F');
+  document.setFillColor(...primaryRgb);
+  document.roundedRect(16.5, 17, 3.5, 13, 1, 1, 'F');
+  document.setTextColor(17, 24, 32);
+  document.setFont('helvetica', 'bold');
+  document.setFontSize(16);
+  document.text(brandName.toUpperCase(), 23, 23);
+  document.setTextColor(...primaryRgb);
+  document.setFontSize(7);
+  document.text('GESTÃO 360', 23, 28);
 
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  document.body.appendChild(iframe);
+  document.setTextColor(17, 24, 32);
+  document.setFontSize(18);
+  document.text(title, 12, 41);
+  document.setFont('helvetica', 'normal');
+  document.setTextColor(102, 113, 125);
+  document.setFontSize(8.5);
+  document.text(`Período / referência: ${subtitle}`, 12, 47);
+  document.text(`Emitido em ${generatedAt}`, pageWidth - 12, 41, { align: 'right' });
+  document.text(
+    `${recordCount} ${recordCount === 1 ? 'registro' : 'registros'}`,
+    pageWidth - 12,
+    47,
+    { align: 'right' }
+  );
 
-  const frameWindow = iframe.contentWindow;
-  if (!frameWindow) {
-    document.body.removeChild(iframe);
-    return;
+  autoTable(document, {
+    startY: 53,
+    head: [headers],
+    body: rows.length > 0
+      ? rows.map((row) => row.map((cell) => String(cell ?? '')))
+      : [['Nenhuma informação encontrada para o período selecionado.', ...headers.slice(1).map(() => '')]],
+    theme: 'grid',
+    margin: { top: 18, right: 12, bottom: 17, left: 12 },
+    styles: {
+      font: 'helvetica',
+      fontSize: headers.length >= 6 ? 6.8 : 7.6,
+      cellPadding: 2.2,
+      lineColor: [223, 227, 230],
+      lineWidth: 0.25,
+      textColor: [23, 32, 42],
+      overflow: 'linebreak',
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [23, 32, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'left',
+    },
+    alternateRowStyles: { fillColor: [250, 250, 248] },
+    didParseCell: (data) => {
+      if (data.section !== 'body') return;
+      const text = String(data.cell.raw ?? '').trim();
+      if (/^-?(?:R\$\s*)?[\d.]+(?:,\d+)?(?:\s*(?:un|kg|%))?$/i.test(text)) {
+        data.cell.styles.halign = 'right';
+      }
+    },
+    willDrawPage: (data) => {
+      if (data.pageNumber === 1) return;
+      document.setFillColor(...primaryRgb);
+      document.rect(12, 10, pageWidth - 24, 1.2, 'F');
+      document.setFont('helvetica', 'bold');
+      document.setFontSize(9);
+      document.setTextColor(23, 32, 42);
+      document.text(title, 12, 15);
+      document.setFont('helvetica', 'normal');
+      document.setTextColor(102, 113, 125);
+      document.text(brandName, pageWidth - 12, 15, { align: 'right' });
+    },
+  });
+
+  const totalPages = document.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page += 1) {
+    document.setPage(page);
+    document.setDrawColor(223, 227, 230);
+    document.line(12, pageHeight - 12, pageWidth - 12, pageHeight - 12);
+    document.setFont('helvetica', 'normal');
+    document.setFontSize(7);
+    document.setTextColor(122, 131, 140);
+    document.text(`${brandName} Gestão 360 · Documento gerado pelo sistema`, 12, pageHeight - 7.5);
+    document.text(`${title} · Página ${page} de ${totalPages}`, pageWidth - 12, pageHeight - 7.5, { align: 'right' });
   }
 
-  frameWindow.document.open();
-  frameWindow.document.write(html);
-  frameWindow.document.close();
-
-  const readyToPrint = async () => {
-    const images = Array.from(frameWindow.document.images);
-    await Promise.all(
-      images.map(
-        (image) =>
-          image.complete
-            ? Promise.resolve()
-            : new Promise<void>((resolve) => {
-                image.onload = () => resolve();
-                image.onerror = () => resolve();
-              })
-      )
-    );
-    await frameWindow.document.fonts?.ready;
-    const previousDocumentTitle = document.title;
-    document.title = title;
-    frameWindow.document.title = title;
-    frameWindow.focus();
-    frameWindow.print();
-    setTimeout(() => {
-      document.title = previousDocumentTitle;
-      if (document.body.contains(iframe)) document.body.removeChild(iframe);
-    }, 1500);
-  };
-
-  setTimeout(() => void readyToPrint(), 300);
+  document.save(reportPdfFilename(title));
 }
 
 type PeriodKey =
@@ -2799,7 +2793,7 @@ function ModalHeader({
             {!!onPrint && (
               <Pressable style={styles.exportButton} onPress={onPrint}>
                 <Text style={styles.exportButtonText}>
-                  Imprimir / PDF
+                  Baixar PDF
                 </Text>
               </Pressable>
             )}
