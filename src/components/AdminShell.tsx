@@ -244,6 +244,16 @@ export function AdminShell({
               <View style={styles.pageHeadActions}>
                 {headerActions}
                 {defaultRefreshButton}
+                <Pressable
+                  accessibilityLabel="Sair do TEYVOR Gestão 360"
+                  accessibilityRole="button"
+                  style={styles.logout}
+                  onPress={exit}
+                >
+                  <Text style={styles.logoutText}>
+                    Sair
+                  </Text>
+                </Pressable>
               </View>
             </View>
             <ScrollView
