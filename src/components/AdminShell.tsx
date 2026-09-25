@@ -596,9 +596,11 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   sidebar: {
     width: 220,
     height: '100%',
+    position: 'relative',
     backgroundColor: '#0D1117',
     paddingVertical: 18,
     paddingHorizontal: 12,
+    paddingBottom: 76,
   },
 
   sidebarBrand: {
@@ -664,7 +666,10 @@ const makeStyles = (c: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   },
 
   sidebarBottom: {
-    marginTop: 8,
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 16,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.08)',

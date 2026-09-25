@@ -173,6 +173,151 @@ function reportPdfFilename(title: string) {
   return `${normalized || 'relatorio'}-${date}.pdf`;
 }
 
+function openPdfPreview(pdfBlob: Blob, filename: string, title: string) {
+  const previous = document.getElementById('teyvor-pdf-preview');
+  previous?.remove();
+
+  const objectUrl = URL.createObjectURL(pdfBlob);
+  const overlay = document.createElement('div');
+  overlay.id = 'teyvor-pdf-preview';
+  Object.assign(overlay.style, {
+    position: 'fixed',
+    inset: '0',
+    zIndex: '2147483647',
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '16px',
+    background: 'rgba(13, 17, 23, 0.78)',
+  });
+
+  const panel = document.createElement('div');
+  Object.assign(panel.style, {
+    display: 'flex',
+    flex: '1',
+    minHeight: '0',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    border: '1px solid #dfe3e6',
+    borderRadius: '12px',
+    background: '#ffffff',
+    boxShadow: '0 20px 60px rgba(0,0,0,.28)',
+  });
+
+  const toolbar = document.createElement('div');
+  Object.assign(toolbar.style, {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '16px',
+    flexShrink: '0',
+    padding: '12px 16px',
+    borderBottom: '1px solid #dfe3e6',
+    background: '#ffffff',
+    fontFamily: 'Inter, Segoe UI, Arial, sans-serif',
+  });
+
+  const heading = document.createElement('div');
+  heading.textContent = `Visualização do PDF — ${title}`;
+  Object.assign(heading.style, {
+    minWidth: '0',
+    overflow: 'hidden',
+    color: '#17202a',
+    fontSize: '14px',
+    fontWeight: '800',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  });
+
+  const actions = document.createElement('div');
+  Object.assign(actions.style, {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexShrink: '0',
+  });
+
+  const makeButton = (label: string, primary = false) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    Object.assign(button.style, {
+      minHeight: '38px',
+      padding: '8px 14px',
+      border: primary ? '1px solid #17202a' : '1px solid #d4d8dc',
+      borderRadius: '8px',
+      background: primary ? '#17202a' : '#ffffff',
+      color: primary ? '#ffffff' : '#17202a',
+      cursor: 'pointer',
+      fontFamily: 'Inter, Segoe UI, Arial, sans-serif',
+      fontSize: '13px',
+      fontWeight: '700',
+    });
+    return button;
+  };
+
+  const closeButton = makeButton('Fechar');
+  const saveButton = makeButton('Salvar PDF', true);
+  const frame = document.createElement('iframe');
+  frame.title = title;
+  frame.src = objectUrl;
+  Object.assign(frame.style, {
+    flex: '1',
+    width: '100%',
+    minHeight: '0',
+    border: '0',
+    background: '#eef0f2',
+  });
+
+  const closePreview = () => {
+    document.removeEventListener('keydown', handleKeyDown);
+    overlay.remove();
+    URL.revokeObjectURL(objectUrl);
+  };
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') closePreview();
+  };
+
+  closeButton.addEventListener('click', closePreview);
+  saveButton.addEventListener('click', async () => {
+    const pickerWindow = window as Window & {
+      showSaveFilePicker?: (options: Record<string, unknown>) => Promise<{
+        createWritable: () => Promise<{
+          write: (data: Blob) => Promise<void>;
+          close: () => Promise<void>;
+        }>;
+      }>;
+    };
+    try {
+      if (pickerWindow.showSaveFilePicker) {
+        const handle = await pickerWindow.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'Documento PDF', accept: { 'application/pdf': ['.pdf'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(pdfBlob);
+        await writable.close();
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      console.error('Não foi possível salvar o PDF.', error);
+    }
+  });
+  document.addEventListener('keydown', handleKeyDown);
+
+  actions.append(saveButton, closeButton);
+  toolbar.append(heading, actions);
+  panel.append(toolbar, frame);
+  overlay.append(panel);
+  document.body.appendChild(overlay);
+}
+
 async function printRows(
   title: string,
   subtitle: string,
@@ -301,7 +446,8 @@ async function printRows(
     document.text(`${title} · Página ${page} de ${totalPages}`, pageWidth - 12, pageHeight - 7.5, { align: 'right' });
   }
 
-  document.save(reportPdfFilename(title));
+  const filename = reportPdfFilename(title);
+  openPdfPreview(document.output('blob'), filename, title);
 }
 
 type PeriodKey =
@@ -1392,7 +1538,7 @@ export default function Reports() {
                     setAppliedStart(start); setAppliedEnd(end); setStartInput(isoToBR(start)); setEndInput(isoToBR(end)); setPeriod(preset as PeriodKey); setAppliedNotice(`Período aplicado: ${isoToBR(start)} a ${isoToBR(end)}`);
                   }}
                 />
-                <Pressable style={styles.inlineExportButton} onPress={exportInlinePdf}><Feather name="printer" size={15} color={theme.colors.text} /><Text style={styles.inlineExportButtonText}>PDF</Text></Pressable>
+                <Pressable style={styles.inlineExportButton} onPress={exportInlinePdf}><Feather name="file-text" size={15} color={theme.colors.text} /><Text style={styles.inlineExportButtonText}>Abrir PDF</Text></Pressable>
                 <Pressable style={styles.inlineExportButton} onPress={exportInlineCsv}><Feather name="download" size={15} color={theme.colors.text} /><Text style={styles.inlineExportButtonText}>Excel</Text></Pressable>
               </View>
             </View>
@@ -2793,7 +2939,7 @@ function ModalHeader({
             {!!onPrint && (
               <Pressable style={styles.exportButton} onPress={onPrint}>
                 <Text style={styles.exportButtonText}>
-                  Baixar PDF
+                  Abrir PDF
                 </Text>
               </Pressable>
             )}
