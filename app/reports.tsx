@@ -296,9 +296,15 @@ function printRows(
       )
     );
     await frameWindow.document.fonts?.ready;
+    const previousDocumentTitle = document.title;
+    document.title = title;
+    frameWindow.document.title = title;
     frameWindow.focus();
     frameWindow.print();
-    setTimeout(() => document.body.removeChild(iframe), 1000);
+    setTimeout(() => {
+      document.title = previousDocumentTitle;
+      if (document.body.contains(iframe)) document.body.removeChild(iframe);
+    }, 1500);
   };
 
   setTimeout(() => void readyToPrint(), 300);
@@ -1136,14 +1142,43 @@ export default function Reports() {
     description: `${report.group} • ${report.description}`,
   }));
 
+  const inlineFinanceEntries = useMemo(() => {
+    if (!['payables', 'receivables'].includes(selectedReportId)) return [];
+    const type = selectedReportId === 'payables' ? 'payable' : 'receivable';
+    const settled = financeReportMode === 'payable_paid' || financeReportMode === 'receivable_paid';
+    return (finance?.entries || []).filter((entry: any) => {
+      if (entry.type !== type) return false;
+      if (settled) {
+        const expectedStatus = type === 'payable' ? 'paid' : 'received';
+        const referenceDate = entry.settlement_date || entry.due_date;
+        return entry.status === expectedStatus && referenceDate >= appliedStart && referenceDate <= appliedEnd;
+      }
+      return ['open', 'overdue'].includes(entry.status) && entry.due_date >= appliedStart && entry.due_date <= appliedEnd;
+    });
+  }, [finance, selectedReportId, financeReportMode, appliedStart, appliedEnd]);
+
+  const inlineFinanceTitle = ['payables', 'receivables'].includes(selectedReportId)
+    ? financeModeLabel(financeReportMode)
+    : selectedReport.title;
+  const inlineFinanceTotal = inlineFinanceEntries.reduce(
+    (sum: number, row: any) => sum + Number(row.amount || 0),
+    0
+  );
+
   const inlineRows = useMemo(() => {
-    const financeEntries = (finance?.entries || []).filter((entry: any) => entry.due_date >= appliedStart && entry.due_date <= appliedEnd);
     if (selectedReportId === 'sales-performance') return periodDays.map((row: any) => ({ id: row.date, primary: dateBR(row.date), secondary: `${row.sales || 0} venda(s)`, value: money(row.total) }));
     if (selectedReportId === 'products') return productsAbc.map((row: any, index) => ({ id: `${row.name}-${index}`, primary: row.name, secondary: `${qtyLabel(row.qty)} vendido(s) • Curva ${row.tier}`, value: money(row.revenue) }));
     if (selectedReportId === 'payments') return paymentBreakdown.map((row: any) => ({ id: row.method, primary: row.method, secondary: `${row.percent.toFixed(1).replace('.', ',')}% do faturamento`, value: money(row.value) }));
     if (selectedReportId === 'customers') return customerRanking.map((row: any, index) => ({ id: `${row.name}-${index}`, primary: row.name, secondary: `${row.purchases} compra(s) • Curva ${row.tier}`, value: money(row.total) }));
-    if (selectedReportId === 'payables') return financeEntries.filter((row: any) => row.type === 'payable' && ['open', 'overdue'].includes(row.status)).map((row: any) => ({ id: String(row.id), primary: row.description || row.supplier || 'Conta a pagar', secondary: `${row.category || 'Sem categoria'} • vence ${dateBR(row.due_date)}`, value: money(row.amount) }));
-    if (selectedReportId === 'receivables') return financeEntries.filter((row: any) => row.type === 'receivable' && ['open', 'overdue'].includes(row.status)).map((row: any) => ({ id: String(row.id), primary: row.description || row.customer || 'Conta a receber', secondary: `${row.category || 'Sem categoria'} • vence ${dateBR(row.due_date)}`, value: money(row.amount) }));
+    if (selectedReportId === 'payables' || selectedReportId === 'receivables') {
+      const settled = financeReportMode === 'payable_paid' || financeReportMode === 'receivable_paid';
+      return inlineFinanceEntries.map((row: any) => ({
+        id: String(row.id),
+        primary: row.description || (selectedReportId === 'payables' ? 'Conta a pagar' : 'Conta a receber'),
+        secondary: `${row.category || 'Sem categoria'} • ${settled ? (selectedReportId === 'payables' ? 'paga' : 'recebida') : 'vence'} em ${dateBR(settled ? (row.settlement_date || row.due_date) : row.due_date)}`,
+        value: money(row.amount),
+      }));
+    }
     if (selectedReportId === 'finance-categories') return financeCategoryRows.map((row: any) => ({ id: row.selectionKey, primary: row.category, secondary: `${row.reportType} • ${row.count} lançamento(s)`, value: money(row.total) }));
     if (selectedReportId === 'managerial-dre') return (dre?.rows || []).map((row: any) => ({
       id: row.key,
@@ -1169,7 +1204,7 @@ export default function Reports() {
     });
     if (selectedReportId === 'purchases') return purchaseRows.map((row: any) => ({ id: String(row.id), primary: row.supplier || row.description || `Compra #${row.number || row.id}`, secondary: `${dateBR(row.date)} • ${row.status || 'Recebida'}`, value: money(row.total) }));
     return stockAlerts.map((row: any) => ({ id: String(row.id || row.code), primary: row.name, secondary: `${row.category || 'Sem categoria'} • mínimo ${row.minimum || 0}`, value: `${row.stock || 0} em estoque`, tone: row.status === 'Negativo' ? 'danger' : 'default' }));
-  }, [selectedReportId, periodDays, productsAbc, paymentBreakdown, customerRanking, finance, appliedStart, appliedEnd, financeCategoryRows, dre, cashFlow, purchaseRows, stockAlerts]);
+  }, [selectedReportId, periodDays, productsAbc, paymentBreakdown, customerRanking, inlineFinanceEntries, financeReportMode, financeCategoryRows, dre, cashFlow, purchaseRows, stockAlerts]);
 
   useEffect(() => {
     setReportSelected(Object.fromEntries(inlineRows.map((row: any) => [String(row.id), true])));
@@ -1221,24 +1256,18 @@ export default function Reports() {
     }
     if (selectedReportId === 'payables' || selectedReportId === 'receivables') {
       const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
-      const type = selectedReportId === 'payables' ? 'payable' : 'receivable';
-      const rows = (finance?.entries || []).filter((row: any) =>
-        selectedIds.has(String(row.id)) &&
-        row.type === type &&
-        ['open', 'overdue'].includes(row.status) &&
-        row.due_date >= appliedStart &&
-        row.due_date <= appliedEnd
-      );
+      const settled = financeReportMode === 'payable_paid' || financeReportMode === 'receivable_paid';
+      const rows = inlineFinanceEntries.filter((row: any) => selectedIds.has(String(row.id)));
       const total = rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
       printReport(
-        selectedReport.title,
+        inlineFinanceTitle,
         periodLabel,
-        ['Descrição', 'Categoria', 'Vencimento', 'Situação', 'Valor'],
+        ['Descrição', 'Categoria', settled ? (selectedReportId === 'payables' ? 'Pagamento' : 'Recebimento') : 'Vencimento', 'Situação', 'Valor'],
         [
           ...rows.map((row: any) => [
-            row.description || (type === 'payable' ? 'Conta a pagar' : 'Conta a receber'),
+            row.description || (selectedReportId === 'payables' ? 'Conta a pagar' : 'Conta a receber'),
             row.category || 'Sem categoria',
-            dateBR(row.due_date),
+            dateBR(settled ? (row.settlement_date || row.due_date) : row.due_date),
             statusLabelPt(row.status),
             money(row.amount),
           ]),
@@ -1290,23 +1319,17 @@ export default function Reports() {
     }
     if (selectedReportId === 'payables' || selectedReportId === 'receivables') {
       const selectedIds = new Set(selectedInlineRows.map((row: any) => String(row.id)));
-      const type = selectedReportId === 'payables' ? 'payable' : 'receivable';
-      const rows = (finance?.entries || []).filter((row: any) =>
-        selectedIds.has(String(row.id)) &&
-        row.type === type &&
-        ['open', 'overdue'].includes(row.status) &&
-        row.due_date >= appliedStart &&
-        row.due_date <= appliedEnd
-      );
+      const settled = financeReportMode === 'payable_paid' || financeReportMode === 'receivable_paid';
+      const rows = inlineFinanceEntries.filter((row: any) => selectedIds.has(String(row.id)));
       const total = rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
       downloadCsv(
-        `relatorio_${selectedReportId}_${appliedStart}_${appliedEnd}.csv`,
-        ['Descrição', 'Categoria', 'Vencimento', 'Situação', 'Valor'],
+        `relatorio_${financeReportMode}_${appliedStart}_${appliedEnd}.csv`,
+        ['Descrição', 'Categoria', settled ? (selectedReportId === 'payables' ? 'Pagamento' : 'Recebimento') : 'Vencimento', 'Situação', 'Valor'],
         [
           ...rows.map((row: any) => [
-            row.description || (type === 'payable' ? 'Conta a pagar' : 'Conta a receber'),
+            row.description || (selectedReportId === 'payables' ? 'Conta a pagar' : 'Conta a receber'),
             row.category || 'Sem categoria',
-            row.due_date,
+            settled ? (row.settlement_date || row.due_date) : row.due_date,
             statusLabelPt(row.status),
             row.amount,
           ]),
@@ -1341,7 +1364,12 @@ export default function Reports() {
               <View key={group} style={styles.navigationGroup}>
                 <Text style={styles.navigationGroupTitle}>{group}</Text>
                 {reportCatalog.filter((report) => report.group === group).map((report) => (
-                  <Pressable key={report.id} onPress={() => { setSelectedReportId(report.id); setDetailMode(null); }} style={[styles.navigationItem, selectedReportId === report.id && styles.navigationItemActive]}>
+                  <Pressable key={report.id} onPress={() => {
+                    setSelectedReportId(report.id);
+                    if (report.id === 'payables') setFinanceReportMode('payable_open');
+                    if (report.id === 'receivables') setFinanceReportMode('receivable_open');
+                    setDetailMode(null);
+                  }} style={[styles.navigationItem, selectedReportId === report.id && styles.navigationItemActive]}>
                     <Feather name={report.icon} size={15} color={selectedReportId === report.id ? report.color : theme.colors.muted} />
                     <Text style={[styles.navigationItemText, selectedReportId === report.id && styles.navigationItemTextActive]}>{report.title}</Text>
                   </Pressable>
@@ -1356,7 +1384,7 @@ export default function Reports() {
                 <View style={[styles.iconCircle, { backgroundColor: selectedReport.background }]}><Feather name={selectedReport.icon} size={20} color={selectedReport.color} /></View>
                 <View style={styles.selectedReportMain}>
                   <Text style={styles.selectedReportGroup}>{selectedReport.group}</Text>
-                  <Text style={styles.inlineTitle}>{selectedReport.title}</Text>
+                  <Text style={styles.inlineTitle}>{inlineFinanceTitle}</Text>
                   <Text style={styles.selectedReportDescription}>{selectedReport.description}</Text>
                 </View>
               </View>
@@ -1375,8 +1403,22 @@ export default function Reports() {
               </View>
             </View>
 
+            {selectedReportId === 'payables' && (
+              <View style={styles.inlineFinanceModes}>
+                <PeriodButton label="Em aberto e vencidas" active={financeReportMode === 'payable_open'} onPress={() => setFinanceReportMode('payable_open')} />
+                <PeriodButton label="Contas pagas" active={financeReportMode === 'payable_paid'} onPress={() => setFinanceReportMode('payable_paid')} />
+              </View>
+            )}
+
+            {selectedReportId === 'receivables' && (
+              <View style={styles.inlineFinanceModes}>
+                <PeriodButton label="Em aberto e vencidas" active={financeReportMode === 'receivable_open'} onPress={() => setFinanceReportMode('receivable_open')} />
+                <PeriodButton label="Contas recebidas" active={financeReportMode === 'receivable_paid'} onPress={() => setFinanceReportMode('receivable_paid')} />
+              </View>
+            )}
+
             <View style={styles.inlineSummary}>
-              <View><Text style={styles.inlineSummaryLabel}>RESULTADO PRINCIPAL</Text><Text style={styles.inlineSummaryValue}>{selectedReport.value}</Text><Text style={styles.inlineSummaryDetail}>{selectedReport.subtitle}</Text></View>
+              <View><Text style={styles.inlineSummaryLabel}>RESULTADO PRINCIPAL</Text><Text style={styles.inlineSummaryValue}>{['payables', 'receivables'].includes(selectedReportId) ? money(inlineFinanceTotal) : selectedReport.value}</Text><Text style={styles.inlineSummaryDetail}>{['payables', 'receivables'].includes(selectedReportId) ? `${inlineFinanceEntries.length} lançamento(s) no período` : selectedReport.subtitle}</Text></View>
               <View style={styles.selectionActions}><Text style={styles.selectionCount}>{selectedInlineRows.length} de {inlineRows.length} selecionado(s)</Text><Pressable onPress={() => setReportSelected(Object.fromEntries(inlineRows.map((row: any) => [String(row.id), true])))}><Text style={styles.selectionLink}>Selecionar todos</Text></Pressable><Pressable onPress={() => setReportSelected({})}><Text style={styles.selectionLink}>Limpar</Text></Pressable></View>
             </View>
 
@@ -3120,6 +3162,7 @@ const styles = StyleSheet.create({
   inlineHeaderActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
   inlineExportButton: { minHeight: 42, paddingHorizontal: 11, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 6 }, inlineExportButtonText: { fontFamily: 'Inter_700Bold', fontSize: 12, color: theme.colors.text },
   inlineSummary: { padding: 15, backgroundColor: '#F8F8F6', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  inlineFinanceModes: { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: theme.colors.border, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   inlineSummaryLabel: { fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .6, color: theme.colors.muted }, inlineSummaryValue: { marginTop: 4, fontFamily: 'Sora_700Bold', fontSize: 21, color: theme.colors.text }, inlineSummaryDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
   salesKpiGrid: { backgroundColor: '#F8F8F6', borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 15 },
   salesKpiCard: { backgroundColor: '#FFF', borderColor: theme.colors.border, borderRadius: 11, borderWidth: 1, flex: 1, minWidth: 165, paddingHorizontal: 12, paddingVertical: 11 },

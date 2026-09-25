@@ -139,6 +139,13 @@ export async function deleteFinancialEntry(
   });
 }
 
+export async function getRemoteCommandStatus(commandId: string) {
+  const result = await fullRequest<{ rows: Array<{ command_id: string; status: string; error?: string }> }>(
+    '/admin/commands?limit=200'
+  );
+  return result.rows.find((row) => row.command_id === commandId) || null;
+}
+
 export async function getCashFlow(start: string, end: string, accountId?: number | null) {
   const accountParam = accountId ? `&account_id=${accountId}` : '';
   return fullRequest<any>(

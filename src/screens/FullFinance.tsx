@@ -25,6 +25,7 @@ import {
   enqueue,
   getFull,
   getMonthlyFinanceReport,
+  getRemoteCommandStatus,
   setEntryAccount,
   updateRecurringRule,
 } from '@/services/fullApi';
@@ -163,6 +164,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [form, setForm] = useState<any>({});
   const [modalError, setModalError] = useState('');
   const pendingEntriesRef = useRef<any[]>([]);
+  const completedDeleteCommandsRef = useRef<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const initialListRange = monthRange(currentMonthString());
   const [listStart, setListStart] = useState(initialListRange.start);
@@ -417,6 +419,31 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
 
   function refreshAfterSync() {
     [3000, 8000, 16000].forEach((delay) => setTimeout(() => load(), delay));
+  }
+
+  function monitorDeleteCommand(commandId: string, description: string) {
+    [4000, 9000, 17000].forEach((delay) => setTimeout(async () => {
+      if (completedDeleteCommandsRef.current.has(commandId)) return;
+      try {
+        const command = await getRemoteCommandStatus(commandId);
+        if (!command || command.status === 'pending') return;
+        completedDeleteCommandsRef.current.add(commandId);
+        if (command.status === 'failed') {
+          const message = command.error || 'O PDV não conseguiu aplicar a exclusão.';
+          setError(`A exclusão de ${description} falhou: ${message}`);
+          showToast('A exclusão não foi aplicada. Consulte a mensagem exibida na tela.');
+          load();
+          return;
+        }
+        if (command.status === 'applied') {
+          showToast('Exclusão aplicada e sincronizada com o PDV.');
+          load();
+        }
+      } catch {
+        // A tela continuará consultando o snapshot; falhas transitórias de
+        // monitoramento não devem reenviar nem duplicar a exclusão.
+      }
+    }, delay));
   }
 
   useEffect(() => {
@@ -762,7 +789,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
     try {
       setBusy(true);
       setDeleteError('');
-      await deleteFinancialEntry(String(deleteTarget.id), {
+      const deletingDescription = deleteTarget.description || 'o lançamento';
+      const result = await deleteFinancialEntry(String(deleteTarget.id), {
         reason: deleteReason.trim(),
         stop_recurring: Boolean(deleteTarget.recurring_rule_id && deleteStopRecurring),
       });
@@ -773,7 +801,8 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       setDeleteTarget(null);
       setDeleteReason('');
       setDeleteStopRecurring(false);
-      showToast('Exclusão solicitada com segurança. O lançamento sairá definitivamente após a sincronização.');
+      showToast('Exclusão confirmada. Aguardando a sincronização automática com o PDV.');
+      if (result?.command_id) monitorDeleteCommand(String(result.command_id), deletingDescription);
       refreshAfterSync();
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : 'Não foi possível excluir o lançamento.');
