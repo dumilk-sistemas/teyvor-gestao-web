@@ -53,6 +53,41 @@ function addDaysIso(iso: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function paymentTermOffsets(value: unknown) {
+  const normalized = String(value || '').trim().toLocaleLowerCase('pt-BR').replace(/\s+/g, '');
+  if (normalized === 'àvista' || normalized === 'avista') return [0];
+
+  const slashMatch = normalized.match(/^(\d+(?:\/\d+)+)(?:dias?)?$/);
+  if (slashMatch) {
+    const offsets = slashMatch[1].split('/').map(Number);
+    const sortedUnique = [...new Set(offsets)].sort((left, right) => left - right);
+    return offsets.length <= 24 && offsets.every((offset) => offset <= 3650) && offsets.every((offset, index) => offset === sortedUnique[index])
+      ? offsets
+      : [];
+  }
+
+  const daysMatch = normalized.match(/^(\d+)(?:dias?)?$/);
+  if (!daysMatch) return [];
+  const offset = Number(daysMatch[1]);
+  return offset <= 3650 ? [offset] : [];
+}
+
+function paymentSchedulePreview(total: number, dueDate: string, terms: string) {
+  const offsets = paymentTermOffsets(terms);
+  const dueDates = offsets.length > 1
+    ? offsets.map((offset) => addDaysIso(dueDate, offset - offsets[0]))
+    : [dueDate];
+  const totalCents = Math.round(total * 100);
+  const baseCents = Math.floor(totalCents / dueDates.length);
+  const remainder = totalCents - baseCents * dueDates.length;
+  return dueDates.map((date, index) => ({
+    installment: index + 1,
+    installments: dueDates.length,
+    dueDate: date,
+    amount: (baseCents + (index === dueDates.length - 1 ? remainder : 0)) / 100,
+  }));
+}
+
 type XmlPurchaseItem = {
   key: string;
   supplierCode: string;
@@ -301,15 +336,24 @@ export default function FullPurchases() {
     }));
   };
 
+  const changeCustomPaymentTerm = (value: string) => {
+    setForm((current) => {
+      const offsets = paymentTermOffsets(value);
+      return {
+        ...current,
+        paymentTerms: value,
+        dueDate: offsets.length ? addDaysIso(current.date, offsets[0]) : current.dueDate,
+      };
+    });
+  };
+
   const changePurchaseDate = (value: string) => {
     setForm((current) => {
-      const suggestion = paymentTermSuggestions.find(
-        (item) => item.value === current.paymentTerms
-      );
+      const offsets = paymentTermOffsets(current.paymentTerms);
       return {
         ...current,
         date: value,
-        dueDate: suggestion ? addDaysIso(value, suggestion.days[0]) : current.dueDate,
+        dueDate: offsets.length ? addDaysIso(value, offsets[0]) : current.dueDate,
       };
     });
   };
@@ -605,6 +649,7 @@ export default function FullPurchases() {
     (sum, item) => sum + purchaseLineSubtotal(item.qty, item.cost),
     0
   );
+  const payableSchedule = paymentSchedulePreview(total, form.dueDate, form.paymentTerms);
 
   return (
     <AdminShell
@@ -847,13 +892,13 @@ export default function FullPurchases() {
           <Field
             label="Descrição da condição"
             value={form.paymentTerms === 'Personalizada' ? '' : form.paymentTerms}
-            onChangeText={(value) => set('paymentTerms', value)}
+            onChangeText={changeCustomPaymentTerm}
             placeholder="Ex.: 10/20/30 ou condição negociada"
           />
         )}
 
         <DateField
-          label={['21/45', '30/60'].includes(form.paymentTerms) ? 'Primeiro vencimento' : 'Vencimento'}
+          label={payableSchedule.length > 1 ? 'Primeiro vencimento' : 'Vencimento'}
           value={form.dueDate}
           onChangeText={(value) =>
             set('dueDate', value)
@@ -881,8 +926,16 @@ export default function FullPurchases() {
           ]}
         />
 
+        {form.generatePayable === 'true' && payableSchedule.length > 1 && (
+          <Notice
+            text={`Serão geradas ${payableSchedule.length} contas a pagar: ${payableSchedule
+              .map((installment) => `${installment.installment}/${installment.installments} de ${money(installment.amount)} em ${formatDateBR(installment.dueDate)}`)
+              .join(' • ')}`}
+          />
+        )}
+
         <Notice
-          text="A entrada no estoque é automática ao confirmar: cada quantidade é somada ao saldo do produto. A opção acima controla apenas a geração da conta a pagar."
+          text="A entrada no estoque é automática ao confirmar. A compra mantém o valor total da nota; quando a condição contém vários prazos, o Financeiro gera uma conta a pagar para cada parcela."
         />
 
         <Text style={s.cardTitle}>
