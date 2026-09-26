@@ -28,6 +28,9 @@ const money = (value: number) =>
     currency: 'BRL',
   }).format(value || 0);
 
+const purchaseLineSubtotal = (qty: unknown, cost: unknown) =>
+  Math.round(Number(qty || 0) * Number(cost || 0) * 100) / 100;
+
 const today = () =>
   new Date().toISOString().slice(0, 10);
 
@@ -539,7 +542,18 @@ export default function FullPurchases() {
             documentTotal: xmlDocumentTotal,
             generatePayable:
               form.generatePayable === 'true',
-            items: lines,
+            // O preço de venda é apenas uma referência/atualização de
+            // cadastro. O recebimento leva somente quantidade e custo.
+            items: lines.map((item) => ({
+              productId: item.productId,
+              qty: Number(item.qty || 0),
+              cost: Number(item.cost || 0),
+              subtotal: purchaseLineSubtotal(item.qty, item.cost),
+            })),
+            total: lines.reduce(
+              (sum, item) => sum + purchaseLineSubtotal(item.qty, item.cost),
+              0
+            ),
           },
         }
       );
@@ -588,8 +602,7 @@ export default function FullPurchases() {
   }
 
   const total = lines.reduce(
-    (sum, item) =>
-      sum + item.qty * item.cost,
+    (sum, item) => sum + purchaseLineSubtotal(item.qty, item.cost),
     0
   );
 
@@ -984,33 +997,39 @@ export default function FullPurchases() {
                   {item.qty} ×{' '}
                   {money(item.cost)}
                   {item.price !== null && item.price !== undefined
-                    ? ` • venda ${money(item.price)}`
+                    ? ` • preço de venda informativo ${money(item.price)}`
                     : ''}
                 </Text>
               </View>
 
-              <ActionButton
-                label="Remover"
-                tone="danger"
-                onPress={() =>
-                  setLines((current) =>
-                    current.filter(
-                      (
-                        _,
-                        itemIndex
-                      ) =>
-                        itemIndex !==
-                        index
+              <View style={s.right}>
+                <Text style={s.amount}>
+                  {money(purchaseLineSubtotal(item.qty, item.cost))}
+                </Text>
+                <Text style={s.meta}>Quantidade × custo unitário</Text>
+                <ActionButton
+                  label="Remover"
+                  tone="danger"
+                  onPress={() =>
+                    setLines((current) =>
+                      current.filter(
+                        (
+                          _,
+                          itemIndex
+                        ) =>
+                          itemIndex !==
+                          index
+                      )
                     )
-                  )
-                }
-              />
+                  }
+                />
+              </View>
             </View>
           );
         })}
 
         <Text style={s.amount}>
-          Total: {money(total)}
+          Total da compra (quantidade × custo): {money(total)}
         </Text>
 
         {form.source === 'xml' && xmlDocumentTotal !== null && (
