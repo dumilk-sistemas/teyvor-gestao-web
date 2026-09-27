@@ -175,6 +175,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteStopRecurring, setDeleteStopRecurring] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [expandedReceivableDates, setExpandedReceivableDates] = useState<Set<string>>(new Set());
 
   const [monthlyOpen, setMonthlyOpen] = useState(false);
   const [monthlyMonth, setMonthlyMonth] = useState(currentMonthString());
@@ -314,6 +315,29 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       return listStatus === 'settled' ? settled : !settled;
     });
   }, [data, listStart, listEnd, listStatus, view]);
+
+  const cardReceivablesByDate = useMemo(() => {
+    const groups = new Map<string, any[]>();
+    for (const row of visibleCardReceivables) {
+      const date = String(row.date || 'Sem data');
+      groups.set(date, [...(groups.get(date) || []), row]);
+    }
+    return Array.from(groups.entries()).map(([date, rows]) => ({
+      date,
+      rows,
+      total: rows.reduce((sum, row) => sum + Number(row.net || 0), 0),
+      methods: Array.from(new Set(rows.map((row) => String(row.method || 'Outros')))),
+    }));
+  }, [visibleCardReceivables]);
+
+  function toggleReceivableDate(date: string) {
+    setExpandedReceivableDates((current) => {
+      const next = new Set(current);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  }
 
   const salesReceivablesSummary = useMemo(() => {
     const rows = (data?.card_receivables || []).filter((row: any) =>
@@ -1176,67 +1200,72 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                   : 'Recebíveis de vendas — Pix e cartões'}
               </Text>
 
-            {visibleCardReceivables
-              .length > 0 ? (
-              (
-                visibleCardReceivables
-              ).map((row: any) => (
-                <View
-                  key={String(row.key)}
-                  style={s.row}
-                >
-                  <View style={s.main}>
-                    <Text style={s.name}>
-                      Venda #{row.sale_number}{' '}
-                      • {row.method}
-                    </Text>
+            {cardReceivablesByDate.length > 0 ? (
+              cardReceivablesByDate.map((group) => {
+                const expanded = expandedReceivableDates.has(group.date);
+                return (
+                  <View key={group.date} style={monthlyStyles.receivableDayGroup}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded }}
+                      style={monthlyStyles.receivableDayHeader}
+                      onPress={() => toggleReceivableDate(group.date)}
+                    >
+                      <View style={monthlyStyles.receivableDayMain}>
+                        <Text style={monthlyStyles.receivableDayTitle}>
+                          {listStatus === 'settled' ? 'Recebido em' : 'Previsto para'} {formatDateBR(group.date)}
+                        </Text>
+                        <Text style={monthlyStyles.receivableDayMeta}>
+                          {group.rows.length} recebível(is) • {group.methods.join(', ')}
+                        </Text>
+                      </View>
+                      <View style={monthlyStyles.receivableDayRight}>
+                        <Text style={monthlyStyles.receivableDayTotal}>{money(group.total)}</Text>
+                        <Text style={monthlyStyles.receivableDayToggle}>
+                          {expanded ? 'Ocultar detalhes ⌃' : 'Ver detalhes ⌄'}
+                        </Text>
+                      </View>
+                    </Pressable>
 
-                    <Text style={s.meta}>
-                      Parcela{' '}
-                      {row.installment}/
-                      {row.installments} •
-                      previsão {formatDateBR(row.date)}
-                    </Text>
-                    {(data.accounts || []).length > 0 && (
-                      <AccountPicker
-                        label="Conta de destino"
-                        options={(data.accounts || []).map((account: any) => ({
-                          label: account.name,
-                          value: String(account.id),
-                        }))}
-                        value={row.account_id != null ? String(row.account_id) : ''}
-                        onChange={(value) => handleSetReceivableAccount(row.key, value ? Number(value) : null)}
-                        emptyLabel="Usar a conta padrão desta forma de pagamento"
-                      />
-                    )}
+                    {expanded && group.rows.map((row: any) => (
+                      <View key={String(row.key)} style={s.row}>
+                        <View style={s.main}>
+                          <Text style={s.name}>
+                            Venda #{row.sale_number} • {row.method}
+                          </Text>
+                          <Text style={s.meta}>
+                            Parcela {row.installment}/{row.installments} • previsão {formatDateBR(row.date)}
+                          </Text>
+                          {(data.accounts || []).length > 0 && (
+                            <AccountPicker
+                              label="Conta de destino"
+                              options={(data.accounts || []).map((account: any) => ({
+                                label: account.name,
+                                value: String(account.id),
+                              }))}
+                              value={row.account_id != null ? String(row.account_id) : ''}
+                              onChange={(value) => handleSetReceivableAccount(row.key, value ? Number(value) : null)}
+                              emptyLabel="Usar a conta padrão desta forma de pagamento"
+                            />
+                          )}
+                        </View>
+
+                        <View style={s.right}>
+                          <Text style={s.amount}>{money(row.net)}</Text>
+                          <Text style={s.badge}>{row.status}</Text>
+                          {row.status === 'Previsto' && row.method === 'Crédito' && (
+                            <ActionButton
+                              label="Antecipar"
+                              tone="gold"
+                              onPress={() => startAnticipate(row)}
+                            />
+                          )}
+                        </View>
+                      </View>
+                    ))}
                   </View>
-
-                  <View style={s.right}>
-                    <Text style={s.amount}>
-                      {money(row.net)}
-                    </Text>
-
-                    <Text style={s.badge}>
-                      {row.status}
-                    </Text>
-
-                    {row.status ===
-                      'Previsto' &&
-                      row.method ===
-                        'Crédito' && (
-                        <ActionButton
-                          label="Antecipar"
-                          tone="gold"
-                          onPress={() =>
-                            startAnticipate(
-                              row
-                            )
-                          }
-                        />
-                      )}
-                  </View>
-                </View>
-              ))
+                );
+              })
             ) : (
               <Text style={s.empty}>
                 Nenhum recebível de Pix, débito ou crédito.
@@ -1949,6 +1978,43 @@ const monthlyStyles = StyleSheet.create({
     paddingVertical: 3,
   },
   entryStatusDanger: { backgroundColor: '#FDECEC', color: theme.colors.danger },
+  receivableDayGroup: {
+    borderTopColor: theme.colors.border,
+    borderTopWidth: 1,
+  },
+  receivableDayHeader: {
+    alignItems: 'center',
+    backgroundColor: '#FAFAF8',
+    flexDirection: 'row',
+    gap: 14,
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
+  receivableDayMain: { flex: 1, minWidth: 180 },
+  receivableDayTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 13,
+  },
+  receivableDayMeta: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+    marginTop: 3,
+  },
+  receivableDayRight: { alignItems: 'flex-end' },
+  receivableDayTotal: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 15,
+  },
+  receivableDayToggle: {
+    color: '#7A5B16',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    marginTop: 3,
+  },
   periodBar: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',

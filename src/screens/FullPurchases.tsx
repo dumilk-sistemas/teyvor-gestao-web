@@ -31,6 +31,30 @@ const money = (value: number) =>
 const purchaseLineSubtotal = (qty: unknown, cost: unknown) =>
   Math.round(Number(qty || 0) * Number(cost || 0) * 100) / 100;
 
+const payableStatusLabel = (value: unknown) => ({
+  open: 'Em aberto',
+  overdue: 'Vencido',
+  paid: 'Pago',
+  received: 'Recebido',
+  partial: 'Parcialmente pago',
+  not_generated: 'Não gerado',
+}[String(value || '')] || String(value || 'Não informado'));
+
+const purchasePaymentMethodToPlanned = (value: unknown) => {
+  const method = String(value || '').trim();
+  if (method === 'Crédito') return 'Cartão de crédito';
+  if (method === 'Débito') return 'Cartão de débito';
+  if (method === 'Depósito') return 'Transferência';
+  return method || 'Outros';
+};
+
+const plannedPaymentMethodToPurchase = (value: unknown) => {
+  const method = String(value || '').trim();
+  if (method === 'Cartão de crédito') return 'Crédito';
+  if (method === 'Cartão de débito') return 'Débito';
+  return method || 'Outros';
+};
+
 const today = () =>
   new Date().toISOString().slice(0, 10);
 
@@ -183,6 +207,15 @@ export default function FullPurchases() {
   const [xmlPending, setXmlPending] = useState<XmlPurchaseItem[]>([]);
   const [xmlNotice, setXmlNotice] = useState('');
   const [xmlDocumentTotal, setXmlDocumentTotal] = useState<number | null>(null);
+  const [viewPurchase, setViewPurchase] = useState<any>(null);
+  const [editPurchase, setEditPurchase] = useState<any>(null);
+  const [editError, setEditError] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editForm, setEditForm] = useState({
+    dueDate: today(),
+    paymentMethod: 'Boleto',
+    paymentTerms: 'À vista',
+  });
 
   const filteredRows = useMemo(() => {
     const rows = data?.rows || [];
@@ -645,6 +678,110 @@ export default function FullPurchases() {
     }
   }
 
+  function startEditPurchase(row: any) {
+    setEditError('');
+    setEditForm({
+      dueDate: row.payables?.[0]?.due_date || row.due_date || row.date || today(),
+      paymentMethod: plannedPaymentMethodToPurchase(row.payables?.[0]?.planned_payment_method || row.payment_method || 'Boleto'),
+      paymentTerms: row.payables?.[0]?.payment_terms || row.payment_terms || 'À vista',
+    });
+    setEditPurchase(row);
+  }
+
+  function changeEditPaymentTerm(value: string) {
+    setEditForm((current) => {
+      if (value === 'custom') {
+        return { ...current, paymentTerms: 'Personalizada' };
+      }
+      const suggestion = paymentTermSuggestions.find((item) => item.value === value);
+      return suggestion
+        ? {
+            ...current,
+            paymentTerms: suggestion.value,
+            dueDate: addDaysIso(editPurchase?.date || today(), suggestion.days[0]),
+          }
+        : current;
+    });
+  }
+
+  function changeEditCustomTerm(value: string) {
+    setEditForm((current) => {
+      const offsets = paymentTermOffsets(value);
+      return {
+        ...current,
+        paymentTerms: value,
+        dueDate: offsets.length
+          ? addDaysIso(editPurchase?.date || today(), offsets[0])
+          : current.dueDate,
+      };
+    });
+  }
+
+  async function savePurchaseFinancialPlan() {
+    if (!editPurchase) return;
+    try {
+      setEditBusy(true);
+      setEditError('');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(editForm.dueDate)) {
+        setEditError('Informe o primeiro vencimento.');
+        return;
+      }
+      if (paymentTermOffsets(editForm.paymentTerms).length === 0) {
+        setEditError('Informe uma condição válida, como À vista, 21/35 ou 30/60/90.');
+        return;
+      }
+      const schedule = paymentSchedulePreview(
+        Number(editPurchase.total || 0),
+        editForm.dueDate,
+        editForm.paymentTerms
+      );
+      const existingPayables = Array.isArray(editPurchase.payables)
+        ? editPurchase.payables
+        : [];
+      const settled = existingPayables.filter((entry: any) =>
+        ['paid', 'received'].includes(String(entry.raw_status || entry.status || '').toLowerCase())
+      );
+      if (settled.length > 0) {
+        setEditError('Esta compra possui parcela já paga. Estorne a baixa no Financeiro antes de alterar o parcelamento.');
+        return;
+      }
+      if (schedule.length < existingPayables.length) {
+        setEditError(`A compra já possui ${existingPayables.length} lançamentos. Para reduzir a quantidade de parcelas, exclua primeiro os lançamentos excedentes no Financeiro.`);
+        return;
+      }
+      const plannedMethod = purchasePaymentMethodToPlanned(editForm.paymentMethod);
+      for (let index = 0; index < schedule.length; index += 1) {
+        const installment = schedule[index];
+        const existing = existingPayables[index];
+        await enqueue('finance', 'FINANCIAL_ENTRY_UPSERT', {
+          entry: {
+            id: existing?.id || `FIN-${editPurchase.id}-${installment.installment}`,
+            type: 'payable',
+            description: `Compra ${editPurchase.document || editPurchase.id} - ${editPurchase.supplier}${schedule.length > 1 ? ` • Parcela ${installment.installment}/${schedule.length}` : ''}`,
+            categoryId: existing?.category_id || 'DESP-COMPRAS',
+            supplierId: editPurchase.supplier_id,
+            purchaseId: editPurchase.id,
+            amount: installment.amount,
+            competenceDate: existing?.competence_date || editPurchase.date,
+            dueDate: installment.dueDate,
+            plannedPaymentMethod: plannedMethod,
+            installment: installment.installment,
+            installments: schedule.length,
+            paymentTerms: editForm.paymentTerms,
+            notes: `Parcelamento da compra ${editPurchase.id} corrigido pelo Gestão 360`,
+          },
+        });
+      }
+      setEditPurchase(null);
+      showToast(`${schedule.length} parcela(s) enviada(s) para sincronização.`, 'success');
+      setTimeout(load, 1200);
+    } catch (cause) {
+      setEditError(cause instanceof Error ? cause.message : 'Não foi possível corrigir o parcelamento.');
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   const total = lines.reduce(
     (sum, item) => sum + purchaseLineSubtotal(item.qty, item.cost),
     0
@@ -762,6 +899,19 @@ export default function FullPurchases() {
                         item(ns) • vence{' '}
                         {formatDateBR(row.due_date)}
                       </Text>
+
+                      <View style={[s.toolbar, { justifyContent: 'flex-start', marginTop: 10 }]}>
+                        <ActionButton
+                          label="Visualizar"
+                          tone="plain"
+                          onPress={() => setViewPurchase(row)}
+                        />
+                        <ActionButton
+                          label="Editar"
+                          tone="gold"
+                          onPress={() => startEditPurchase(row)}
+                        />
+                      </View>
                     </View>
 
                     <View style={s.right}>
@@ -770,7 +920,7 @@ export default function FullPurchases() {
                       </Text>
 
                       <Text style={s.badge}>
-                        {row.payable_status}
+                        {payableStatusLabel(row.payable_status)}
                       </Text>
                     </View>
                   </View>
@@ -1104,6 +1254,119 @@ export default function FullPurchases() {
           }
           multiline
         />
+      </FormModal>
+
+      <FormModal
+        visible={!!viewPurchase}
+        title="Detalhes da compra"
+        onCancel={() => setViewPurchase(null)}
+        onSave={() => setViewPurchase(null)}
+        saveLabel="Fechar"
+        hideCancel
+        wide
+      >
+        {!!viewPurchase && (
+          <>
+            <View style={s.card}>
+              <View style={s.row}>
+                <View style={s.main}>
+                  <Text style={s.name}>{viewPurchase.supplier}</Text>
+                  <Text style={s.meta}>
+                    Recebimento {formatDateBR(viewPurchase.date)} • {viewPurchase.document_type || 'Documento'} {viewPurchase.document || 'não informado'}
+                  </Text>
+                  {!!viewPurchase.notes && <Text style={s.meta}>Observação: {viewPurchase.notes}</Text>}
+                </View>
+                <Text style={s.amount}>{money(viewPurchase.total)}</Text>
+              </View>
+            </View>
+
+            <Text style={s.cardTitle}>Itens recebidos</Text>
+            <View style={s.card}>
+              {(viewPurchase.items_detail || []).map((item: any, index: number) => (
+                <View key={`${item.product_id}-${index}`} style={s.row}>
+                  <View style={s.main}>
+                    <Text style={s.name}>{item.name}</Text>
+                    <Text style={s.meta}>
+                      {item.code ? `${item.code} • ` : ''}{item.qty} {item.unit} × {money(item.cost)}
+                    </Text>
+                  </View>
+                  <Text style={s.amount}>{money(item.subtotal)}</Text>
+                </View>
+              ))}
+            </View>
+
+            <Text style={s.cardTitle}>Contas a pagar</Text>
+            <View style={s.card}>
+              {(viewPurchase.payables || []).length > 0 ? (
+                (viewPurchase.payables || []).map((entry: any, index: number) => (
+                  <View key={String(entry.id || index)} style={s.row}>
+                    <View style={s.main}>
+                      <Text style={s.name}>
+                        {entry.installments > 1 ? `Parcela ${entry.installment || index + 1}/${entry.installments}` : 'Parcela única'}
+                      </Text>
+                      <Text style={s.meta}>
+                        Vence {formatDateBR(entry.due_date)} • {entry.planned_payment_method || 'Forma não informada'} • {payableStatusLabel(entry.status)}
+                      </Text>
+                    </View>
+                    <Text style={s.amount}>{money(entry.amount)}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={s.empty}>Nenhuma conta a pagar vinculada a esta compra.</Text>
+              )}
+            </View>
+          </>
+        )}
+      </FormModal>
+
+      <FormModal
+        visible={!!editPurchase}
+        title="Editar parcelamento da compra"
+        onCancel={() => setEditPurchase(null)}
+        onSave={savePurchaseFinancialPlan}
+        saveLabel="Salvar parcelamento"
+        busy={editBusy}
+        errorText={editError}
+        wide
+      >
+        {!!editPurchase && (
+          <>
+            <Notice text={`${editPurchase.supplier} • ${editPurchase.document || 'Sem documento'} • Total ${money(editPurchase.total)}. Itens, custos e estoque permanecem inalterados.`} />
+            <SearchablePicker
+              label="Forma prevista de pagamento"
+              value={editForm.paymentMethod}
+              onChange={(value) => setEditForm((current) => ({ ...current, paymentMethod: value }))}
+              options={['Boleto', 'Cheque', 'Pix', 'Dinheiro', 'Crédito', 'Débito', 'Transferência', 'Depósito', 'Outros'].map((value) => ({ label: value, value }))}
+            />
+            <SearchablePicker
+              label="Condição de pagamento"
+              value={paymentTermSuggestions.some((item) => item.value === editForm.paymentTerms) ? editForm.paymentTerms : 'custom'}
+              onChange={changeEditPaymentTerm}
+              options={[
+                ...paymentTermSuggestions.map(({ label, value, description }) => ({ label, value, description })),
+                { label: 'Outra condição', value: 'custom', description: 'Ex.: 14/21, 21/35 ou 30/60/90' },
+              ]}
+            />
+            {!paymentTermSuggestions.some((item) => item.value === editForm.paymentTerms) && (
+              <Field
+                label="Descrição da condição"
+                value={editForm.paymentTerms === 'Personalizada' ? '' : editForm.paymentTerms}
+                onChangeText={changeEditCustomTerm}
+                placeholder="Ex.: 21/35"
+              />
+            )}
+            <DateField
+              label="Primeiro vencimento"
+              value={editForm.dueDate}
+              onChangeText={(value) => setEditForm((current) => ({ ...current, dueDate: value }))}
+            />
+            <Notice
+              text={`Novo plano: ${paymentSchedulePreview(Number(editPurchase.total || 0), editForm.dueDate, editForm.paymentTerms)
+                .map((installment) => `${installment.installment}/${installment.installments} de ${money(installment.amount)} em ${formatDateBR(installment.dueDate)}`)
+                .join(' • ')}`}
+            />
+          </>
+        )}
       </FormModal>
     </AdminShell>
   );
