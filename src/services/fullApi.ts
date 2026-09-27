@@ -40,6 +40,19 @@ export async function enqueue(module: string, action: string, payload: Record<st
   });
 }
 
+export async function enqueueBatch(
+  commands: Array<{ module: string; action: string; payload: Record<string, unknown> }>
+) {
+  return fullRequest<{
+    ok: boolean;
+    count: number;
+    commands: Array<{ command_id: string; status: string; payload: Record<string, unknown> }>;
+  }>('/admin/commands/batch', {
+    method: 'POST',
+    body: JSON.stringify({ commands }),
+  });
+}
+
 export const commandMessage = 'Comando enviado. A sincronização com o PDV é automática e normalmente aparece em alguns segundos.';
 
 // Foto do produto e um dado so da nuvem (nao muda a logica de venda do

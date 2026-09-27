@@ -79,23 +79,11 @@ export default function FullSettings() {
             'portrait'
         ),
 
-        debitBusinessDays: String(
-          paymentSettings.debitBusinessDays ||
-            1
-        ),
-        creditOffsets: (
-          paymentSettings.creditOffsets || [
-            30,
-            60,
-            90,
-          ]
-        ).join(','),
         debitFeePercent: String(paymentSettings.debitFeePercent || 0).replace('.', ','),
         creditFeeRates: (paymentSettings.creditFeeRates || [0, 0, 0])
           .map((value: number) => String(value).replace('.', ','))
           .join(';'),
         pixFeePercent: String(paymentSettings.pixFeePercent || 0).replace('.', ','),
-        creditRollForwardBusinessDay: String(paymentSettings.creditRollForwardBusinessDay !== false),
       });
     } catch (e) {
       setError(
@@ -126,19 +114,6 @@ export default function FullSettings() {
     try {
       setBusy(true);
       setError('');
-
-      const offsets = String(
-        form.creditOffsets || '30,60,90'
-      )
-        .split(',')
-        .map((value: string) =>
-          Number(value.trim())
-        )
-        .filter(
-          (value: number) =>
-            Number.isFinite(value) &&
-            value > 0
-        );
 
       const creditFeeRates = String(form.creditFeeRates || '0;0;0')
         .split(';')
@@ -181,14 +156,12 @@ export default function FullSettings() {
           },
 
           paymentSettings: {
-            debitBusinessDays: Number(
-              form.debitBusinessDays
-            ),
-            creditOffsets: offsets,
+            debitBusinessDays: 1,
+            creditOffsets: [30, 60, 90],
             debitFeePercent: Number(String(form.debitFeePercent || '0').replace(',', '.')),
             creditFeeRates,
             pixFeePercent: Number(String(form.pixFeePercent || '0').replace(',', '.')),
-            creditRollForwardBusinessDay: form.creditRollForwardBusinessDay !== 'false',
+            creditRollForwardBusinessDay: false,
           },
         }
       );
@@ -452,35 +425,7 @@ export default function FullSettings() {
             gap: 12,
           }}
         >
-          <Field
-            label="Débito: dias úteis"
-            value={
-              form.debitBusinessDays ||
-              '1'
-            }
-            onChangeText={(value) =>
-              set(
-                'debitBusinessDays',
-                value
-              )
-            }
-            keyboardType="number-pad"
-          />
-
-          <Field
-            label="Crédito: dias das parcelas (separados por vírgula)"
-            value={
-              form.creditOffsets ||
-              '30,60,90'
-            }
-            onChangeText={(value) =>
-              set(
-                'creditOffsets',
-                value
-              )
-            }
-            placeholder="30,60,90"
-          />
+          <Notice text="Agenda oficial: Dinheiro e Pix em D+0; Débito em D+1 dia útil; Crédito em D+30, D+60 e D+90 dias corridos. Crédito mantém a data mesmo em fim de semana ou feriado." />
 
           <Field
             label="Taxa do débito (%)"
@@ -501,16 +446,6 @@ export default function FullSettings() {
             value={form.pixFeePercent || '0'}
             onChangeText={(value) => set('pixFeePercent', value)}
             keyboardType="decimal-pad"
-          />
-
-          <Choice
-            label="Crédito em fim de semana ou feriado"
-            value={form.creditRollForwardBusinessDay || 'true'}
-            onChange={(value) => set('creditRollForwardBusinessDay', value)}
-            options={[
-              { label: 'Próximo dia útil', value: 'true' },
-              { label: 'Manter a data', value: 'false' },
-            ]}
           />
 
           <Notice text="Informe as taxas conforme o contrato ou extrato da operadora. Taxa zero mantém o valor bruto. As alterações ajustam as projeções financeiras, sem alterar as vendas registradas." />

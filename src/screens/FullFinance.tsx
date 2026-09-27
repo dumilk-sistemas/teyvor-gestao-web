@@ -23,6 +23,7 @@ import {
   createRecurringRule,
   deleteFinancialEntry,
   enqueue,
+  enqueueBatch,
   getFull,
   getMonthlyFinanceReport,
   getRemoteCommandStatus,
@@ -104,6 +105,29 @@ const parseMoneyInput = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+const anticipationTotals = (rows: any[], rateInput: unknown) => {
+  const rate = Math.max(0, Math.min(100, parseMoneyInput(rateInput)));
+  return (rows || []).reduce(
+    (totals, row) => {
+      const gross = roundMoney(Number(row.gross || 0));
+      const originalFee = roundMoney(Number(row.fee || 0));
+      const expectedNet = roundMoney(Number(row.net || gross - originalFee));
+      const anticipationFee = roundMoney(expectedNet * rate / 100);
+      return {
+        rate,
+        gross: roundMoney(totals.gross + gross),
+        originalFee: roundMoney(totals.originalFee + originalFee),
+        expectedNet: roundMoney(totals.expectedNet + expectedNet),
+        anticipationFee: roundMoney(totals.anticipationFee + anticipationFee),
+        finalNet: roundMoney(totals.finalNet + expectedNet - anticipationFee),
+      };
+    },
+    { rate, gross: 0, originalFee: 0, expectedNet: 0, anticipationFee: 0, finalNet: 0 }
+  );
+};
+
 const validIsoDate = (value: unknown) => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return false;
@@ -176,6 +200,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [deleteStopRecurring, setDeleteStopRecurring] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [expandedReceivableDates, setExpandedReceivableDates] = useState<Set<string>>(new Set());
+  const [selectedReceivableDates, setSelectedReceivableDates] = useState<Set<string>>(new Set());
 
   const [monthlyOpen, setMonthlyOpen] = useState(false);
   const [monthlyMonth, setMonthlyMonth] = useState(currentMonthString());
@@ -327,8 +352,38 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       rows,
       total: rows.reduce((sum, row) => sum + Number(row.net || 0), 0),
       methods: Array.from(new Set(rows.map((row) => String(row.method || 'Outros')))),
+      eligibleRows: rows.filter((row) => row.status === 'Previsto' && row.method === 'Crédito'),
     }));
   }, [visibleCardReceivables]);
+
+  const selectedReceivableRows = useMemo(
+    () => cardReceivablesByDate
+      .filter((group) => selectedReceivableDates.has(group.date))
+      .flatMap((group) => group.eligibleRows),
+    [cardReceivablesByDate, selectedReceivableDates]
+  );
+
+  useEffect(() => {
+    const availableDates = new Set(
+      cardReceivablesByDate
+        .filter((group) => group.eligibleRows.length > 0)
+        .map((group) => group.date)
+    );
+    setSelectedReceivableDates((current) => {
+      const next = new Set(Array.from(current).filter((date) => availableDates.has(date)));
+      return next.size === current.size ? current : next;
+    });
+  }, [cardReceivablesByDate]);
+
+  const selectedReceivableTotal = useMemo(
+    () => selectedReceivableRows.reduce((sum, row) => sum + Number(row.net || 0), 0),
+    [selectedReceivableRows]
+  );
+
+  const anticipationPreview = useMemo(
+    () => anticipationTotals(form.rows || [], form.anticipationRate || '0'),
+    [form.anticipationRate, form.rows]
+  );
 
   function toggleReceivableDate(date: string) {
     setExpandedReceivableDates((current) => {
@@ -337,6 +392,36 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       else next.add(date);
       return next;
     });
+  }
+
+  function toggleReceivableDateSelection(date: string) {
+    setSelectedReceivableDates((current) => {
+      const next = new Set(current);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  }
+
+  function startAnticipateRows(rows: any[], selectedDates?: string[]) {
+    const eligible = rows.filter((row) => row.status === 'Previsto' && row.method === 'Crédito');
+    if (!eligible.length) {
+      showToast('Não existem recebíveis de crédito disponíveis para antecipação.', 'error');
+      return;
+    }
+    setModalError('');
+    setMode('anticipate');
+    setForm({
+      rows: eligible,
+      description: selectedDates?.length
+        ? `${selectedDates.length} dia(s) selecionado(s) • ${eligible.length} parcela(s)`
+        : `${eligible.length} parcela(s) de crédito`,
+      selectedDates: selectedDates || Array.from(new Set(eligible.map((row) => row.date))),
+      date: today(),
+      anticipationRate: '0,00',
+      accountId: '',
+    });
+    setOpen(true);
   }
 
   const salesReceivablesSummary = useMemo(() => {
@@ -538,24 +623,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
     setOpen(true);
   };
 
-  const startAnticipate = (
-    row: any
-  ) => {
-    setModalError('');
-    setMode('anticipate');
-
-    setForm({
-      receivableKey: row.key,
-      description: `Venda #${row.sale_number} • ${row.installment}/${row.installments}`,
-      date: today(),
-      gross: String(
-        row.gross || 0
-      ).replace('.', ','),
-      fee: '0,00',
-    });
-
-    setOpen(true);
-  };
+  const startAnticipate = (row: any) => startAnticipateRows([row], [row.date]);
 
   async function save() {
     try {
@@ -693,36 +761,66 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
           }
         );
       } else {
-        const gross = Number(
-          String(
-            form.gross || '0'
-          ).replace(',', '.')
-        );
+        const rows = (form.rows || []).filter((row: any) => row.status === 'Previsto' && row.method === 'Crédito');
+        if (!rows.length) {
+          setModalError('Nenhum recebível disponível para antecipação.');
+          return;
+        }
+        if (!validIsoDate(form.date)) {
+          setModalError('Informe uma data válida para a antecipação.');
+          return;
+        }
+        const earliestDueDate = [...rows].map((row: any) => String(row.date)).sort()[0];
+        const latestSaleDate = [...rows].map((row: any) => String(row.sale_date || '')).sort().reverse()[0];
+        if ((latestSaleDate && form.date < latestSaleDate) || form.date > earliestDueDate) {
+          setModalError(`A antecipação deve ficar entre ${formatDateBR(latestSaleDate)} e ${formatDateBR(earliestDueDate)}.`);
+          return;
+        }
+        const batchId = `ANT-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+        const rate = anticipationPreview.rate;
+        const commands = rows.map((row: any) => {
+          const gross = roundMoney(Number(row.gross || 0));
+          const originalFee = roundMoney(Number(row.fee || 0));
+          const expectedNet = roundMoney(Number(row.net || gross - originalFee));
+          const anticipationFee = roundMoney(expectedNet * rate / 100);
+          const totalFee = roundMoney(originalFee + anticipationFee);
+          const finalNet = roundMoney(gross - totalFee);
+          return {
+            module: 'finance',
+            action: 'CARD_ANTICIPATE',
+            payload: {
+              batchId,
+              receivableKey: row.key,
+              saleId: row.sale_id,
+              saleNumber: row.sale_number,
+              installment: row.installment,
+              installments: row.installments,
+              originalDate: row.original_date || row.date,
+              anticipationDate: form.date,
+              grossAmount: gross,
+              originalFeeAmount: originalFee,
+              anticipationFeeAmount: anticipationFee,
+              anticipationRate: rate,
+              feeAmount: totalFee,
+              netAmount: finalNet,
+            },
+          };
+        });
 
-        const fee = Number(
-          String(
-            form.fee || '0'
-          ).replace(',', '.')
-        );
-
-        await enqueue(
-          'finance',
-          'CARD_ANTICIPATE',
-          {
-            receivableKey:
-              form.receivableKey,
-            anticipationDate:
-              form.date,
-            grossAmount: gross,
-            feeAmount: fee,
-            netAmount: gross - fee,
-          }
-        );
+        if (form.accountId) {
+          await Promise.all(rows.map((row: any) =>
+            setEntryAccount(`CARD:${row.key}`, Number(form.accountId))
+          ));
+        }
+        await enqueueBatch(commands);
+        setSelectedReceivableDates(new Set());
       }
 
       const successMessage = mode === 'entry'
         ? `${form.type === 'receivable' ? 'Conta a receber' : 'Conta a pagar'} ${form.id ? 'atualizada' : 'salva'} com sucesso. A sincronização será concluída automaticamente.`
-        : commandMessage;
+        : mode === 'anticipate'
+          ? `${(form.rows || []).length} recebível(is) enviados em um único lote. A sincronização será concluída automaticamente.`
+          : commandMessage;
 
       setOpen(false);
       setForm({});
@@ -1200,32 +1298,74 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                   : 'Recebíveis de vendas — Pix e cartões'}
               </Text>
 
+              {listStatus === 'open' && cardReceivablesByDate.some((group) => group.eligibleRows.length > 0) && (
+                <View style={monthlyStyles.anticipationToolbar}>
+                  <View style={monthlyStyles.anticipationToolbarText}>
+                    <Text style={monthlyStyles.anticipationToolbarTitle}>
+                      Antecipação por período
+                    </Text>
+                    <Text style={monthlyStyles.anticipationToolbarMeta}>
+                      {selectedReceivableDates.size > 0
+                        ? `${selectedReceivableDates.size} dia(s) • ${selectedReceivableRows.length} parcela(s) • ${money(selectedReceivableTotal)}`
+                        : 'Selecione os dias desejados abaixo.'}
+                    </Text>
+                  </View>
+                  <ActionButton
+                    label="Antecipar dias selecionados"
+                    tone="gold"
+                    disabled={selectedReceivableRows.length === 0}
+                    onPress={() => startAnticipateRows(
+                      selectedReceivableRows,
+                      Array.from(selectedReceivableDates).sort()
+                    )}
+                  />
+                </View>
+              )}
+
             {cardReceivablesByDate.length > 0 ? (
               cardReceivablesByDate.map((group) => {
                 const expanded = expandedReceivableDates.has(group.date);
+                const selected = selectedReceivableDates.has(group.date);
                 return (
                   <View key={group.date} style={monthlyStyles.receivableDayGroup}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded }}
-                      style={monthlyStyles.receivableDayHeader}
-                      onPress={() => toggleReceivableDate(group.date)}
-                    >
-                      <View style={monthlyStyles.receivableDayMain}>
-                        <Text style={monthlyStyles.receivableDayTitle}>
-                          {listStatus === 'settled' ? 'Recebido em' : 'Previsto para'} {formatDateBR(group.date)}
-                        </Text>
-                        <Text style={monthlyStyles.receivableDayMeta}>
-                          {group.rows.length} recebível(is) • {group.methods.join(', ')}
-                        </Text>
-                      </View>
-                      <View style={monthlyStyles.receivableDayRight}>
-                        <Text style={monthlyStyles.receivableDayTotal}>{money(group.total)}</Text>
-                        <Text style={monthlyStyles.receivableDayToggle}>
-                          {expanded ? 'Ocultar detalhes ⌃' : 'Ver detalhes ⌄'}
-                        </Text>
-                      </View>
-                    </Pressable>
+                    <View style={monthlyStyles.receivableDayHeader}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded }}
+                        style={monthlyStyles.receivableDaySummary}
+                        onPress={() => toggleReceivableDate(group.date)}
+                      >
+                        <View style={monthlyStyles.receivableDayMain}>
+                          <Text style={monthlyStyles.receivableDayTitle}>
+                            {listStatus === 'settled' ? 'Recebido em' : 'Previsto para'} {formatDateBR(group.date)}
+                          </Text>
+                          <Text style={monthlyStyles.receivableDayMeta}>
+                            {group.rows.length} recebível(is) • {group.methods.join(', ')}
+                          </Text>
+                        </View>
+                        <View style={monthlyStyles.receivableDayRight}>
+                          <Text style={monthlyStyles.receivableDayTotal}>{money(group.total)}</Text>
+                          <Text style={monthlyStyles.receivableDayToggle}>
+                            {expanded ? 'Ocultar detalhes ⌃' : 'Ver detalhes ⌄'}
+                          </Text>
+                        </View>
+                      </Pressable>
+
+                      {listStatus === 'open' && group.eligibleRows.length > 0 && (
+                        <View style={monthlyStyles.receivableDayActions}>
+                          <ActionButton
+                            label={selected ? 'Dia selecionado ✓' : 'Selecionar dia'}
+                            tone="plain"
+                            onPress={() => toggleReceivableDateSelection(group.date)}
+                          />
+                          <ActionButton
+                            label="Antecipar total do dia"
+                            tone="gold"
+                            onPress={() => startAnticipateRows(group.eligibleRows, [group.date])}
+                          />
+                        </View>
+                      )}
+                    </View>
 
                     {expanded && group.rows.map((row: any) => (
                       <View key={String(row.key)} style={s.row}>
@@ -1285,13 +1425,14 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               : 'Novo lançamento'
             : mode === 'settle'
               ? 'Baixar lançamento'
-              : 'Antecipar recebível'
+              : 'Antecipar recebíveis'
         }
         onCancel={() => {
           setModalError('');
           setOpen(false);
         }}
         onSave={save}
+        saveLabel={mode === 'anticipate' ? 'Confirmar antecipação' : undefined}
         busy={busy}
         errorText={modalError}
       >
@@ -1546,8 +1687,27 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               {form.description}
             </Text>
 
+            <View style={monthlyStyles.anticipationMetrics}>
+              <View style={monthlyStyles.anticipationMetric}>
+                <Text style={monthlyStyles.anticipationMetricLabel}>Bruto original</Text>
+                <Text style={monthlyStyles.anticipationMetricValue}>{money(anticipationPreview.gross)}</Text>
+              </View>
+              <View style={monthlyStyles.anticipationMetric}>
+                <Text style={monthlyStyles.anticipationMetricLabel}>Taxas dos cartões</Text>
+                <Text style={monthlyStyles.anticipationMetricValue}>{money(anticipationPreview.originalFee)}</Text>
+              </View>
+              <View style={monthlyStyles.anticipationMetric}>
+                <Text style={monthlyStyles.anticipationMetricLabel}>Custo da antecipação</Text>
+                <Text style={monthlyStyles.anticipationMetricValue}>{money(anticipationPreview.anticipationFee)}</Text>
+              </View>
+              <View style={monthlyStyles.anticipationMetric}>
+                <Text style={monthlyStyles.anticipationMetricLabel}>Líquido a receber</Text>
+                <Text style={monthlyStyles.anticipationMetricValueStrong}>{money(anticipationPreview.finalNet)}</Text>
+              </View>
+            </View>
+
             <DateField
-              label="Data da antecipação"
+              label="Data da antecipação *"
               value={form.date || ''}
               onChangeText={(value) =>
                 set('date', value)
@@ -1555,22 +1715,28 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             />
 
             <Field
-              label="Valor bruto"
-              value={form.gross || ''}
+              label="Taxa da antecipação (%) *"
+              value={form.anticipationRate || ''}
               onChangeText={(value) =>
-                set('gross', value)
+                set('anticipationRate', value)
               }
               keyboardType="decimal-pad"
             />
 
-            <Field
-              label="Taxa cobrada"
-              value={form.fee || ''}
-              onChangeText={(value) =>
-                set('fee', value)
-              }
-              keyboardType="decimal-pad"
-            />
+            {(data?.accounts || []).length > 0 && (
+              <AccountPicker
+                label="Conta de destino do lote"
+                options={(data.accounts || []).map((account: any) => ({
+                  label: account.name,
+                  value: String(account.id),
+                }))}
+                value={form.accountId || ''}
+                onChange={(value) => set('accountId', value)}
+                emptyLabel="Preservar a conta padrão de cada recebível"
+              />
+            )}
+
+            <Notice text="A antecipação será registrada como um único lote auditável. Cada venda e parcela continuará identificada, e somente recebíveis ainda previstos serão processados." />
           </>
         )}
       </FormModal>
@@ -1986,10 +2152,25 @@ const monthlyStyles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FAFAF8',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 14,
     justifyContent: 'space-between',
     paddingHorizontal: 15,
     paddingVertical: 12,
+  },
+  receivableDaySummary: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 14,
+    justifyContent: 'space-between',
+    minWidth: 320,
+  },
+  receivableDayActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   receivableDayMain: { flex: 1, minWidth: 180 },
   receivableDayTitle: {
@@ -2014,6 +2195,61 @@ const monthlyStyles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     fontSize: 11,
     marginTop: 3,
+  },
+  anticipationToolbar: {
+    alignItems: 'center',
+    backgroundColor: '#FFF8E8',
+    borderTopColor: theme.colors.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
+  anticipationToolbarText: { flex: 1, minWidth: 240 },
+  anticipationToolbarTitle: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 13,
+  },
+  anticipationToolbarMeta: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+    marginTop: 3,
+  },
+  anticipationMetrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  anticipationMetric: {
+    backgroundColor: '#F7F7F4',
+    borderColor: theme.colors.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    minWidth: 135,
+    padding: 10,
+  },
+  anticipationMetricLabel: {
+    color: theme.colors.muted,
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10.5,
+  },
+  anticipationMetricValue: {
+    color: theme.colors.text,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  anticipationMetricValueStrong: {
+    color: theme.colors.success,
+    fontFamily: 'Sora_700Bold',
+    fontSize: 15,
+    marginTop: 4,
   },
   periodBar: {
     alignItems: 'center',
