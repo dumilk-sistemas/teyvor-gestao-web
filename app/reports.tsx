@@ -47,6 +47,13 @@ const statusLabelPt = (status: string) => {
   return 'Em aberto';
 };
 
+const financeSourceLabel = (source?: string) => {
+  if (source === 'purchase') return 'Compra';
+  if (source === 'sale') return 'Venda';
+  if (source === 'recurring') return 'Recorrência';
+  return 'Lançamento manual';
+};
+
 const dreCostQualityText = (quality: any) => {
   if (quality?.historical_cogs_complete) {
     return `CMV histórico completo em ${Number(quality.cogs_costed_lines || 0)} item(ns) vendido(s)`;
@@ -568,6 +575,7 @@ export default function Reports() {
   const [selectedReportId, setSelectedReportId] = useState('sales-performance');
   const [financeSelected, setFinanceSelected] = useState<Record<string, boolean>>({});
   const [reportSelected, setReportSelected] = useState<Record<string, boolean>>({});
+  const [reportDetailLevel, setReportDetailLevel] = useState<'summary' | 'detailed'>('summary');
 
   const today = isoFromDate(new Date());
 
@@ -842,8 +850,44 @@ export default function Reports() {
     });
   }, [data]);
 
+  const reportFinanceEntries = useMemo(() => {
+    const manualEntries = (finance?.entries || []).filter((entry: any) => !entry.legacy_card_generic);
+    const cardEntries = (finance?.card_receivables || []).map((row: any) => {
+      const received = ['Liquidado', 'Antecipado'].includes(row.status);
+      return {
+        id: `CARD:${row.key}`,
+        type: 'receivable',
+        description: `Venda #${row.sale_number || '—'} • ${row.method}`,
+        category: 'Vendas / Cartões',
+        amount: Number(row.net || 0),
+        gross: Number(row.gross || 0),
+        fee: Number(row.fee || 0),
+        net: Number(row.net || 0),
+        due_date: row.date,
+        settlement_date: received ? row.date : '',
+        settlement_date_inferred: false,
+        competence_date: row.sale_date || '',
+        status: received ? 'received' : 'open',
+        payment_method: received ? row.method : '',
+        planned_payment_method: row.method,
+        customer: row.customer || 'Consumidor não identificado',
+        sale_id: row.sale_id,
+        sale_number: row.sale_number,
+        installment: row.installment,
+        installments: row.installments,
+        original_amount: Number(row.gross || 0),
+        discount: Number(row.fee || 0),
+        interest: 0,
+        fine: 0,
+        open_balance: received ? 0 : Number(row.net || 0),
+        source: 'sale',
+      };
+    });
+    return [...manualEntries, ...cardEntries];
+  }, [finance]);
+
   const financeByCategory = useMemo(() => {
-    const entries = (finance?.entries || []).filter(
+    const entries = reportFinanceEntries.filter(
       (e) => e.due_date >= appliedStart && e.due_date <= appliedEnd
     );
 
@@ -851,17 +895,18 @@ export default function Reports() {
       const filtered = entries.filter((e) => e.type === type);
       const map: Record<
         string,
-        { category: string; count: number; total: number; realized: number; pending: number }
+        { category: string; count: number; total: number; realized: number; pending: number; details: any[] }
       > = {};
 
       filtered.forEach((e) => {
         const key = e.category || 'Sem categoria';
         if (!map[key]) {
-          map[key] = { category: key, count: 0, total: 0, realized: 0, pending: 0 };
+          map[key] = { category: key, count: 0, total: 0, realized: 0, pending: 0, details: [] };
         }
         map[key].count += 1;
         map[key].total += Number(e.amount || 0);
-        if (e.status === 'paid') {
+        map[key].details.push(e);
+        if (['paid', 'received'].includes(e.status)) {
           map[key].realized += Number(e.amount || 0);
         } else {
           map[key].pending += Number(e.amount || 0);
@@ -872,13 +917,13 @@ export default function Reports() {
     };
 
     return { payables: build('payable'), receivables: build('receivable') };
-  }, [finance, appliedStart, appliedEnd]);
+  }, [reportFinanceEntries, appliedStart, appliedEnd]);
 
   // Visao "lancamento por lancamento" (nao agrupada por categoria) das
   // contas a pagar/receber/pagas/recebidas -- complementa financeByCategory
   // pra quem quer ver cada conta individualmente, nao so o total por categoria.
   const financeFlatRows = useMemo(() => {
-    const entries = finance?.entries || [];
+    const entries = reportFinanceEntries;
     if (financeReportMode === 'payable_open')
       return entries.filter(
         (e) =>
@@ -912,7 +957,7 @@ export default function Reports() {
           e.settlement_date <= appliedEnd
       );
     return [];
-  }, [finance, financeReportMode, appliedStart, appliedEnd]);
+  }, [reportFinanceEntries, financeReportMode, appliedStart, appliedEnd]);
 
   const financeCategoryRows = useMemo(() => [
     ...financeByCategory.payables.map((row) => ({ ...row, reportType: 'Despesa', selectionKey: `expense:${row.category}` })),
@@ -1286,7 +1331,7 @@ export default function Reports() {
     if (!['payables', 'receivables'].includes(selectedReportId)) return [];
     const type = selectedReportId === 'payables' ? 'payable' : 'receivable';
     const settled = financeReportMode === 'payable_paid' || financeReportMode === 'receivable_paid';
-    return (finance?.entries || []).filter((entry: any) => {
+    return reportFinanceEntries.filter((entry: any) => {
       if (entry.type !== type) return false;
       if (settled) {
         const expectedStatus = type === 'payable' ? 'paid' : 'received';
@@ -1295,7 +1340,7 @@ export default function Reports() {
       }
       return ['open', 'overdue'].includes(entry.status) && entry.due_date >= appliedStart && entry.due_date <= appliedEnd;
     });
-  }, [finance, selectedReportId, financeReportMode, appliedStart, appliedEnd]);
+  }, [reportFinanceEntries, selectedReportId, financeReportMode, appliedStart, appliedEnd]);
 
   const inlineFinanceTitle = ['payables', 'receivables'].includes(selectedReportId)
     ? financeModeLabel(financeReportMode)
@@ -1317,9 +1362,10 @@ export default function Reports() {
         primary: row.description || (selectedReportId === 'payables' ? 'Conta a pagar' : 'Conta a receber'),
         secondary: `${row.category || 'Sem categoria'} • ${settled ? (selectedReportId === 'payables' ? 'paga' : 'recebida') : 'vence'} em ${dateBR(settled ? (row.settlement_date || row.due_date) : row.due_date)}`,
         value: money(row.amount),
+        details: [row],
       }));
     }
-    if (selectedReportId === 'finance-categories') return financeCategoryRows.map((row: any) => ({ id: row.selectionKey, primary: row.category, secondary: `${row.reportType} • ${row.count} lançamento(s)`, value: money(row.total) }));
+    if (selectedReportId === 'finance-categories') return financeCategoryRows.map((row: any) => ({ id: row.selectionKey, primary: row.category, secondary: `${row.reportType} • ${row.count} lançamento(s)`, value: money(row.total), details: row.details || [] }));
     if (selectedReportId === 'managerial-dre') return (dre?.rows || []).map((row: any) => ({
       id: row.key,
       primary: row.label,
@@ -1340,6 +1386,7 @@ export default function Reports() {
         secondary: `Entradas ${money(entries)} • saídas ${money(exits)} • realizado ${money(row.realized_balance ?? row.balance)}`,
         value: `Projetado ${money(row.projected_balance ?? row.balance)}`,
         tone: Number(row.projected_balance ?? row.balance ?? 0) < 0 ? 'danger' : 'default',
+        details: row.items || [],
       };
     });
     if (selectedReportId === 'purchases') return purchaseRows.map((row: any) => ({ id: String(row.id), primary: row.supplier || row.description || `Compra #${row.number || row.id}`, secondary: `${dateBR(row.date)} • ${row.status || 'Recebida'}`, value: money(row.total) }));
@@ -1352,6 +1399,30 @@ export default function Reports() {
 
   const selectedInlineRows = inlineRows.filter((row: any) => reportSelected[String(row.id)]);
   const reportGroups = ['Vendas e clientes', 'Financeiro', 'Caixa', 'Compras', 'Estoque'];
+
+  const detailedFinanceHeaders = ['Origem', 'Favorecido / cliente', 'Descrição / documento', 'Parcela', 'Competência', 'Vencimento / recebimento', 'Forma', 'Situação', 'Bruto / original', 'Taxas / ajustes', 'Líquido / valor', 'Saldo'];
+  const detailedFinanceRow = (row: any, settled = false): Array<string | number> => {
+    const party = row.supplier || row.customer || '—';
+    const description = [row.description, row.document].filter(Boolean).join(' • ');
+    const installment = Number(row.installments || 0) > 0
+      ? `${Number(row.installment || 1)}/${Number(row.installments)}`
+      : '—';
+    const adjustments = Number(row.fee || 0) || Number(row.discount || 0) || Number(row.interest || 0) || Number(row.fine || 0);
+    return [
+      financeSourceLabel(row.source),
+      party,
+      description || '—',
+      installment,
+      dateBR(row.competence_date || row.sale_date || ''),
+      dateBR(settled ? (row.settlement_date || row.due_date) : row.due_date),
+      row.payment_method || row.planned_payment_method || '—',
+      statusLabelPt(row.status),
+      money(row.gross ?? row.original_amount ?? row.amount),
+      money(adjustments),
+      money(row.net ?? row.amount),
+      money(row.open_balance ?? (['paid', 'received'].includes(row.status) ? 0 : row.amount)),
+    ];
+  };
 
   function exportInlinePdf() {
     if (selectedReportId === 'sales-performance') {
@@ -1382,6 +1453,18 @@ export default function Reports() {
       }), { realizedIn: 0, forecastIn: 0, realizedOut: 0, forecastOut: 0 });
       const sortedRows = [...rows].sort((a, b) => a.date.localeCompare(b.date));
       const lastSelected = sortedRows[sortedRows.length - 1];
+      if (reportDetailLevel === 'detailed') {
+        const details = rows.flatMap((row) => (row.items || []).map((item) => [
+          dateBR(row.date),
+          item.kind === 'in' ? 'Entrada' : 'Saída',
+          item.realized ? 'Realizado' : 'Previsto',
+          item.category || 'Sem categoria',
+          item.label || '—',
+          money(item.amount),
+        ]));
+        printReport(selectedReport.title, `${periodLabel} • Detalhado`, ['Data', 'Natureza', 'Tipo', 'Categoria', 'Origem / descrição', 'Valor'], details, details.length);
+        return;
+      }
       printReport(
         selectedReport.title,
         periodLabel,
@@ -1399,6 +1482,10 @@ export default function Reports() {
       const settled = financeReportMode === 'payable_paid' || financeReportMode === 'receivable_paid';
       const rows = inlineFinanceEntries.filter((row: any) => selectedIds.has(String(row.id)));
       const total = rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+      if (reportDetailLevel === 'detailed') {
+        printReport(inlineFinanceTitle, `${periodLabel} • Detalhado`, detailedFinanceHeaders, rows.map((row: any) => detailedFinanceRow(row, settled)), rows.length);
+        return;
+      }
       printReport(
         inlineFinanceTitle,
         periodLabel,
@@ -1415,6 +1502,11 @@ export default function Reports() {
         ],
         rows.length
       );
+      return;
+    }
+    if (selectedReportId === 'finance-categories' && reportDetailLevel === 'detailed') {
+      const rows = selectedInlineRows.flatMap((row: any) => (row.details || []).map((detail: any) => detailedFinanceRow(detail, ['paid', 'received'].includes(detail.status))));
+      printReport(selectedReport.title, `${periodLabel} • Detalhado`, detailedFinanceHeaders, rows, rows.length);
       return;
     }
     printReport(selectedReport.title, periodLabel, ['Descrição', 'Detalhes', 'Valor'], selectedInlineRows.map((row: any) => [row.primary, row.secondary, row.value]));
@@ -1447,6 +1539,11 @@ export default function Reports() {
       }), { realizedIn: 0, forecastIn: 0, realizedOut: 0, forecastOut: 0 });
       const sortedRows = [...rows].sort((a, b) => a.date.localeCompare(b.date));
       const lastSelected = sortedRows[sortedRows.length - 1];
+      if (reportDetailLevel === 'detailed') {
+        const details = rows.flatMap((row) => (row.items || []).map((item) => [row.date, item.kind === 'in' ? 'Entrada' : 'Saída', item.realized ? 'Realizado' : 'Previsto', item.category || 'Sem categoria', item.label || '', item.amount]));
+        downloadCsv(`relatorio_fluxo_caixa_detalhado_${appliedStart}_${appliedEnd}.csv`, ['Data', 'Natureza', 'Tipo', 'Categoria', 'Origem / descrição', 'Valor'], details);
+        return;
+      }
       downloadCsv(
         `relatorio_fluxo_caixa_${appliedStart}_${appliedEnd}.csv`,
         ['Data', 'Entradas realizadas', 'Entradas previstas', 'Saídas realizadas', 'Saídas previstas', 'Saldo realizado', 'Saldo projetado'],
@@ -1462,6 +1559,10 @@ export default function Reports() {
       const settled = financeReportMode === 'payable_paid' || financeReportMode === 'receivable_paid';
       const rows = inlineFinanceEntries.filter((row: any) => selectedIds.has(String(row.id)));
       const total = rows.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+      if (reportDetailLevel === 'detailed') {
+        downloadCsv(`relatorio_${financeReportMode}_detalhado_${appliedStart}_${appliedEnd}.csv`, detailedFinanceHeaders, rows.map((row: any) => detailedFinanceRow(row, settled)));
+        return;
+      }
       downloadCsv(
         `relatorio_${financeReportMode}_${appliedStart}_${appliedEnd}.csv`,
         ['Descrição', 'Categoria', settled ? (selectedReportId === 'payables' ? 'Pagamento' : 'Recebimento') : 'Vencimento', 'Situação', 'Valor'],
@@ -1476,6 +1577,11 @@ export default function Reports() {
           ['TOTAL SELECIONADO', '', '', `${rows.length} registro(s)`, total],
         ]
       );
+      return;
+    }
+    if (selectedReportId === 'finance-categories' && reportDetailLevel === 'detailed') {
+      const rows = selectedInlineRows.flatMap((row: any) => (row.details || []).map((detail: any) => detailedFinanceRow(detail, ['paid', 'received'].includes(detail.status))));
+      downloadCsv(`relatorio_financeiro_categoria_detalhado_${appliedStart}_${appliedEnd}.csv`, detailedFinanceHeaders, rows);
       return;
     }
     downloadCsv(`relatorio_${selectedReportId}_${appliedStart}_${appliedEnd}.csv`, ['Descrição', 'Detalhes', 'Valor'], selectedInlineRows.map((row: any) => [row.primary, row.secondary, row.value]));
@@ -1557,6 +1663,14 @@ export default function Reports() {
               </View>
             )}
 
+            {['payables', 'receivables', 'finance-categories', 'cash'].includes(selectedReportId) && (
+              <View style={styles.inlineDetailModes}>
+                <Text style={styles.inlineDetailModesLabel}>Nível do relatório</Text>
+                <PeriodButton label="Resumo" active={reportDetailLevel === 'summary'} onPress={() => setReportDetailLevel('summary')} />
+                <PeriodButton label="Detalhado" active={reportDetailLevel === 'detailed'} onPress={() => setReportDetailLevel('detailed')} />
+              </View>
+            )}
+
             <View style={styles.inlineSummary}>
               <View><Text style={styles.inlineSummaryLabel}>RESULTADO PRINCIPAL</Text><Text style={styles.inlineSummaryValue}>{['payables', 'receivables'].includes(selectedReportId) ? money(inlineFinanceTotal) : selectedReport.value}</Text><Text style={styles.inlineSummaryDetail}>{['payables', 'receivables'].includes(selectedReportId) ? `${inlineFinanceEntries.length} lançamento(s) no período` : selectedReport.subtitle}</Text></View>
               <View style={styles.selectionActions}><Text style={styles.selectionCount}>{selectedInlineRows.length} de {inlineRows.length} selecionado(s)</Text><Pressable onPress={() => setReportSelected(Object.fromEntries(inlineRows.map((row: any) => [String(row.id), true])))}><Text style={styles.selectionLink}>Selecionar todos</Text></Pressable><Pressable onPress={() => setReportSelected({})}><Text style={styles.selectionLink}>Limpar</Text></Pressable></View>
@@ -1604,16 +1718,36 @@ export default function Reports() {
             <ScrollView style={styles.inlineRows} nestedScrollEnabled>
               {inlineRows.map((row: any) => {
                 const checked = !!reportSelected[String(row.id)];
-                return <Pressable key={String(row.id)} onPress={() => setReportSelected((current) => ({ ...current, [String(row.id)]: !checked }))} style={[
-                  styles.inlineRow,
-                  row.kind === 'subtotal' && styles.inlineRowSubtotal,
-                  row.kind === 'result' && styles.inlineRowResult,
-                  row.kind === 'result' && row.tone === 'danger' && styles.inlineRowResultDanger,
-                ]}>
-                  <View style={[styles.inlineCheckbox, checked && { backgroundColor: selectedReport.color, borderColor: selectedReport.color }]}>{checked && <Feather name="check" size={13} color="#FFF" />}</View>
-                  <View style={styles.inlineRowMain}><Text style={styles.inlineRowTitle}>{row.primary}</Text><Text style={styles.inlineRowDetail}>{row.secondary}</Text></View>
-                  <Text style={[styles.inlineRowValue, row.tone === 'danger' && styles.inlineRowDanger, row.tone === 'success' && styles.inlineRowSuccess]}>{row.value}</Text>
-                </Pressable>;
+                const showDetails = reportDetailLevel === 'detailed' && Array.isArray(row.details);
+                return <View key={String(row.id)} style={styles.inlineRowGroup}>
+                  <Pressable onPress={() => setReportSelected((current) => ({ ...current, [String(row.id)]: !checked }))} style={[
+                    styles.inlineRow,
+                    row.kind === 'subtotal' && styles.inlineRowSubtotal,
+                    row.kind === 'result' && styles.inlineRowResult,
+                    row.kind === 'result' && row.tone === 'danger' && styles.inlineRowResultDanger,
+                  ]}>
+                    <View style={[styles.inlineCheckbox, checked && { backgroundColor: selectedReport.color, borderColor: selectedReport.color }]}>{checked && <Feather name="check" size={13} color="#FFF" />}</View>
+                    <View style={styles.inlineRowMain}><Text style={styles.inlineRowTitle}>{row.primary}</Text><Text style={styles.inlineRowDetail}>{row.secondary}</Text></View>
+                    <Text style={[styles.inlineRowValue, row.tone === 'danger' && styles.inlineRowDanger, row.tone === 'success' && styles.inlineRowSuccess]}>{row.value}</Text>
+                  </Pressable>
+                  {showDetails && (
+                    <View style={styles.inlineDetails}>
+                      {row.details.map((detail: any, index: number) => {
+                        const cashDetail = detail.kind === 'in' || detail.kind === 'out';
+                        const party = detail.supplier || detail.customer;
+                        const parcel = Number(detail.installments || 0) > 0 ? ` • parcela ${detail.installment || 1}/${detail.installments}` : '';
+                        const detailText = cashDetail
+                          ? `${detail.kind === 'in' ? 'Entrada' : 'Saída'} ${detail.realized ? 'realizada' : 'prevista'} • ${detail.category || 'Sem categoria'} • ${detail.label || '—'}`
+                          : `${dateBR(detail.settlement_date || detail.due_date)} • ${financeSourceLabel(detail.source)}${party ? ` • ${party}` : ''}${detail.document ? ` • doc. ${detail.document}` : ''}${parcel} • ${statusLabelPt(detail.status)}`;
+                        return <View key={`${row.id}-detail-${index}`} style={styles.inlineDetailRow}>
+                          <Text style={styles.inlineDetailText}>{detailText}</Text>
+                          <Text style={styles.inlineDetailValue}>{money(cashDetail ? detail.amount : (detail.net ?? detail.amount))}</Text>
+                        </View>;
+                      })}
+                      {row.details.length === 0 && <Text style={styles.inlineDetailText}>Sem movimentações neste dia.</Text>}
+                    </View>
+                  )}
+                </View>;
               })}
               {inlineRows.length === 0 && <View style={styles.inlineEmpty}><Feather name="inbox" size={24} color={theme.colors.muted} /><Text style={styles.inlineEmptyTitle}>Nenhum dado neste período</Text><Text style={styles.inlineEmptyText}>Altere o período para consultar outros resultados.</Text></View>}
             </ScrollView>
@@ -3303,6 +3437,8 @@ const styles = StyleSheet.create({
   inlineExportButton: { minHeight: 42, paddingHorizontal: 11, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 6 }, inlineExportButtonText: { fontFamily: 'Inter_700Bold', fontSize: 12, color: theme.colors.text },
   inlineSummary: { padding: 15, backgroundColor: '#F8F8F6', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   inlineFinanceModes: { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: theme.colors.border, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  inlineDetailModes: { paddingHorizontal: 15, paddingVertical: 9, backgroundColor: '#F8F8F6', borderBottomWidth: 1, borderBottomColor: theme.colors.border, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  inlineDetailModesLabel: { marginRight: 4, fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: .45, textTransform: 'uppercase', color: theme.colors.muted },
   inlineSummaryLabel: { fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .6, color: theme.colors.muted }, inlineSummaryValue: { marginTop: 4, fontFamily: 'Sora_700Bold', fontSize: 21, color: theme.colors.text }, inlineSummaryDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
   salesKpiGrid: { backgroundColor: '#F8F8F6', borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 15 },
   salesKpiCard: { backgroundColor: '#FFF', borderColor: theme.colors.border, borderRadius: 11, borderWidth: 1, flex: 1, minWidth: 165, paddingHorizontal: 12, paddingVertical: 11 },
@@ -3313,11 +3449,15 @@ const styles = StyleSheet.create({
   dreInlineQuality: { alignItems: 'flex-start', backgroundColor: '#FFF8E8', borderColor: '#E8D3A4', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 9, padding: 11 },
   dreInlineTitle: { color: theme.colors.text, fontFamily: 'Inter_700Bold', fontSize: 12.5 },
   dreInlineText: { color: theme.colors.muted, fontFamily: 'Inter_400Regular', fontSize: 11.5, lineHeight: 17, marginTop: 2 },
-  selectionCount: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.muted }, inlineRows: { maxHeight: 590 }, inlineRow: { minHeight: 66, paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  selectionCount: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.muted }, inlineRows: { maxHeight: 590 }, inlineRowGroup: { borderBottomWidth: 1, borderBottomColor: theme.colors.border }, inlineRow: { minHeight: 66, paddingHorizontal: 15, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
   inlineRowSubtotal: { backgroundColor: '#F3F6F8' },
   inlineRowResult: { backgroundColor: '#EAF2FC', borderTopColor: '#AFC7E8', borderTopWidth: 2 },
   inlineRowResultDanger: { backgroundColor: '#FFF0F0', borderTopColor: '#E5B5B7' },
   inlineCheckbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' }, inlineRowMain: { flex: 1, minWidth: 0 }, inlineRowTitle: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text }, inlineRowDetail: { marginTop: 3, fontFamily: 'Inter_400Regular', fontSize: 12, color: theme.colors.muted }, inlineRowValue: { fontFamily: 'Inter_700Bold', fontSize: 13.5, color: theme.colors.text, textAlign: 'right' }, inlineRowDanger: { color: theme.colors.danger }, inlineRowSuccess: { color: theme.colors.success },
+  inlineDetails: { marginLeft: 48, marginRight: 15, marginBottom: 10, padding: 10, borderRadius: 8, backgroundColor: '#F7F9FB', gap: 7 },
+  inlineDetailRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  inlineDetailText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 11.5, lineHeight: 17, color: theme.colors.muted },
+  inlineDetailValue: { fontFamily: 'Inter_700Bold', fontSize: 11.5, color: theme.colors.text },
   inlineEmpty: { minHeight: 230, padding: 30, alignItems: 'center', justifyContent: 'center' }, inlineEmptyTitle: { marginTop: 9, fontFamily: 'Sora_700Bold', fontSize: 15, color: theme.colors.text }, inlineEmptyText: { marginTop: 4, fontFamily: 'Inter_400Regular', fontSize: 12.5, color: theme.colors.muted },
   error: {
     color: theme.colors.danger,

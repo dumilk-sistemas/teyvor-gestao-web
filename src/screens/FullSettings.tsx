@@ -90,6 +90,12 @@ export default function FullSettings() {
             90,
           ]
         ).join(','),
+        debitFeePercent: String(paymentSettings.debitFeePercent || 0).replace('.', ','),
+        creditFeeRates: (paymentSettings.creditFeeRates || [0, 0, 0])
+          .map((value: number) => String(value).replace('.', ','))
+          .join(';'),
+        pixFeePercent: String(paymentSettings.pixFeePercent || 0).replace('.', ','),
+        creditRollForwardBusinessDay: String(paymentSettings.creditRollForwardBusinessDay !== false),
       });
     } catch (e) {
       setError(
@@ -134,6 +140,11 @@ export default function FullSettings() {
             value > 0
         );
 
+      const creditFeeRates = String(form.creditFeeRates || '0;0;0')
+        .split(';')
+        .map((value: string) => Number(value.trim().replace(',', '.')))
+        .filter((value: number) => Number.isFinite(value) && value >= 0);
+
       await enqueue(
         'settings',
         'CONFIG_UPDATE',
@@ -174,6 +185,10 @@ export default function FullSettings() {
               form.debitBusinessDays
             ),
             creditOffsets: offsets,
+            debitFeePercent: Number(String(form.debitFeePercent || '0').replace(',', '.')),
+            creditFeeRates,
+            pixFeePercent: Number(String(form.pixFeePercent || '0').replace(',', '.')),
+            creditRollForwardBusinessDay: form.creditRollForwardBusinessDay !== 'false',
           },
         }
       );
@@ -466,6 +481,39 @@ export default function FullSettings() {
             }
             placeholder="30,60,90"
           />
+
+          <Field
+            label="Taxa do débito (%)"
+            value={form.debitFeePercent || '0'}
+            onChangeText={(value) => set('debitFeePercent', value)}
+            keyboardType="decimal-pad"
+          />
+
+          <Field
+            label="Taxas do crédito 1x, 2x e 3x (%) — separadas por ponto e vírgula"
+            value={form.creditFeeRates || '0;0;0'}
+            onChangeText={(value) => set('creditFeeRates', value)}
+            placeholder="2,29;3,49;4,39"
+          />
+
+          <Field
+            label="Taxa do Pix (%)"
+            value={form.pixFeePercent || '0'}
+            onChangeText={(value) => set('pixFeePercent', value)}
+            keyboardType="decimal-pad"
+          />
+
+          <Choice
+            label="Crédito em fim de semana ou feriado"
+            value={form.creditRollForwardBusinessDay || 'true'}
+            onChange={(value) => set('creditRollForwardBusinessDay', value)}
+            options={[
+              { label: 'Próximo dia útil', value: 'true' },
+              { label: 'Manter a data', value: 'false' },
+            ]}
+          />
+
+          <Notice text="Informe as taxas conforme o contrato ou extrato da operadora. Taxa zero mantém o valor bruto. As alterações ajustam as projeções financeiras, sem alterar as vendas registradas." />
         </View>
       </View>
     </AdminShell>

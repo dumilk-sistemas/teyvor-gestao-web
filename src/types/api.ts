@@ -110,8 +110,23 @@ export type FinanceData = {
     payment_method: string;
     planned_payment_method?: string;
     notes?: string;
+    supplier?: string;
+    customer?: string;
+    document?: string;
+    purchase_id?: string | null;
+    sale_id?: string | null;
+    installment?: number;
+    installments?: number;
+    payment_terms?: string;
+    original_amount?: number;
+    discount?: number;
+    interest?: number;
+    fine?: number;
+    open_balance?: number;
+    source?: string;
+    legacy_card_generic?: boolean;
   }>;
-  card_receivables: Array<{ key: string; sale_number?: number; method: string; installment: number; installments: number; date: string; original_date: string; gross: number; fee: number; net: number; status: string }>;
+  card_receivables: Array<{ key: string; sale_id?: string; sale_number?: number; sale_date?: string; customer?: string; method: string; installment: number; installments: number; date: string; original_date: string; gross: number; fee: number; net: number; status: string; source?: string }>;
   cash_flow?: Array<{
     date: string;
     realized_in: number;
