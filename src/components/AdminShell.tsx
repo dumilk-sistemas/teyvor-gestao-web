@@ -61,6 +61,8 @@ const mobileMainNav = [
 ] as const;
 
 const usersNavItem = ['/users', 'Usuários', 'user'] as const;
+const settingsDesktopNavItem = ['/settings', 'Configurações', 'settings'] as const;
+const settingsMoreNavItem = ['/settings', 'Configurações'] as const;
 
 type Props = {
   title: string;
@@ -103,12 +105,12 @@ export function AdminShell({
 
   const visibleDesktopNav = useMemo(() => {
     const items = desktopNav.filter(([href]) => hasPermission(ROUTE_PERMISSIONS[href] || href));
-    return isAdmin ? [...items, usersNavItem] : items;
+    return isAdmin ? [...items, usersNavItem, settingsDesktopNavItem] : items;
   }, [hasPermission, isAdmin]);
 
   const visibleMoreNav = useMemo(() => {
     const items = moreNav.filter(([href]) => hasPermission(ROUTE_PERMISSIONS[href] || href));
-    return isAdmin ? [...items, usersNavItem] : items;
+    return isAdmin ? [...items, usersNavItem, settingsMoreNavItem] : items;
   }, [hasPermission, isAdmin]);
 
   const visibleMobileMainNav = useMemo(
