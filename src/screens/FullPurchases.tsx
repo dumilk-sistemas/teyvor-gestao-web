@@ -739,7 +739,7 @@ export default function FullPurchases() {
         ? editPurchase.payables
         : [];
       const settled = existingPayables.filter((entry: any) =>
-        ['paid', 'received'].includes(String(entry.raw_status || entry.status || '').toLowerCase())
+        ['paid', 'received', 'partial'].includes(String(entry.raw_status || entry.status || '').toLowerCase())
       );
       if (settled.length > 0) {
         setEditError('Esta compra possui parcela já paga. Estorne a baixa no Financeiro antes de alterar o parcelamento.');

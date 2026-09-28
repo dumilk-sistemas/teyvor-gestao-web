@@ -119,6 +119,8 @@ export async function createFinancialCategory(payload: {
   name: string;
   category_type: 'expense' | 'revenue' | 'non_operating';
   dre_group?: string;
+  cost_behavior?: string;
+  operating_scope?: string;
   parent_id?: number | null;
   active: boolean;
 }) {
@@ -135,10 +137,10 @@ export async function updateFinancialCategory(id: number, payload: Record<string
   });
 }
 
-export async function deleteFinancialCategory(id: number, transferToId?: number | null) {
+export async function deleteFinancialCategory(id: number, transferToId: number | null, reason: string) {
   return fullRequest<any>(`/admin/finance-management/categories/${id}/delete`, {
     method: 'POST',
-    body: JSON.stringify({ transfer_to_id: transferToId ?? null }),
+    body: JSON.stringify({ transfer_to_id: transferToId ?? null, reason }),
   });
 }
 

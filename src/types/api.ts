@@ -92,6 +92,7 @@ export type ProductCategoryData = {
 };
 
 export type FinanceData = {
+  capabilities?: { financial_settlements_v2?: boolean };
   summary: { opening_balance: number; open_payables: number; overdue_payables: number; open_receivables: number; card_forecast: number; card_anticipated: number; realized_payables: number; realized_receivables: number };
   entries: Array<{
     id?: string;
@@ -123,6 +124,22 @@ export type FinanceData = {
     interest?: number;
     fine?: number;
     open_balance?: number;
+    settled_amount?: number;
+    effective_settled_amount?: number;
+    partial?: boolean;
+    latest_settlement_id?: string | null;
+    settlements?: Array<{
+      id?: string;
+      date?: string;
+      method?: string;
+      principalAmount?: number;
+      discount?: number;
+      interest?: number;
+      fine?: number;
+      effectiveAmount?: number;
+      note?: string;
+      document?: string;
+    }>;
     source?: string;
     legacy_card_generic?: boolean;
   }>;

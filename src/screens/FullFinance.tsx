@@ -166,6 +166,7 @@ const notesWithPlannedMethod = (notes: unknown, method: unknown) => {
 };
 
 const statusLabel = (status: string) => {
+  if (status === 'partial') return 'Parcial';
   if (status === 'paid') return 'Pago';
   if (status === 'received') return 'Recebido';
   if (status === 'overdue') return 'Vencido';
@@ -199,6 +200,9 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteStopRecurring, setDeleteStopRecurring] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [reverseTarget, setReverseTarget] = useState<any>(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const [reverseError, setReverseError] = useState('');
   const [expandedReceivableDates, setExpandedReceivableDates] = useState<Set<string>>(new Set());
   const [selectedReceivableDates, setSelectedReceivableDates] = useState<Set<string>>(new Set());
 
@@ -617,6 +621,14 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       type: row.type,
       date: today(),
       method: plannedPaymentMethod(row) || 'Pix',
+      originalAmount: Number(row.original_amount ?? row.amount ?? 0),
+      settledAmount: Number(row.settled_amount ?? 0),
+      openBalance: Number(row.open_balance ?? row.amount ?? 0),
+      principalAmount: String(Number(row.open_balance ?? row.amount ?? 0)).replace('.', ','),
+      discount: '0,00',
+      interest: '0,00',
+      fine: '0,00',
+      document: '',
       note: '',
     });
 
@@ -750,6 +762,24 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
       } else if (
         mode === 'settle'
       ) {
+        const principalAmount = parseMoneyInput(form.principalAmount);
+        const discount = parseMoneyInput(form.discount);
+        const interest = parseMoneyInput(form.interest);
+        const fine = parseMoneyInput(form.fine);
+        const openBalance = Number(form.openBalance || 0);
+        const effectiveAmount = roundMoney(principalAmount + interest + fine - discount);
+        if (!validIsoDate(form.date)) {
+          setModalError('Informe uma data válida para a baixa.');
+          return;
+        }
+        if (principalAmount <= 0 || principalAmount - openBalance > 0.009) {
+          setModalError(`O valor baixado deve ficar entre R$ 0,01 e ${money(openBalance)}.`);
+          return;
+        }
+        if ([discount, interest, fine].some((value) => value < 0) || effectiveAmount < 0) {
+          setModalError('Desconto, juros, multa e valor efetivo precisam ser válidos.');
+          return;
+        }
         await enqueue(
           'finance',
           'FINANCIAL_SETTLE',
@@ -757,6 +787,11 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             id: form.id,
             date: form.date,
             method: form.method,
+            principalAmount,
+            discount,
+            interest,
+            fine,
+            document: form.document || '',
             note: form.note || '',
           }
         );
@@ -869,36 +904,45 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
   }
 
   async function reverse(row: any) {
+    setReverseTarget(row);
+    setReverseReason('');
+    setReverseError('');
+  }
+
+  async function confirmReverse() {
+    if (!reverseTarget) return;
+    if (reverseReason.trim().length < 3) {
+      setReverseError('Informe o motivo do estorno.');
+      return;
+    }
     try {
+      setBusy(true);
       setError('');
-
-      const confirmed = await confirmAction(
-        'Estornar baixa',
-        `Deseja realmente estornar a baixa de ${row.description || 'este lançamento'}?`
-      );
-      if (!confirmed) return;
-
       await enqueue(
         'finance',
         'FINANCIAL_REVERSE',
         {
-          id: row.id,
-          reason:
-            'Estorno solicitado no Admin',
+          id: reverseTarget.id,
+          settlementId: reverseTarget.latest_settlement_id || undefined,
+          reason: reverseReason.trim(),
         }
       );
 
       showToast(commandMessage);
+      setReverseTarget(null);
+      setReverseReason('');
 
       setTimeout(() => {
         load();
       }, 1200);
     } catch (e) {
-      setError(
+      setReverseError(
         e instanceof Error
           ? e.message
           : 'Falha ao estornar baixa.'
       );
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1170,7 +1214,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                         {['paid', 'received'].includes(row.status)
                           ? `${row.type === 'payable' ? 'pago' : 'recebido'} em ${formatDateBR(settlementReferenceDate(row))}`
                           : `vence ${formatDateBR(row.due_date)}`} •{' '}
-                        {statusLabel(row.status)}
+                        {statusLabel(row.partial ? 'partial' : row.status)}
                       </Text>
 
                       {!!row.settlement_date_inferred && (
@@ -1211,8 +1255,16 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
 
                     <View style={monthlyStyles.entryRight}>
                       <Text style={monthlyStyles.entryAmount}>
-                        {money(row.amount)}
+                        {money(['paid', 'received'].includes(row.status)
+                          ? (row.effective_settled_amount ?? row.amount)
+                          : (row.open_balance ?? row.amount))}
                       </Text>
+
+                      {row.partial && (
+                        <Text style={monthlyStyles.entryMeta}>
+                          Original {money(row.original_amount || row.amount)} • já baixado {money(row.settled_amount || 0)}
+                        </Text>
+                      )}
 
                       <Text
                         style={[
@@ -1253,7 +1305,7 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                               )
                             }
                           />
-                        ) : (
+                        ) : row.latest_settlement_id || ['paid', 'received'].includes(row.status) ? (
                           <ActionButton
                             label="Estornar baixa"
                             tone="danger"
@@ -1261,8 +1313,15 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                               reverse(row)
                             }
                           />
+                        ) : null}
+                        {row.partial && row.latest_settlement_id && (
+                          <ActionButton
+                            label="Estornar última baixa"
+                            tone="danger"
+                            onPress={() => reverse(row)}
+                          />
                         )}
-                        {['open', 'overdue'].includes(row.status) && (
+                        {['open', 'overdue'].includes(row.status) && Number(row.settled_amount || 0) <= 0 && (
                           <ActionButton
                             label="Excluir"
                             tone="danger"
@@ -1643,6 +1702,38 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
               {form.description}
             </Text>
 
+            <Notice
+              tone="ok"
+              text={`Valor original: ${money(Number(form.originalAmount || 0))} • Já baixado: ${money(Number(form.settledAmount || 0))} • Saldo em aberto: ${money(Number(form.openBalance || 0))}`}
+            />
+
+            {data?.capabilities?.financial_settlements_v2 ? (
+              <>
+                <Field
+                  label="Valor do saldo a baixar *"
+                  value={form.principalAmount || ''}
+                  onChangeText={(value) => set('principalAmount', value)}
+                  keyboardType="decimal-pad"
+                />
+                <View style={monthlyStyles.dateRow}>
+                  <View style={monthlyStyles.dateColumn}>
+                    <Field label="Desconto" value={form.discount || ''} onChangeText={(value) => set('discount', value)} keyboardType="decimal-pad" />
+                  </View>
+                  <View style={monthlyStyles.dateColumn}>
+                    <Field label="Juros" value={form.interest || ''} onChangeText={(value) => set('interest', value)} keyboardType="decimal-pad" />
+                  </View>
+                  <View style={monthlyStyles.dateColumn}>
+                    <Field label="Multa" value={form.fine || ''} onChangeText={(value) => set('fine', value)} keyboardType="decimal-pad" />
+                  </View>
+                </View>
+                <Notice
+                  text={`Valor efetivo ${form.type === 'payable' ? 'pago' : 'recebido'}: ${money(roundMoney(parseMoneyInput(form.principalAmount) + parseMoneyInput(form.interest) + parseMoneyInput(form.fine) - parseMoneyInput(form.discount)))} • Saldo após a baixa: ${money(Math.max(0, roundMoney(Number(form.openBalance || 0) - parseMoneyInput(form.principalAmount))))}`}
+                />
+              </>
+            ) : (
+              <Notice text="A baixa será total. Para usar baixa parcial, juros, multa e desconto, primeiro atualize o PDV desta filial." />
+            )}
+
             <DateField
               label="Data da baixa *"
               value={form.date || ''}
@@ -1671,6 +1762,14 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
                 value,
               }))}
             />
+
+            {data?.capabilities?.financial_settlements_v2 && (
+              <Field
+                label="Documento / comprovante"
+                value={form.document || ''}
+                onChangeText={(value) => set('document', value)}
+              />
+            )}
 
             <Field
               label="Observação"
@@ -1782,6 +1881,28 @@ export default function FullFinance({ view = 'all' }: { view?: FinanceView }) {
             ]}
           />
         )}
+      </FormModal>
+
+      <FormModal
+        visible={!!reverseTarget}
+        title="Estornar baixa financeira?"
+        onCancel={() => { setReverseTarget(null); setReverseReason(''); setReverseError(''); }}
+        onSave={confirmReverse}
+        saveLabel="Confirmar estorno"
+        busy={busy}
+        errorText={reverseError}
+      >
+        <Notice
+          tone="error"
+          text={`O estorno restaurará o saldo de ${reverseTarget?.description || 'este lançamento'} e ficará registrado na auditoria.`}
+        />
+        <Field
+          label="Motivo do estorno *"
+          value={reverseReason}
+          onChangeText={setReverseReason}
+          placeholder="Ex.: pagamento duplicado ou baixa em conta incorreta"
+          multiline
+        />
       </FormModal>
 
       <Modal

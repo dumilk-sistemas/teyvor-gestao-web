@@ -42,6 +42,19 @@ const DRE_GROUPS = [
 
 const defaultDreGroup = (type: CategoryType) => type === 'revenue' ? 'gross_revenue' : type === 'non_operating' ? 'excluded' : 'operating_expense';
 const dreLabel = (value: string) => DRE_GROUPS.find((item) => item.value === value)?.label || 'Revisar classificação';
+const COST_BEHAVIORS = [
+  { label: 'Fixa', value: 'fixed', description: 'Tende a se repetir mesmo quando as vendas variam' },
+  { label: 'Variável', value: 'variable', description: 'Acompanha compras, vendas ou volume da operação' },
+  { label: 'Mista', value: 'mixed', description: 'Possui uma parte fixa e outra variável' },
+  { label: 'Ainda não classificada', value: 'unclassified', description: 'Pendente de revisão gerencial' },
+];
+const OPERATING_SCOPES = [
+  { label: 'Operacional', value: 'operating', description: 'Faz parte da atividade normal do negócio' },
+  { label: 'Não operacional', value: 'non_operating', description: 'Evento fora da operação principal' },
+  { label: 'Fora da DRE', value: 'excluded', description: 'Aporte, empréstimo ou transferência patrimonial' },
+];
+const costLabel = (value: string) => COST_BEHAVIORS.find((item) => item.value === value)?.label || 'Não aplicável';
+const scopeLabel = (value: string) => OPERATING_SCOPES.find((item) => item.value === value)?.label || value;
 
 export function FinancialCategoriesModal({
   visible,
@@ -57,11 +70,12 @@ export function FinancialCategoriesModal({
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | CategoryType>('all');
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState<any>({ name: '', category_type: 'expense', dre_group: 'operating_expense', parent_id: '', active: true });
+  const [form, setForm] = useState<any>({ name: '', category_type: 'expense', dre_group: 'operating_expense', cost_behavior: 'unclassified', operating_scope: 'operating', parent_id: '', active: true });
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [transferTo, setTransferTo] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
 
   async function load() {
     try {
@@ -86,7 +100,7 @@ export function FinancialCategoriesModal({
   );
 
   const parentOptions = rows
-    .filter((row) => row.active && row.category_type === form.category_type && row.id !== form.id)
+    .filter((row) => row.active && !row.parent_id && row.category_type === form.category_type && row.id !== form.id)
     .map((row) => ({ label: row.name, value: String(row.id), description: typeLabel(row.category_type) }));
 
   const transferOptions = rows
@@ -98,7 +112,7 @@ export function FinancialCategoriesModal({
     .map(({ label, value, description }) => ({ label, value, description }));
 
   function startCreate(type: CategoryType = 'expense') {
-    setForm({ name: '', category_type: type, dre_group: defaultDreGroup(type), parent_id: '', active: true });
+    setForm({ name: '', category_type: type, dre_group: defaultDreGroup(type), cost_behavior: type === 'expense' ? 'unclassified' : 'not_applicable', operating_scope: type === 'non_operating' ? 'excluded' : 'operating', parent_id: '', active: true });
     setFormError('');
     setFormOpen(true);
   }
@@ -120,6 +134,8 @@ export function FinancialCategoriesModal({
       const payload = {
         name: String(form.name).trim(),
         dre_group: form.dre_group || defaultDreGroup(form.category_type),
+        cost_behavior: form.category_type === 'expense' ? (form.cost_behavior || 'unclassified') : 'not_applicable',
+        operating_scope: form.operating_scope || 'operating',
         parent_id: form.parent_id ? Number(form.parent_id) : null,
         active: Boolean(form.active),
       };
@@ -151,6 +167,10 @@ export function FinancialCategoriesModal({
       setError('Selecione uma categoria de destino para os lançamentos vinculados.');
       return;
     }
+    if (deleteReason.trim().length < 5) {
+      setError('Informe uma justificativa com pelo menos cinco caracteres.');
+      return;
+    }
     const confirmed = await confirmAction(
       'Excluir categoria financeira',
       `A categoria ${deleteTarget.name} será removida. Esta ação exige atenção e ficará registrada. Deseja continuar?`
@@ -159,9 +179,10 @@ export function FinancialCategoriesModal({
     try {
       setBusy(true);
       setError('');
-      await deleteFinancialCategory(deleteTarget.id, transferTo ? Number(transferTo) : null);
+      await deleteFinancialCategory(deleteTarget.id, transferTo ? Number(transferTo) : null, deleteReason.trim());
       setDeleteTarget(null);
       setTransferTo('');
+      setDeleteReason('');
       await load();
       onChanged?.();
     } catch (e) {
@@ -202,13 +223,13 @@ export function FinancialCategoriesModal({
                       <Text style={styles.name}>{row.name}</Text>
                       <Text style={[styles.badge, !row.active && styles.badgeInactive]}>{row.active ? typeLabel(row.category_type) : 'Inativa'}</Text>
                     </View>
-                    <Text style={styles.meta}>{row.parent_name ? `${row.parent_name} • ` : ''}{row.entry_count} lançamento(s) • DRE: {dreLabel(row.dre_group)}</Text>
+                    <Text style={styles.meta}>{row.parent_name ? `${row.parent_name} • ` : ''}{row.entry_count} lançamento(s) • {scopeLabel(row.operating_scope)}{row.category_type === 'expense' ? ` • ${costLabel(row.cost_behavior)}` : ''} • DRE: {dreLabel(row.dre_group)}</Text>
                     {!row.dre_configured && <Text style={styles.review}>Revisar classificação antes de usar a DRE</Text>}
                   </View>
                   <View style={styles.actions}>
                     <ActionButton label="Editar" tone="plain" onPress={() => startEdit(row)} />
                     <ActionButton label={row.active ? 'Desativar' : 'Ativar'} tone="plain" onPress={() => toggle(row)} />
-                    <ActionButton label="Excluir" tone="danger" onPress={() => { setError(''); setTransferTo(''); setDeleteTarget(row); }} />
+                    <ActionButton label="Excluir" tone="danger" onPress={() => { setError(''); setTransferTo(''); setDeleteReason(''); setDeleteTarget(row); }} />
                   </View>
                 </View>
               ))}
@@ -220,15 +241,18 @@ export function FinancialCategoriesModal({
       <FormModal visible={formOpen} title={form.id ? 'Editar categoria financeira' : 'Nova categoria financeira'} onCancel={() => setFormOpen(false)} onSave={save} busy={busy} errorText={formError}>
         {!form.id && <SearchablePicker label="Tipo *" value={form.category_type} onChange={(value) => setForm((current: any) => ({ ...current, category_type: value, dre_group: defaultDreGroup(value as CategoryType), parent_id: '' }))} options={TYPES} />}
         <Field label="Nome da categoria *" value={form.name || ''} onChangeText={(value) => setForm((current: any) => ({ ...current, name: value }))} placeholder={form.category_type === 'revenue' ? 'Ex.: Venda de mercadorias' : 'Ex.: Energia elétrica'} />
+        <SearchablePicker label="Participação na operação *" value={form.operating_scope || 'operating'} onChange={(value) => setForm((current: any) => ({ ...current, operating_scope: value, dre_group: value === 'excluded' ? 'excluded' : current.dre_group }))} options={OPERATING_SCOPES} />
+        {form.category_type === 'expense' && <SearchablePicker label="Comportamento da despesa *" value={form.cost_behavior || 'unclassified'} onChange={(value) => setForm((current: any) => ({ ...current, cost_behavior: value }))} options={COST_BEHAVIORS} />}
         <SearchablePicker label="Grupo na DRE *" value={form.dre_group || defaultDreGroup(form.category_type)} onChange={(value) => setForm((current: any) => ({ ...current, dre_group: value }))} options={dreOptions} />
         <Notice text="Esta classificação define em qual linha a categoria será somada na DRE gerencial. Aportes, empréstimos e transferências não devem compor o resultado." />
         <SearchablePicker label="Categoria superior (opcional)" value={form.parent_id || ''} onChange={(value) => setForm((current: any) => ({ ...current, parent_id: value }))} options={[{ label: 'Sem categoria superior', value: '' }, ...parentOptions]} />
       </FormModal>
 
-      <FormModal visible={!!deleteTarget} title="Excluir categoria financeira?" onCancel={() => { setDeleteTarget(null); setTransferTo(''); }} onSave={remove} saveLabel={busy ? 'Excluindo...' : 'Confirmar exclusão'} busy={busy} errorText={error}>
+      <FormModal visible={!!deleteTarget} title="Excluir categoria financeira?" onCancel={() => { setDeleteTarget(null); setTransferTo(''); setDeleteReason(''); }} onSave={remove} saveLabel={busy ? 'Excluindo...' : 'Confirmar exclusão'} busy={busy} errorText={error}>
         <Notice tone="error" text={`A exclusão de ${deleteTarget?.name || 'uma categoria'} exige atenção e não pode deixar lançamentos sem classificação.`} />
         <Text style={styles.deleteText}>{deleteTarget?.entry_count || 0} lançamento(s) estão vinculados a esta categoria.</Text>
         {Number(deleteTarget?.entry_count || 0) > 0 && <SearchablePicker label="Transferir lançamentos para *" value={transferTo} onChange={setTransferTo} options={transferOptions} placeholder="Selecione a categoria de destino" />}
+        <Field label="Justificativa *" value={deleteReason} onChangeText={setDeleteReason} placeholder="Ex.: categoria duplicada" multiline />
       </FormModal>
     </>
   );
