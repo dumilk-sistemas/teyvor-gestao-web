@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { logout } from '@/services/api';
+import { getSyncStatus, logout } from '@/services/api';
 import { theme, useThemeColors } from '@/constants/theme';
 import { TEYVOR_DEFAULT_BRANDING, useBranding } from '@/contexts/BrandingContext';
 import { useUser } from '@/contexts/UserContext';
@@ -102,6 +102,39 @@ export function AdminShell({
   const { hasPermission, isAdmin, setUser } = useUser();
 
   const [moreOpen, setMoreOpen] = useState(false);
+  const [serverSyncText, setServerSyncText] = useState('');
+
+  useEffect(() => {
+    if (!hasPermission('dashboard')) return;
+    let active = true;
+    const refreshServerStatus = async () => {
+      try {
+        const status = await getSyncStatus();
+        if (!active) return;
+        if (status.server_status === 'awaiting_pdv') {
+          setServerSyncText(
+            `${status.pending_pdv_count} alteração(ões) salva(s) no servidor • aguardando o PDV`
+          );
+        } else if (status.server_status === 'error') {
+          setServerSyncText(
+            `${status.failed_count} alteração(ões) com erro no PDV • dados preservados no servidor`
+          );
+        } else {
+          setServerSyncText('');
+        }
+      } catch {
+        if (active) setServerSyncText('');
+      }
+    };
+    refreshServerStatus();
+    const timer = setInterval(refreshServerStatus, 10000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [hasPermission]);
+
+  const displaySyncText = serverSyncText || syncText;
 
   const visibleDesktopNav = useMemo(() => {
     const items = desktopNav.filter(([href]) => hasPermission(ROUTE_PERMISSIONS[href] || href));
@@ -263,12 +296,12 @@ export function AdminShell({
               contentContainerStyle={styles.mainAreaContent}
               showsVerticalScrollIndicator
             >
-              {!!syncText && (
+              {!!displaySyncText && (
                 <View style={styles.sync}>
                   <View style={styles.dot} />
 
                   <Text style={styles.syncText}>
-                    {syncText}
+                    {displaySyncText}
                   </Text>
                 </View>
               )}
@@ -278,7 +311,7 @@ export function AdminShell({
             <View style={styles.fixedFooter}>
               <Text style={styles.controlSmall}>
                 {syncNote
-                  ? '🔒 Sincronização protegida — alterações identificadas e sem repetição.'
+                  ? '🔒 Alterações salvas primeiro no servidor e entregues ao PDV sem repetição.'
                   : `${c.brandName} Gestão 360 • Ambiente administrativo`}
               </Text>
             </View>
@@ -342,12 +375,12 @@ export function AdminShell({
           })}
         </View>
 
-        {!!syncText && (
+        {!!displaySyncText && (
           <View style={styles.sync}>
             <View style={styles.dot} />
 
             <Text style={styles.syncText}>
-              {syncText}
+              {displaySyncText}
             </Text>
           </View>
         )}
@@ -362,8 +395,8 @@ export function AdminShell({
           </Text>
 
           <Text style={styles.controlText}>
-            As alterações são enviadas ao caixa de forma protegida,
-            identificada e sem repetição.
+            As alterações são salvas no servidor e entregues ao caixa de forma
+            protegida, identificada e sem repetição.
           </Text>
         </View>
       </ScrollView>
@@ -410,7 +443,7 @@ export function AdminShell({
         </View>
       </View>
 
-      {!!syncText && (
+      {!!displaySyncText && (
         <View style={styles.mobileSync}>
           <View style={styles.dot} />
 
@@ -418,7 +451,7 @@ export function AdminShell({
             numberOfLines={1}
             style={styles.mobileSyncText}
           >
-            {syncText}
+            {displaySyncText}
           </Text>
 
           {onRefresh && (

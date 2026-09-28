@@ -161,6 +161,11 @@ export async function getSyncStatus() {
     message: string;
     last_sync_at: string | null;
     terminal_name?: string | null;
+    server_status: 'ready' | 'awaiting_pdv' | 'synchronized' | 'error';
+    pending_pdv_count: number;
+    failed_count: number;
+    last_server_revision: number;
+    last_server_change_at?: string | null;
   }>('/sync/status');
 }
 

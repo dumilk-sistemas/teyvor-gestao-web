@@ -562,11 +562,13 @@ export default function Dashboard() {
       setUnreadCount(Number(notifications.unread_count || 0));
 
       setSyncText(
-        sync.last_sync_at
-          ? `Sincronizado com ${
-              sync.terminal_name || 'PDV'
-            } • ${new Date(sync.last_sync_at).toLocaleString('pt-BR')}`
-          : sync.message
+        sync.server_status === 'awaiting_pdv'
+          ? `${sync.pending_pdv_count} alteração(ões) salva(s) no servidor • aguardando o PDV`
+          : sync.server_status === 'error'
+            ? `${sync.failed_count} alteração(ões) com erro no PDV • dados permanecem salvos no servidor`
+            : sync.last_sync_at
+              ? `Servidor e ${sync.terminal_name || 'PDV'} sincronizados • ${new Date(sync.last_sync_at).toLocaleString('pt-BR')}`
+              : sync.message
       );
     } catch (e) {
       setError(

@@ -33,15 +33,39 @@ export async function fullRequest<T>(path: string, options: RequestInit = {}): P
 
 export const getFull = <T=any>(module: string) => fullRequest<T>(`/admin/${module}`);
 
-export async function enqueue(module: string, action: string, payload: Record<string, unknown>) {
-  return fullRequest<{ok:boolean;command_id:string;status:string;payload:Record<string,unknown>}>('/admin/commands', {
+function idempotencyKey(prefix = 'admin') {
+  const random = Math.random().toString(36).slice(2);
+  return `${prefix}-${Date.now()}-${random}`;
+}
+
+export async function enqueue(
+  module: string,
+  action: string,
+  payload: Record<string, unknown>,
+  requestKey = idempotencyKey(module)
+) {
+  return fullRequest<{
+    ok: boolean;
+    command_id: string;
+    server_revision: number;
+    status: string;
+    server_status: 'saved';
+    sync_status: string;
+    repeated: boolean;
+    payload: Record<string, unknown>;
+  }>('/admin/commands', {
     method: 'POST',
-    body: JSON.stringify({ module, action, payload }),
+    body: JSON.stringify({ module, action, payload, idempotency_key: requestKey }),
   });
 }
 
 export async function enqueueBatch(
-  commands: Array<{ module: string; action: string; payload: Record<string, unknown> }>
+  commands: Array<{
+    module: string;
+    action: string;
+    payload: Record<string, unknown>;
+    idempotency_key?: string;
+  }>
 ) {
   return fullRequest<{
     ok: boolean;
@@ -49,11 +73,16 @@ export async function enqueueBatch(
     commands: Array<{ command_id: string; status: string; payload: Record<string, unknown> }>;
   }>('/admin/commands/batch', {
     method: 'POST',
-    body: JSON.stringify({ commands }),
+    body: JSON.stringify({
+      commands: commands.map((command) => ({
+        ...command,
+        idempotency_key: command.idempotency_key || idempotencyKey(command.module),
+      })),
+    }),
   });
 }
 
-export const commandMessage = 'Comando enviado. A sincronização com o PDV é automática e normalmente aparece em alguns segundos.';
+export const commandMessage = 'Alteração salva no servidor. O PDV receberá automaticamente quando estiver aberto e conectado.';
 
 // Foto do produto e um dado so da nuvem (nao muda a logica de venda do
 // PDV), por isso e salva direto, sem passar pelo enqueue de comandos.
