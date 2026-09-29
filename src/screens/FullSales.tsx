@@ -42,6 +42,12 @@ function normalizedPaymentMethod(value: unknown) {
   return PAYMENT_FILTERS.includes(method) ? method : 'Outros';
 }
 
+function saleReturnAllocations(row: any) {
+  return (Array.isArray(row?.returns) ? row.returns : [])
+    .filter((returned: any) => !returned?.reversed)
+    .flatMap((returned: any) => returned?.allocations || []);
+}
+
 function todayDateString() {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -130,12 +136,16 @@ export default function FullSales() {
 
   const visibleSummary = useMemo(() => {
     const valid = visibleRows.filter((row: any) => row.status === 'Concluída');
-    const total = valid.reduce((sum: number, row: any) => sum + (row.total || 0), 0);
+    const total = valid.reduce((sum: number, row: any) => sum + Number(row.net_total ?? row.total ?? 0), 0);
     const paymentTotals: Record<string, number> = {};
     valid.forEach((row: any) => {
       salePaymentParts(row).forEach((part: any) => {
         const method = normalizedPaymentMethod(part.method);
         paymentTotals[method] = (paymentTotals[method] || 0) + Number(part.value || 0);
+      });
+      saleReturnAllocations(row).forEach((allocation: any) => {
+        const method = normalizedPaymentMethod(allocation.method);
+        paymentTotals[method] = (paymentTotals[method] || 0) - Number(allocation.amount || 0);
       });
     });
     return {
@@ -243,6 +253,25 @@ export default function FullSales() {
     setOpen(true);
   };
 
+  const returnItems = (row: any) => {
+    setModalError('');
+    setMode('return');
+    const returnedByProduct = new Map<string, number>();
+    (row.returns || []).filter((entry: any) => !entry.reversed).forEach((entry: any) => {
+      (entry.items || []).forEach((item: any) => {
+        const key = String(item.id);
+        returnedByProduct.set(key, (returnedByProduct.get(key) || 0) + Number(item.qty || 0));
+      });
+    });
+    setForm({ id: row.id, number: row.number, reason: '' });
+    setItems((row.items_detail || []).map((item: any) => ({
+      ...item,
+      available: Math.max(0, Number(item.qty || 0) - (returnedByProduct.get(String(item.id)) || 0)),
+      qty: '0',
+    })));
+    setOpen(true);
+  };
+
   const updateItem = (
     index: number,
     key: string,
@@ -317,7 +346,7 @@ export default function FullSales() {
         return;
       }
 
-      if (mode !== 'cancel') {
+      if (mode === 'edit') {
         if (!items.length) {
           setModalError('A venda precisa ter pelo menos um item.');
           return;
@@ -333,6 +362,14 @@ export default function FullSales() {
         }
       }
 
+      if (mode === 'return') {
+        const selected = items.filter((item) => Number(String(item.qty).replace(',', '.')) > 0);
+        if (!selected.length || selected.some((item) => Number(String(item.qty).replace(',', '.')) > Number(item.available || 0))) {
+          setModalError('Informe quantidades válidas, sem ultrapassar o saldo vendido.');
+          return;
+        }
+      }
+
       if (mode === 'cancel') {
         await enqueue(
           'sales',
@@ -342,6 +379,15 @@ export default function FullSales() {
             reason,
           }
         );
+      } else if (mode === 'return') {
+        await enqueue('sales', 'SALE_RETURN', {
+          id: form.id,
+          date: today,
+          items: items
+            .map((item) => ({ id: item.id, qty: Number(String(item.qty).replace(',', '.')) }))
+            .filter((item) => item.qty > 0),
+          reason,
+        });
       } else {
         await enqueue(
           'sales',
@@ -615,7 +661,7 @@ export default function FullSales() {
 
                 <View style={s.right}>
                   <Text style={s.amount}>
-                    {money(row.total)}
+                    {money(row.net_total ?? row.total)}
                   </Text>
 
                   <Text
@@ -625,7 +671,7 @@ export default function FullSales() {
                         s.badBadge,
                     ]}
                   >
-                    {row.status}
+                    {row.return_status || row.status}
                   </Text>
                   {row.server_pending && <Text style={salesStyles.pendingBadge}>Salvo no servidor • aguardando PDV</Text>}
 
@@ -637,7 +683,8 @@ export default function FullSales() {
                       </Pressable>
                       {actionSaleId === String(row.id) && (
                         <View style={salesStyles.actionMenu}>
-                          <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); edit(row); }}><Feather name="edit-2" size={14} color={theme.colors.text} /><Text style={salesStyles.actionItemText}>Editar venda</Text></Pressable>
+                          {Number(row.returned_total || 0) === 0 && <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); edit(row); }}><Feather name="edit-2" size={14} color={theme.colors.text} /><Text style={salesStyles.actionItemText}>Editar venda</Text></Pressable>}
+                          {Number(row.net_total ?? row.total ?? 0) > 0 && <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); returnItems(row); }}><Feather name="corner-up-left" size={14} color="#9A6A10" /><Text style={salesStyles.actionItemText}>Devolver itens</Text></Pressable>}
                           <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); cancel(row); }}><Feather name="x-circle" size={14} color={theme.colors.danger} /><Text style={salesStyles.actionDangerText}>Cancelar venda</Text></Pressable>
                         </View>
                       )}
@@ -689,6 +736,8 @@ export default function FullSales() {
                 <ReceiptTotal label="Subtotal" value={money(receiptSale?.subtotal || (Number(receiptSale?.total || 0) + Number(receiptSale?.discount || 0)))} />
                 {Number(receiptSale?.discount || 0) > 0 && <ReceiptTotal label="Descontos" value={`− ${money(receiptSale.discount)}`} danger />}
                 <ReceiptTotal label="Total da venda" value={money(receiptSale?.total || 0)} strong />
+                {Number(receiptSale?.returned_total || 0) > 0 && <ReceiptTotal label="Total devolvido" value={`− ${money(receiptSale.returned_total)}`} danger />}
+                {Number(receiptSale?.returned_total || 0) > 0 && <ReceiptTotal label="Total líquido" value={money(receiptSale?.net_total || 0)} strong />}
               </View>
 
               <View style={salesStyles.receiptPayments}>
@@ -701,7 +750,7 @@ export default function FullSales() {
                 ))}
               </View>
 
-              <View style={salesStyles.receiptStatusRow}><Text style={salesStyles.receiptStatusLabel}>Status</Text><Text style={[salesStyles.receiptStatus, receiptSale?.status !== 'Concluída' && salesStyles.receiptStatusCancelled]}>{receiptSale?.status || 'Concluída'}</Text></View>
+              <View style={salesStyles.receiptStatusRow}><Text style={salesStyles.receiptStatusLabel}>Status</Text><Text style={[salesStyles.receiptStatus, (receiptSale?.return_status || receiptSale?.status) !== 'Concluída' && salesStyles.receiptStatusCancelled]}>{receiptSale?.return_status || receiptSale?.status || 'Concluída'}</Text></View>
             </ScrollView>
 
             <View style={salesStyles.receiptFooter}>
@@ -716,6 +765,8 @@ export default function FullSales() {
         title={
           mode === 'cancel'
             ? `Cancelar venda #${form.number}`
+            : mode === 'return'
+              ? `Devolver itens da venda #${form.number}`
             : `Editar venda #${form.number}`
         }
         onCancel={() => setOpen(false)}
@@ -723,6 +774,8 @@ export default function FullSales() {
         saveLabel={
           mode === 'cancel'
             ? 'Confirmar cancelamento'
+            : mode === 'return'
+              ? 'Confirmar devolução'
             : 'Salvar venda'
         }
         busy={busy}
@@ -741,6 +794,20 @@ export default function FullSales() {
             }
             multiline
           />
+        ) : mode === 'return' ? (
+          <>
+            <Notice text="O estoque será recomposto. Recebíveis futuros serão reduzidos; valores já recebidos serão registrados como reembolso na data de hoje." />
+            {items.map((item, index) => Number(item.available || 0) > 0 ? (
+              <View key={`${item.id}-${index}`} style={s.row}>
+                <View style={s.main}>
+                  <Text style={s.name}>{item.name}</Text>
+                  <Text style={s.meta}>Disponível para devolver: {Number(item.available || 0).toLocaleString('pt-BR')} {item.unit || 'un'}</Text>
+                  <Field label="Quantidade a devolver" value={String(item.qty)} onChangeText={(value) => updateItem(index, 'qty', value)} keyboardType="decimal-pad" />
+                </View>
+              </View>
+            ) : null)}
+            <Field label="Motivo da devolução *" value={form.reason || ''} onChangeText={(value) => set('reason', value)} multiline />
+          </>
         ) : (
           <>
             <Text style={s.cardTitle}>
