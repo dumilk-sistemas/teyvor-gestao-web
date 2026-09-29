@@ -30,6 +30,18 @@ const money = (value: number) =>
     currency: 'BRL',
   }).format(value || 0);
 
+const PAYMENT_FILTERS = ['Dinheiro', 'Pix', 'Débito', 'Crédito', 'Outros'];
+
+function salePaymentParts(row: any) {
+  const parts = Array.isArray(row?.payment_details) ? row.payment_details : [];
+  return parts.length ? parts : [{ method: row?.payment || 'Outros', value: row?.total || 0 }];
+}
+
+function normalizedPaymentMethod(value: unknown) {
+  const method = String(value || 'Outros');
+  return PAYMENT_FILTERS.includes(method) ? method : 'Outros';
+}
+
 function todayDateString() {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -56,6 +68,12 @@ export default function FullSales() {
   const [periodEnd, setPeriodEnd] = useState(today);
   const [, setPeriodPreset] = useState<PeriodPreset>('today');
   const [search, setSearch] = useState('');
+  const [paymentFilters, setPaymentFilters] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
+  const [productFilter, setProductFilter] = useState('');
+  const [operatorFilter, setOperatorFilter] = useState('');
+  const [cashFilter, setCashFilter] = useState('');
   const [actionSaleId, setActionSaleId] = useState<string | null>(null);
   const [receiptSale, setReceiptSale] = useState<any | null>(null);
 
@@ -67,31 +85,58 @@ export default function FullSales() {
     return rows.filter((row: any) => row.date >= range.start && row.date <= range.end);
   }, [data, range]);
 
+  const filterOptions = useMemo(() => {
+    const unique = (values: unknown[]) => [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))].sort();
+    return {
+      customers: unique(periodRows.map((row: any) => row.customer)).map((value) => ({ label: value, value })),
+      products: unique(periodRows.flatMap((row: any) => (row.items_detail || []).map((item: any) => item.name))).map((value) => ({ label: value, value })),
+      operators: unique(periodRows.map((row: any) => row.operator)).map((value) => ({ label: value, value })),
+      cashes: unique(periodRows.map((row: any) => row.cash_session)).map((value) => ({ label: value, value })),
+      statuses: unique(periodRows.map((row: any) => row.status)).map((value) => ({ label: value, value })),
+    };
+  }, [periodRows]);
+
   const visibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('pt-BR');
     return periodRows
       .filter((row: any) => {
-        if (!term) return true;
-        return [row.number, row.customer, row.summary, row.payment, row.status]
+        const textMatches = !term || [
+          row.number,
+          row.customer,
+          row.summary,
+          ...(row.items_detail || []).flatMap((item: any) => [item.name, item.code]),
+        ]
           .filter(Boolean)
           .some((value) =>
             String(value).toLocaleLowerCase('pt-BR').includes(term)
           );
+        const methods = salePaymentParts(row).map((part: any) => normalizedPaymentMethod(part.method));
+        const paymentMatches = paymentFilters.length === 0 || paymentFilters.some((method) => methods.includes(method));
+        const productMatches = !productFilter || (row.items_detail || []).some((item: any) => item.name === productFilter);
+        return textMatches
+          && paymentMatches
+          && (!statusFilter || row.status === statusFilter)
+          && (!customerFilter || row.customer === customerFilter)
+          && productMatches
+          && (!operatorFilter || row.operator === operatorFilter)
+          && (!cashFilter || row.cash_session === cashFilter);
       })
       .sort((a: any, b: any) =>
         `${b.date || ''} ${b.time || ''}`.localeCompare(
           `${a.date || ''} ${a.time || ''}`
         )
       );
-  }, [periodRows, search]);
+  }, [periodRows, search, paymentFilters, statusFilter, customerFilter, productFilter, operatorFilter, cashFilter]);
 
   const visibleSummary = useMemo(() => {
     const valid = visibleRows.filter((row: any) => row.status === 'Concluída');
     const total = valid.reduce((sum: number, row: any) => sum + (row.total || 0), 0);
     const paymentTotals: Record<string, number> = {};
     valid.forEach((row: any) => {
-      const method = row.payment || 'Outros';
-      paymentTotals[method] = (paymentTotals[method] || 0) + (row.total || 0);
+      salePaymentParts(row).forEach((part: any) => {
+        const method = normalizedPaymentMethod(part.method);
+        paymentTotals[method] = (paymentTotals[method] || 0) + Number(part.value || 0);
+      });
     });
     return {
       total,
@@ -101,6 +146,23 @@ export default function FullSales() {
       payment_totals: paymentTotals,
     };
   }, [visibleRows]);
+
+  const hasExtraFilters = paymentFilters.length > 0 || !!statusFilter || !!customerFilter || !!productFilter || !!operatorFilter || !!cashFilter;
+
+  const togglePaymentFilter = (method: string) => {
+    setPaymentFilters((current) => current.includes(method)
+      ? current.filter((item) => item !== method)
+      : [...current, method]);
+  };
+
+  const clearExtraFilters = () => {
+    setPaymentFilters([]);
+    setStatusFilter('');
+    setCustomerFilter('');
+    setProductFilter('');
+    setOperatorFilter('');
+    setCashFilter('');
+  };
 
   async function load() {
     try {
@@ -376,8 +438,43 @@ export default function FullSales() {
               <SearchBar
                 value={search}
                 onChangeText={setSearch}
-                placeholder="Buscar por venda, cliente, produto ou pagamento"
+                placeholder="Buscar por venda, cliente ou produto"
               />
+            </View>
+            <View style={salesStyles.paymentFilterBlock}>
+              <View style={salesStyles.filterLabelRow}>
+                <Text style={salesStyles.filterLabel}>FORMAS DE PAGAMENTO</Text>
+                {hasExtraFilters && (
+                  <Pressable onPress={clearExtraFilters} style={salesStyles.clearFilters}>
+                    <Feather name="x" size={13} color="#9A6A10" />
+                    <Text style={salesStyles.clearFiltersText}>Limpar filtros</Text>
+                  </Pressable>
+                )}
+              </View>
+              <View style={salesStyles.paymentChips}>
+                <Pressable
+                  onPress={() => setPaymentFilters([])}
+                  style={[salesStyles.filterChip, paymentFilters.length === 0 && salesStyles.filterChipActive]}
+                >
+                  <Text style={[salesStyles.filterChipText, paymentFilters.length === 0 && salesStyles.filterChipTextActive]}>Todas</Text>
+                </Pressable>
+                {PAYMENT_FILTERS.map((method) => {
+                  const active = paymentFilters.includes(method);
+                  return (
+                    <Pressable key={method} onPress={() => togglePaymentFilter(method)} style={[salesStyles.filterChip, active && salesStyles.filterChipActive]}>
+                      {active && <Feather name="check" size={13} color="#FFF" />}
+                      <Text style={[salesStyles.filterChipText, active && salesStyles.filterChipTextActive]}>{method}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+            <View style={salesStyles.advancedFilters}>
+              <View style={salesStyles.filterPicker}><SearchablePicker label="Situação" value={statusFilter} onChange={setStatusFilter} options={[{ label: 'Todas', value: '' }, ...filterOptions.statuses]} placeholder="Todas" searchPlaceholder="Buscar situação" /></View>
+              <View style={salesStyles.filterPicker}><SearchablePicker label="Cliente" value={customerFilter} onChange={setCustomerFilter} options={[{ label: 'Todos', value: '' }, ...filterOptions.customers]} placeholder="Todos" searchPlaceholder="Buscar cliente" /></View>
+              <View style={salesStyles.filterPicker}><SearchablePicker label="Produto" value={productFilter} onChange={setProductFilter} options={[{ label: 'Todos', value: '' }, ...filterOptions.products]} placeholder="Todos" searchPlaceholder="Buscar produto" /></View>
+              <View style={salesStyles.filterPicker}><SearchablePicker label="Operador" value={operatorFilter} onChange={setOperatorFilter} options={[{ label: 'Todos', value: '' }, ...filterOptions.operators]} placeholder="Todos" searchPlaceholder="Buscar operador" /></View>
+              <View style={salesStyles.filterPicker}><SearchablePicker label="Caixa" value={cashFilter} onChange={setCashFilter} options={[{ label: 'Todos', value: '' }, ...filterOptions.cashes]} placeholder="Todos" searchPlaceholder="Buscar caixa" /></View>
             </View>
           </View>
 
@@ -512,7 +609,7 @@ export default function FullSales() {
                     {formatDateBR(row.date)} às {row.time} • {row.summary}
                   </Text>
                   <Text style={salesStyles.customerMeta}>
-                    {row.customer || 'Cliente não identificado'} • {row.payment}
+                    {row.customer || 'Cliente não identificado'} • {[...new Set(salePaymentParts(row).map((part: any) => normalizedPaymentMethod(part.method)))].join(' + ')}
                   </Text>
                 </View>
 
@@ -530,6 +627,7 @@ export default function FullSales() {
                   >
                     {row.status}
                   </Text>
+                  {row.server_pending && <Text style={salesStyles.pendingBadge}>Salvo no servidor • aguardando PDV</Text>}
 
                   {row.status === 'Concluída' && (
                     <View style={salesStyles.actionWrap}>
@@ -925,8 +1023,20 @@ const salesStyles = StyleSheet.create({
   },
   searchWrap: {
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingBottom: 12,
   },
+  paymentFilterBlock: { paddingHorizontal: 16, paddingBottom: 12 },
+  filterLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  filterLabel: { fontFamily: 'Inter_700Bold', fontSize: 10.5, letterSpacing: .7, color: theme.colors.muted },
+  paymentChips: { marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  filterChip: { minHeight: 34, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: '#FFF', flexDirection: 'row', alignItems: 'center', gap: 5 },
+  filterChipActive: { borderColor: '#202831', backgroundColor: '#202831' },
+  filterChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.text },
+  filterChipTextActive: { color: '#FFF' },
+  clearFilters: { minHeight: 30, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  clearFiltersText: { fontFamily: 'Inter_600SemiBold', fontSize: 11.5, color: '#9A6A10' },
+  advancedFilters: { paddingHorizontal: 16, paddingBottom: 16, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  filterPicker: { minWidth: 180, flexGrow: 1, flexBasis: 180 },
   listHeading: {
     padding: 16,
     flexDirection: 'row',
@@ -967,6 +1077,7 @@ const salesStyles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     color: theme.colors.text,
   },
+  pendingBadge: { marginTop: 5, maxWidth: 190, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, overflow: 'hidden', backgroundColor: '#FFF4D8', color: '#8B6415', fontFamily: 'Inter_600SemiBold', fontSize: 10.5, textAlign: 'center' },
   actionWrap: { marginTop: 7, zIndex: 5, alignItems: 'flex-end' },
   actionTrigger: { minHeight: 34, paddingHorizontal: 10, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, backgroundColor: '#FFF', flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionTriggerText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: theme.colors.text },
