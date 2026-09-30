@@ -684,7 +684,7 @@ export default function FullSales() {
                       {actionSaleId === String(row.id) && (
                         <View style={salesStyles.actionMenu}>
                           {Number(row.returned_total || 0) === 0 && <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); edit(row); }}><Feather name="edit-2" size={14} color={theme.colors.text} /><Text style={salesStyles.actionItemText}>Editar venda</Text></Pressable>}
-                          {Number(row.net_total ?? row.total ?? 0) > 0 && <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); returnItems(row); }}><Feather name="corner-up-left" size={14} color="#9A6A10" /><Text style={salesStyles.actionItemText}>Devolver itens</Text></Pressable>}
+                          {data?.sale_returns_enabled && Number(row.net_total ?? row.total ?? 0) > 0 && <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); returnItems(row); }}><Feather name="corner-up-left" size={14} color="#9A6A10" /><Text style={salesStyles.actionItemText}>Devolver itens</Text></Pressable>}
                           <Pressable style={salesStyles.actionItem} onPress={(event) => { event.stopPropagation(); setActionSaleId(null); cancel(row); }}><Feather name="x-circle" size={14} color={theme.colors.danger} /><Text style={salesStyles.actionDangerText}>Cancelar venda</Text></Pressable>
                         </View>
                       )}
